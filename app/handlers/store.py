@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app import texts
+from app.catalog import resolve_product
 from app.config import Config
 from app.database import Database
 from app.delivery import DeliveryService
@@ -21,6 +22,7 @@ from app.keyboards.inline import (
 from app.services.autolike import AutoLikeApi
 from app.services.payments.base import PaymentGateway, PaymentStatus
 from app.states import PurchaseFlow
+from app.ui import edit_screen
 from app.utils import clean_game_id, extract_nick, format_price, is_valid_game_id
 
 logger = logging.getLogger(__name__)
@@ -30,21 +32,30 @@ router = Router(name="store")
 
 # ---- 1. Usuário escolhe um produto ----
 @router.callback_query(F.data.startswith("buy:"))
-async def cb_buy(query: CallbackQuery, state: FSMContext, config: Config) -> None:
+async def cb_buy(
+    query: CallbackQuery, state: FSMContext, config: Config, db: Database
+) -> None:
     code = query.data.split(":", 1)[1]
-    product = config.products.get(code)
-    if not product:
+    rp = await resolve_product(config, db, code)
+    if not rp:
         await query.answer("Produto indisponível", show_alert=True)
         return
+    if not rp.available:
+        await edit_screen(query, texts.OUT_OF_STOCK, back_home())
+        await query.answer()
+        return
+
     await state.set_state(PurchaseFlow.waiting_id)
     await state.update_data(product_code=code)
-    await query.message.edit_text(
-        texts.ASK_PURCHASE_ID.format(
-            title=product.title,
-            price=format_price(product.price),
-            description=product.description,
+    await edit_screen(
+        query,
+        texts.PRODUCT_DETAIL.format(
+            title=rp.title,
+            description=rp.description,
+            price=format_price(rp.price),
+            stock=rp.stock_label,
         ),
-        reply_markup=cancel_only(),
+        cancel_only(),
     )
     await query.answer()
 
@@ -52,7 +63,7 @@ async def cb_buy(query: CallbackQuery, state: FSMContext, config: Config) -> Non
 # ---- 2. Usuário informa o ID do jogo ----
 @router.message(PurchaseFlow.waiting_id)
 async def purchase_receive_id(
-    message: Message, state: FSMContext, config: Config, autolike: AutoLikeApi
+    message: Message, state: FSMContext, config: Config, db: Database, autolike: AutoLikeApi
 ) -> None:
     game_id = clean_game_id(message.text or "")
     if not is_valid_game_id(game_id):
@@ -60,13 +71,12 @@ async def purchase_receive_id(
         return
 
     data = await state.get_data()
-    product = config.products.get(data["product_code"])
-    if not product:
+    rp = await resolve_product(config, db, data.get("product_code", ""))
+    if not rp:
         await state.clear()
         await message.answer(texts.GENERIC_ERROR)
         return
 
-    # Valida o ID e tenta obter o nick para confirmação
     checking = await message.answer("⏳ Validando ID...")
     info = await autolike.info_player(game_id)
     nick = extract_nick(info.data) if info.ok else None
@@ -76,12 +86,12 @@ async def purchase_receive_id(
     await state.set_state(PurchaseFlow.confirming)
     await checking.edit_text(
         texts.CONFIRM_PURCHASE.format(
-            title=product.title,
+            title=rp.title,
             game_id=game_id,
             nick_line=nick_line,
-            price=format_price(product.price),
+            price=format_price(rp.price),
         ),
-        reply_markup=confirm_purchase(product.code),
+        reply_markup=confirm_purchase(rp.code),
     )
 
 
@@ -95,11 +105,17 @@ async def cb_confirm(
     gateway: PaymentGateway,
 ) -> None:
     data = await state.get_data()
-    product = config.products.get(data.get("product_code", ""))
+    rp = await resolve_product(config, db, data.get("product_code", ""))
     game_id = data.get("game_id")
-    if not product or not game_id:
+    if not rp or not game_id:
         await state.clear()
-        await query.message.edit_text(texts.GENERIC_ERROR, reply_markup=back_home())
+        await edit_screen(query, texts.GENERIC_ERROR, back_home())
+        await query.answer()
+        return
+
+    if not rp.available:
+        await state.clear()
+        await edit_screen(query, texts.OUT_OF_STOCK, back_home())
         await query.answer()
         return
 
@@ -108,15 +124,15 @@ async def cb_confirm(
 
     order_id = await db.create_order(
         user_id=query.from_user.id,
-        product_code=product.code,
+        product_code=rp.code,
         game_id=game_id,
-        amount=str(product.price),
+        amount=str(rp.price),
     )
 
     try:
         charge = await gateway.create_pix(
-            amount=product.price,
-            description=f"{product.title} - ID {game_id}",
+            amount=rp.price,
+            description=f"{rp.title} - ID {game_id}",
             external_reference=str(order_id),
             payer_email=f"user{query.from_user.id}@bottg.com",
             payer_name=query.from_user.first_name or "Cliente",
@@ -131,15 +147,13 @@ async def cb_confirm(
     await state.clear()
 
     caption = texts.PIX_MESSAGE.format(
-        title=product.title,
+        title=rp.title,
         game_id=game_id,
-        price=format_price(product.price),
+        price=format_price(rp.price),
         qr_code=charge.qr_code,
     )
-
     kb = payment_pending(charge.payment_id, charge.ticket_url)
 
-    # Envia o QR Code como imagem, se disponível
     if charge.qr_code_base64:
         try:
             img_bytes = base64.b64decode(charge.qr_code_base64)

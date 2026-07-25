@@ -8,13 +8,29 @@ e pagamento automático via **PIX (Mercado Pago)**.
 
 | Recurso | Descrição |
 |---|---|
-| ❤️ **Enviar Likes** | Envio de likes por ID — funciona em **grupo** (`/like <id>`) e no **privado** (menu). Respeita o cooldown de 24h. |
+| ❤️ **Enviar Likes** | Envio de likes por ID — **somente em grupos** (`/like <id>`). No privado é bloqueado. Respeita o cooldown de 24h. |
+| 🖼️ **Menu com banner** | Menu principal (privado) com **GIF/imagem animada** + botões profissionais. |
 | 🔎 **Consultar Jogador** | Nick, nível, likes, ranking, clã e região por ID. |
 | 🎟️ **Loja — Passe Booyah** | Venda + entrega automática de Passe Booyah após o pagamento. |
 | 🔁 **Loja — Auto-Like (30 dias)** | Assinatura de likes automáticos diários. |
 | 💠 **Pagamento PIX** | QR Code + copia-e-cola via Mercado Pago; confirmação por **webhook** e botão "Já paguei". |
 | 📦 **Meus pedidos** | Histórico de pedidos do usuário. |
-| ⚙️ **Painel Admin** | Estatísticas, consulta de estoque de passes e broadcast. |
+| ⚙️ **Painel Admin** | **Gerenciar produtos (alterar preço e estoque em tempo real)**, estatísticas, consulta de estoque da API e broadcast. |
+
+### 🖼️ Banner do menu
+O GIF/imagem fica em `assets/menu.gif` (configurável por `MENU_BANNER`, aceita
+caminho local ou URL `https://`). O `file_id` é cacheado após o 1º envio para
+não reenviar o arquivo a cada `/start`.
+
+### 💰 Gestão de preço e estoque (admin)
+Preço e estoque **não** dependem mais do `.env`: o admin altera direto pelo bot
+(**⚙️ Painel Admin → 🛠️ Gerenciar produtos**), e os valores ficam salvos no
+banco. Estoque `-1` = ilimitado; `0` = esgotado (o produto some da loja).
+Cada entrega bem-sucedida dá baixa automática no estoque.
+
+> ❤️ **Likes só em grupos:** por decisão de produto, o envio de likes funciona
+> apenas em grupos via `/like <id>`. No privado, o bot foca na **Loja** e nos
+> serviços de venda.
 
 ## 🏗️ Arquitetura
 

@@ -10,6 +10,7 @@ from app import texts
 from app.keyboards.inline import back_home, cancel_only
 from app.services.autolike import AutoLikeApi
 from app.states import InfoFlow
+from app.ui import edit_screen
 from app.utils import clean_game_id, extract_nick, is_valid_game_id
 
 router = Router(name="info")
@@ -75,7 +76,7 @@ async def cmd_info(
 @router.callback_query(F.data == "menu:info")
 async def cb_info(query: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(InfoFlow.waiting_id)
-    await query.message.edit_text(texts.ASK_INFO_ID, reply_markup=cancel_only())
+    await edit_screen(query, texts.ASK_INFO_ID, cancel_only())
     await query.answer()
 
 

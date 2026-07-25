@@ -85,6 +85,8 @@ class DeliveryService:
             return False
 
         await self.db.update_order_status(order_id, "delivered", str(result.data))
+        # Dá baixa no estoque (ignorado quando ilimitado/-1)
+        await self.db.decrement_stock(order["product_code"])
         await self._notify_success(order, product, result.data)
         return True
 

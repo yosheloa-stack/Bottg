@@ -35,6 +35,7 @@ async def main() -> None:
     # Infraestrutura
     db = Database(config.db_path)
     await db.connect()
+    await db.init_product_settings(config.products)
 
     autolike = AutoLikeApi(
         config.api_base_url, config.autolike_api_key, config.default_region

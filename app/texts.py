@@ -1,20 +1,35 @@
 """Textos das mensagens do bot (centralizados para fácil edição)."""
 
 WELCOME = (
-    "👋 <b>Bem-vindo(a) à {shop_name}!</b>\n\n"
-    "Aqui você garante serviços para <b>Free Fire</b> com entrega automática:\n\n"
-    "🎟️ <b>Passe Booyah</b> — entregue direto no seu ID\n"
-    "🔁 <b>Auto-Like</b> — likes diários automáticos\n"
-    "❤️ <b>Likes grátis</b> — envie likes para qualquer ID\n\n"
-    "Escolha uma opção abaixo 👇"
+    "✨ <b>{shop_name}</b> ✨\n"
+    "<i>Serviços premium para Free Fire</i>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n\n"
+    "Bem-vindo(a)! Aqui a entrega é <b>automática</b> e o pagamento por <b>PIX</b> 💠\n\n"
+    "🎟️ <b>Passe Booyah</b> — direto no seu ID\n"
+    "🔁 <b>Auto-Like</b> — likes diários por 30 dias\n"
+    "🔎 <b>Consulta</b> — dados do jogador\n\n"
+    "👇 <b>Escolha uma opção no menu abaixo</b>"
 )
 
-MENU_HINT = "Selecione uma opção no menu 👇"
+STORE_HEADER = (
+    "🛒 <b>Loja</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "Selecione um produto para comprar:\n"
+)
+
+MENU_HINT = "👇 Selecione uma opção no menu"
 
 ASK_LIKE_ID = (
     "❤️ <b>Enviar Likes</b>\n\n"
     "Envie o <b>ID</b> da conta de Free Fire que vai receber os likes.\n"
     "<i>Apenas números (5 a 20 dígitos).</i>"
+)
+
+LIKE_PRIVATE_BLOCKED = (
+    "❤️ <b>Envio de likes só funciona em grupos!</b>\n\n"
+    "Entre no nosso grupo e use o comando:\n"
+    "<code>/like SEU_ID</code>\n\n"
+    "Por aqui (privado) você tem a <b>Loja</b>, consultas e seus pedidos. 👇"
 )
 
 ASK_INFO_ID = (
@@ -28,16 +43,24 @@ INVALID_ID = (
     "Tente novamente ou toque em <b>Cancelar</b>."
 )
 
-ASK_PURCHASE_ID = (
+PRODUCT_DETAIL = (
     "🛒 <b>{title}</b>\n"
-    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
     "{description}\n\n"
+    "💰 Valor: <b>R$ {price}</b>\n"
+    "📦 Estoque: <b>{stock}</b>\n\n"
     "Envie o <b>ID</b> da sua conta de Free Fire para continuar.\n"
     "<i>Apenas números (5 a 20 dígitos).</i>"
 )
 
+OUT_OF_STOCK = (
+    "😔 <b>Produto esgotado no momento.</b>\n\n"
+    "Volte mais tarde ou fale com o suporte."
+)
+
 CONFIRM_PURCHASE = (
-    "🧾 <b>Confirme seu pedido</b>\n\n"
+    "🧾 <b>Confirme seu pedido</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
     "📦 Produto: <b>{title}</b>\n"
     "🎮 ID: <code>{game_id}</code>\n"
     "{nick_line}"
@@ -46,13 +69,14 @@ CONFIRM_PURCHASE = (
 )
 
 PIX_MESSAGE = (
-    "💠 <b>Pagamento via PIX gerado!</b>\n\n"
+    "💠 <b>PIX gerado com sucesso!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
     "📦 {title}\n"
     "🎮 ID: <code>{game_id}</code>\n"
     "💰 Valor: <b>R$ {price}</b>\n\n"
-    "1️⃣ Copie o código abaixo (PIX copia e cola)\n"
+    "1️⃣ Copie o código PIX abaixo\n"
     "2️⃣ Pague no app do seu banco\n"
-    "3️⃣ A entrega é <b>automática</b> após a confirmação ✅\n\n"
+    "3️⃣ A entrega é <b>automática</b> ✅\n\n"
     "<code>{qr_code}</code>\n\n"
     "⏳ <i>Aguardando pagamento... você será avisado assim que cair.</i>"
 )
@@ -60,16 +84,18 @@ PIX_MESSAGE = (
 PAYMENT_APPROVED = "✅ <b>Pagamento aprovado!</b> Preparando sua entrega..."
 
 DELIVERY_SUCCESS_PASSE = (
-    "🎉 <b>Passe Booyah entregue!</b>\n\n"
+    "🎉 <b>Passe Booyah entregue!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
     "🎮 ID: <code>{game_id}</code>\n"
     "{detail}\n\n"
     "Obrigado pela compra! 💚"
 )
 
 DELIVERY_SUCCESS_AUTOLIKE = (
-    "🎉 <b>Auto-Like ativado!</b>\n\n"
+    "🎉 <b>Auto-Like ativado!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
     "🎮 ID: <code>{game_id}</code>\n"
-    "🔁 Seu ID receberá likes automáticos por <b>{days} dias</b>.\n"
+    "🔁 Likes automáticos por <b>{days} dias</b>.\n"
     "{detail}\n\n"
     "Obrigado pela compra! 💚"
 )
@@ -83,10 +109,11 @@ DELIVERY_FAILED = (
 )
 
 LIKE_SUCCESS = (
-    "❤️ <b>Likes enviados com sucesso!</b>\n\n"
+    "❤️ <b>Likes enviados com sucesso!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
     "🎮 ID: <code>{game_id}</code>\n"
     "👤 {nick}\n"
-    "➕ Likes enviados: <b>{enviadas}</b>\n"
+    "➕ Likes enviados: <b>{enviadas}</b>"
 )
 
 LIKE_ALREADY = (

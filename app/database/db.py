@@ -30,6 +30,12 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE INDEX IF NOT EXISTS idx_orders_payment_id ON orders(payment_id);
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+
+CREATE TABLE IF NOT EXISTS product_settings (
+    code   TEXT PRIMARY KEY,
+    price  TEXT,               -- preço em BRL (override do catálogo)
+    stock  INTEGER NOT NULL DEFAULT -1  -- -1 = ilimitado; 0 = esgotado
+);
 """
 
 
@@ -150,3 +156,46 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
+
+    # ----- Product settings (preço / estoque geridos pelo admin) -----
+    async def init_product_settings(self, products: dict) -> None:
+        """Garante uma linha por produto do catálogo (não sobrescreve valores existentes)."""
+        for code, product in products.items():
+            await self.db.execute(
+                "INSERT OR IGNORE INTO product_settings (code, price, stock) VALUES (?, ?, ?)",
+                (code, str(product.price), -1),
+            )
+        await self.db.commit()
+
+    async def get_product_setting(self, code: str) -> Optional[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM product_settings WHERE code = ?", (code,)
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def all_product_settings(self) -> dict[str, dict[str, Any]]:
+        async with self.db.execute("SELECT * FROM product_settings") as cur:
+            rows = await cur.fetchall()
+        return {r["code"]: dict(r) for r in rows}
+
+    async def set_price(self, code: str, price: str) -> None:
+        await self.db.execute(
+            "UPDATE product_settings SET price = ? WHERE code = ?", (price, code)
+        )
+        await self.db.commit()
+
+    async def set_stock(self, code: str, stock: int) -> None:
+        await self.db.execute(
+            "UPDATE product_settings SET stock = ? WHERE code = ?", (stock, code)
+        )
+        await self.db.commit()
+
+    async def decrement_stock(self, code: str) -> None:
+        """Baixa 1 do estoque, exceto quando ilimitado (-1). Não deixa negativo."""
+        await self.db.execute(
+            "UPDATE product_settings SET stock = stock - 1 "
+            "WHERE code = ? AND stock > 0",
+            (code,),
+        )
+        await self.db.commit()

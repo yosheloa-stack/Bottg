@@ -58,6 +58,10 @@ class Config:
 
     db_path: str
 
+    shop_name: str
+    support_username: str
+    menu_banner: str  # caminho do GIF/imagem do menu
+
     products: dict[str, Product] = field(default_factory=dict)
 
     @property
@@ -112,5 +116,8 @@ def load_config() -> Config:
         # Square Cloud injeta a porta via PORT em deploys de site; usamos como fallback
         webhook_port=int(_get("WEBHOOK_PORT", _get("PORT", "8080"))),
         db_path=_get("DB_PATH", str(BASE_DIR / "data" / "bot.db")),
+        shop_name=_get("SHOP_NAME", "Aurora System"),
+        support_username=_get("SUPPORT_USERNAME", "@seu_suporte"),
+        menu_banner=_get("MENU_BANNER", str(BASE_DIR / "assets" / "menu.gif")),
         products=products,
     )

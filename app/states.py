@@ -17,3 +17,11 @@ class PurchaseFlow(StatesGroup):
 
 class AdminBroadcast(StatesGroup):
     waiting_message = State()
+
+
+class AdminPrice(StatesGroup):
+    waiting_value = State()
+
+
+class AdminStock(StatesGroup):
+    waiting_value = State()
