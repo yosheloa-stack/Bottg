@@ -109,7 +109,8 @@ def load_config() -> Config:
         mp_webhook_secret=_get("MERCADOPAGO_WEBHOOK_SECRET", ""),
         webhook_public_url=_get("WEBHOOK_PUBLIC_URL", ""),
         webhook_host=_get("WEBHOOK_HOST", "0.0.0.0"),
-        webhook_port=int(_get("WEBHOOK_PORT", "8080")),
+        # Square Cloud injeta a porta via PORT em deploys de site; usamos como fallback
+        webhook_port=int(_get("WEBHOOK_PORT", _get("PORT", "8080"))),
         db_path=_get("DB_PATH", str(BASE_DIR / "data" / "bot.db")),
         products=products,
     )

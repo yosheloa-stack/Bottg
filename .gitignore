@@ -6,7 +6,7 @@ __pycache__/
 venv/
 env/
 
-# Env / secrets
+# Env / secrets (NUNCA versionar — cadastre no painel do Square Cloud)
 .env
 *.env
 !.env.example
