@@ -44,6 +44,11 @@ class PasseApi:
             logger.exception("Erro inesperado na Passe API %s", path)
             return ApiResult(ok=False, status=0, data={}, error=str(exc))
 
+    async def confirmar(self, game_id: str, region: str = "BR") -> ApiResult:
+        return await self._get(
+            "/passe/confirmar", {"id": game_id, "region": region}
+        )
+
     async def send_passe(self, game_id: str) -> ApiResult:
         return await self._get("/send-passe", {"id": game_id})
 

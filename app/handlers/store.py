@@ -20,6 +20,7 @@ from app.keyboards.inline import (
     payment_pending,
 )
 from app.services.autolike import AutoLikeApi
+from app.services.passe import PasseApi
 from app.services.payments.base import PaymentGateway, PaymentStatus
 from app.states import PurchaseFlow
 from app.ui import edit_screen
@@ -63,7 +64,12 @@ async def cb_buy(
 # ---- 2. Usuário informa o ID do jogo ----
 @router.message(PurchaseFlow.waiting_id)
 async def purchase_receive_id(
-    message: Message, state: FSMContext, config: Config, db: Database, autolike: AutoLikeApi
+    message: Message,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+    autolike: AutoLikeApi,
+    passe: PasseApi,
 ) -> None:
     game_id = clean_game_id(message.text or "")
     if not is_valid_game_id(game_id):
@@ -78,9 +84,32 @@ async def purchase_receive_id(
         return
 
     checking = await message.answer("⏳ Validando ID...")
-    info = await autolike.info_player(game_id)
+    if rp.delivery == "passe":
+        info = await passe.confirmar(game_id, region=config.default_region)
+    else:
+        info = await autolike.info_player(game_id)
+
+    if not info.ok:
+        data = info.data if isinstance(info.data, dict) else {}
+        api_message = data.get("mensagem") or data.get("message")
+        await checking.edit_text(
+            f"❌ {api_message or 'Não foi possível validar esse ID. Confira os números e tente novamente.'}",
+            reply_markup=cancel_only(),
+        )
+        return
+
     nick = extract_nick(info.data) if info.ok else None
-    nick_line = f"👤 Nick: <b>{nick}</b>\n" if nick else ""
+    if rp.delivery == "passe":
+        nick = info.data.get("nickname") or info.data.get("nick") or nick
+        level = info.data.get("nivel") or info.data.get("level")
+        account_region = info.data.get("regiao") or config.default_region
+        nick_line = (
+            f"👤 Nick: <b>{nick or 'Não informado'}</b>\n"
+            f"🏅 Nível: <b>{level or '—'}</b>\n"
+            f"🌎 Região: <b>{account_region}</b>\n"
+        )
+    else:
+        nick_line = f"👤 Nick: <b>{nick}</b>\n" if nick else ""
 
     await state.update_data(game_id=game_id)
     await state.set_state(PurchaseFlow.confirming)
