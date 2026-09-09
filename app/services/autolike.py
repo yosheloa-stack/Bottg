@@ -1,7 +1,7 @@
 """Cliente da Auto Like System API (likes, info, skin, auto-like).
 
 Documentação: https://autolikesystem.com.br/docs
-Base URL: https://fluxggx.squareweb.app
+Base URL padrão: https://autolikesystem.com.br
 """
 from __future__ import annotations
 
@@ -63,8 +63,10 @@ class AutoLikeApi:
         )
 
     async def send_like(self, game_id: str, region: str | None = None) -> ApiResult:
+        # A sub-API atual é /v1/like. O servidor decide internamente entre
+        # GGx e o motor próprio; o bot não expõe esse caminho ao usuário.
         return await self._get(
-            "/send-like", {"id": game_id, "region": region or self._region}
+            "/v1/like", {"uid": game_id, "region": region or self._region, "qtd": 220}
         )
 
     async def like_status(self, game_id: str, region: str | None = None) -> ApiResult:

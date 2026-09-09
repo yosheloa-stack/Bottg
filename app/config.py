@@ -105,7 +105,7 @@ def load_config() -> Config:
     return Config(
         bot_token=_get("BOT_TOKEN", required=True),
         admin_ids=_get_int_list("ADMIN_IDS"),
-        api_base_url=_get("API_BASE_URL", "https://fluxggx.squareweb.app"),
+        api_base_url=_get("API_BASE_URL", "https://autolikesystem.com.br"),
         autolike_api_key=_get("AUTOLIKE_API_KEY", required=True),
         passe_api_key=_get("PASSE_API_KEY", ""),
         default_region=_get("DEFAULT_REGION", "BR"),
