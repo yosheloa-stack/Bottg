@@ -157,6 +157,16 @@ class Database:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
+    async def pending_orders(self, limit: int = 100) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM orders "
+            "WHERE status = 'pending' AND payment_id IS NOT NULL "
+            "ORDER BY id ASC LIMIT ?",
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
     # ----- Product settings (preço / estoque geridos pelo admin) -----
     async def init_product_settings(self, products: dict) -> None:
         """Garante uma linha por produto do catálogo (não sobrescreve valores existentes)."""
