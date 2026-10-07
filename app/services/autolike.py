@@ -1,9 +1,6 @@
-"""Clientes das APIs de Free Fire usadas pelo bot.
+"""Cliente legado para consulta de jogador, skin e Auto-Like.
 
-A API antiga continua responsável por consulta de jogador, skin e Auto-Like.
-O envio avulso de likes usa a Likes Painel API:
-    GET /api/like
-    Header: X-API-Key
+O envio avulso de likes NÃO usa este cliente; ele fica em app/services/likes.py.
 """
 from __future__ import annotations
 
