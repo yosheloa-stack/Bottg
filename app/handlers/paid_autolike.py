@@ -8,7 +8,7 @@ from app import texts
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import back_home
-from app.services.ffhub_shop import FFHubShopApi
+from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.utils import clean_game_id
 
 router = Router(name="paid_autolike")
@@ -78,14 +78,10 @@ async def receive_paid_autolike_uid(
             return
 
         data = result.data if isinstance(result.data, dict) else {}
-        sent = (
-            data.get("likes_enviados")
-            or data.get("likes_sent")
-            or data.get("enviados")
-            or data.get("likes")
-            or "—"
-        )
-        nick = data.get("nickname") or data.get("nick") or "Jogador"
+        parsed_like = parse_like_delivery(data)
+        sent = parsed_like["sent"]
+        sent_display = sent if sent is not None else "—"
+        nick = parsed_like["nickname"]
 
         await db.update_order_status(order["id"], "delivered", str(data))
         await db.decrement_stock(order["product_code"])
@@ -95,7 +91,7 @@ async def receive_paid_autolike_uid(
             "━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 Jogador: <b>{nick}</b>\n"
             f"🆔 UID: <code>{uid}</code>\n"
-            f"❤️ Enviados: <b>+{sent}</b>\n\n"
+            f"❤️ Enviados: <b>+{sent_display}</b>\n\n"
             "✅ Pedido concluído com sucesso.",
             reply_markup=back_home(),
         )
