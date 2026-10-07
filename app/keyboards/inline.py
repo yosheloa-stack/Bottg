@@ -49,7 +49,7 @@ def store_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
 
 def premium_like_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for code in ("like2_7d", "like2_15d", "like2_30d"):
+    for code in ("like2_single", "like2_7d", "like2_15d", "like2_30d"):
         rp = products.get(code)
         if not rp:
             continue
