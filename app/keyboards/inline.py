@@ -12,23 +12,23 @@ def _price(value) -> str:
 
 
 def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
-    """Menu principal simples e direto."""
+    """Menu principal organizado por ação."""
     kb = InlineKeyboardBuilder()
     kb.row(
         InlineKeyboardButton(text="🛒 Comprar", callback_data="menu:store"),
-        InlineKeyboardButton(text="🔎 Consultar ID", callback_data="menu:info"),
-    )
-    kb.row(
         InlineKeyboardButton(text="📦 Meus pedidos", callback_data="menu:orders"),
-        InlineKeyboardButton(text="❤️ Como enviar likes", callback_data="menu:like_info"),
     )
     kb.row(
+        InlineKeyboardButton(text="🔎 Consultar ID", callback_data="menu:info"),
         InlineKeyboardButton(text="🆔 Meu ID", callback_data="menu:my_id"),
+    )
+    kb.row(
+        InlineKeyboardButton(text="❤️ Como funciona", callback_data="menu:like_info"),
         InlineKeyboardButton(text="🆘 Suporte", callback_data="menu:support"),
     )
     if is_admin:
         kb.row(
-            InlineKeyboardButton(text="⚙️ Painel administrativo", callback_data="admin:panel")
+            InlineKeyboardButton(text="⚙️ Painel Admin", callback_data="admin:panel")
         )
     return kb.as_markup()
 
@@ -43,9 +43,9 @@ def store_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
         if rp.price <= 0:
             continue
         if rp.available:
-            label = f"{rp.title}  •  R$ {_price(rp.price)}"
+            label = f"{rp.title} • R$ {_price(rp.price)}"
         else:
-            label = f"{rp.title}  •  ❌ Esgotado"
+            label = f"{rp.title} • Esgotado"
         kb.row(InlineKeyboardButton(text=label, callback_data=f"buy:{rp.code}"))
 
     # Auto Like fica agrupado em uma categoria própria.
@@ -68,13 +68,13 @@ def autolike_plans_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardM
 
         days = rp.product.days
         if rp.available:
-            label = f"📆 {days} dias  •  R$ {_price(rp.price)}"
+            label = f"📆 {days} dias • R$ {_price(rp.price)}"
             callback = f"buy:{rp.code}"
         elif rp.price <= 0:
-            label = f"📆 {days} dias  •  ⚠️ Indisponível"
+            label = f"📆 {days} dias • Indisponível"
             callback = "noop:unavailable"
         else:
-            label = f"📆 {days} dias  •  ❌ Esgotado"
+            label = f"📆 {days} dias • Esgotado"
             callback = "noop:unavailable"
 
         kb.row(InlineKeyboardButton(text=label, callback_data=callback))
