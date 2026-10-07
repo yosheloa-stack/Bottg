@@ -10,8 +10,10 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from app import texts
+from app.config import Config
 from app.database import Database
 from app.services.autosystem_likes import AutoSystemLikesApi
+from app.services.ffhub_shop import FFHubShopApi
 from app.services.likes import LikesApi
 from app.utils import clean_game_id
 
@@ -219,3 +221,109 @@ async def cmd_like(
     except Exception:
         await db.release_like_slot(message.from_user.id)
         raise
+
+
+@router.message(Command("like2"))
+async def cmd_like2(
+    message: Message,
+    command: CommandObject,
+    config: Config,
+    ffhub_shop: FFHubShopApi,
+) -> None:
+    """Envio pago de likes pela FFHub Shop. Separado do /like grátis."""
+    if not message.from_user or message.from_user.id not in config.admin_ids:
+        await message.reply(
+            "🔒 <b>O /like2 é um serviço pago.</b>\n"
+            "Este comando fica disponível somente para o dono/admin."
+        )
+        return
+
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.reply("Use assim: <code>/like2 SEU_ID</code>")
+        return
+
+    game_id = clean_game_id(arg.split()[0])
+    if not _valid_like_uid(game_id):
+        await message.reply(
+            "⚠️ ID inválido. Envie somente números, de 8 a 11 dígitos."
+        )
+        return
+
+    if not ffhub_shop.configured:
+        await message.reply(
+            "⚠️ A API paga FFHub ainda não está configurada. "
+            "Adicione <code>FFHUB_API_KEY</code> nas variáveis."
+        )
+        return
+
+    status_msg = await message.reply("💳 Enviando likes pagos...")
+    started_at = time.perf_counter()
+    result = await ffhub_shop.send_paid_likes(game_id)
+    data = result.data if isinstance(result.data, dict) else {}
+
+    if not result.ok:
+        error = (
+            result.error
+            or data.get("erro")
+            or data.get("error")
+            or data.get("mensagem")
+            or data.get("message")
+            or "A FFHub não conseguiu concluir o envio."
+        )
+        logger.warning(
+            "Falha /like2 FFHub uid=%s status=%s error=%s data=%s",
+            game_id,
+            result.status,
+            error,
+            data,
+        )
+        await status_msg.edit_text(
+            f"❌ <b>LIKE2 não enviado</b>\n\n"
+            f"🆔 UID: <code>{game_id}</code>\n"
+            f"⚠️ {html.escape(str(error))}"
+        )
+        return
+
+    nick = (
+        data.get("nickname")
+        or data.get("nick")
+        or data.get("player_name")
+        or "Jogador"
+    )
+    sent = (
+        data.get("likes_enviados")
+        or data.get("likes_sent")
+        or data.get("enviados")
+        or data.get("likes")
+        or "—"
+    )
+    before = data.get("likes_antes") or data.get("likes_before") or data.get("before")
+    after = data.get("likes_depois") or data.get("likes_after") or data.get("after")
+    balance = data.get("balance")
+    if balance is None:
+        balance = data.get("saldo")
+    elapsed = time.perf_counter() - started_at
+
+    lines = [
+        "💎 <b>LIKE2 ENVIADO</b>",
+        "",
+        f"👤 Jogador: <b>{html.escape(str(nick))}</b>",
+        f"🆔 UID: <code>{game_id}</code>",
+    ]
+    if before is not None:
+        lines.append(f"📊 Likes antes: <b>{html.escape(str(before))}</b>")
+    if after is not None:
+        lines.append(f"📈 Likes agora: <b>{html.escape(str(after))}</b>")
+    lines.append(f"❤️ Enviados: <b>+{html.escape(str(sent))}</b>")
+    if balance is not None:
+        lines.append(f"💰 Saldo API: <b>{html.escape(str(balance))}</b>")
+    lines.extend(
+        [
+            f"⚡ Tempo: <b>{elapsed:.2f}s</b>",
+            "",
+            "✅ Envio pago processado pela FFHub.",
+        ]
+    )
+
+    await status_msg.edit_text("\n".join(lines))
