@@ -69,10 +69,15 @@ async def _do_send_like(
             sent = 0
 
         nick = data.get("nickname") or "Jogador"
+        before = data.get("likes_before")
+        after = data.get("likes_after")
+
         await status_msg.edit_text(
             texts.LIKE_SUCCESS.format(
                 game_id=game_id,
                 nick=html.escape(str(nick)),
+                antes=html.escape(str(before)) if before is not None else "—",
+                depois=html.escape(str(after)) if after is not None else "—",
                 enviadas=sent,
             )
         )
