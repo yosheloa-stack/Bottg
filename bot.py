@@ -12,6 +12,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand
 
 from app.config import load_config
 from app.database import Database
@@ -107,6 +108,13 @@ async def main() -> None:
 
     try:
         await bot.delete_webhook(drop_pending_updates=True)
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Abrir menu principal"),
+                BotCommand(command="menu", description="Abrir menu principal"),
+                BotCommand(command="like", description="Enviar likes por ID"),
+            ]
+        )
         me = await bot.get_me()
         logger.info("Bot iniciado como @%s", me.username)
         await dp.start_polling(bot)
