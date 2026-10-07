@@ -113,7 +113,7 @@ def load_config() -> Config:
         bot_token=_get("BOT_TOKEN", required=True),
         admin_ids=_get_int_list("ADMIN_IDS"),
         api_base_url=_get("API_BASE_URL", "https://fluxggx.squareweb.app"),
-        autolike_api_key=_get("AUTOLIKE_API_KEY", required=True),
+        autolike_api_key=_get("AUTOLIKE_API_KEY", ""),
         likes_api_base_url=_get(
             "LIKES_API_BASE_URL", "http://likespainel.squareweb.app"
         ),
@@ -121,7 +121,7 @@ def load_config() -> Config:
         likes_quantity=likes_quantity,
         passe_api_key=_get("PASSE_API_KEY", ""),
         default_region=_get("DEFAULT_REGION", "BR"),
-        mp_access_token=_get("MERCADOPAGO_ACCESS_TOKEN", required=True),
+        mp_access_token=_get("MERCADOPAGO_ACCESS_TOKEN", ""),
         mp_webhook_secret=_get("MERCADOPAGO_WEBHOOK_SECRET", ""),
         webhook_public_url=_get("WEBHOOK_PUBLIC_URL", ""),
         webhook_host=_get("WEBHOOK_HOST", "0.0.0.0"),
