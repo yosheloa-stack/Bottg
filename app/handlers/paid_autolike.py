@@ -23,7 +23,7 @@ async def receive_paid_autolike_uid(
     db: Database,
     config: Config,
 ) -> None:
-    if not message.from_user:
+    if not message.from_user or message.chat.type != "private":
         return
 
     order = await db.get_awaiting_id_order(message.from_user.id)
