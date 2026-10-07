@@ -1,14 +1,18 @@
 """Textos das mensagens do bot (centralizados para fácil edição)."""
 
 WELCOME = (
-    "✨ <b>{shop_name}</b> ✨\n"
-    "<i>Serviços premium para Free Fire</i>\n"
-    "━━━━━━━━━━━━━━━━━━━━\n\n"
-    "Bem-vindo(a)! Aqui a entrega é <b>automática</b> e o pagamento por <b>PIX</b> 💠\n\n"
-    "🎟️ <b>Passe Booyah</b> — direto no seu ID\n"
-    "🔁 <b>Auto-Like</b> — likes diários por 30 dias\n"
-    "🔎 <b>Consulta</b> — dados do jogador\n\n"
-    "👇 <b>Escolha uma opção no menu abaixo</b>"
+    "💚 <b>{shop_name}</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "<b>Serviços Free Fire • Entrega automática</b>\n\n"
+    "🛒 <b>Comprar</b>\n"
+    "Passe Booyah e Auto-Like.\n\n"
+    "🔎 <b>Consultar jogador</b>\n"
+    "Veja os dados de uma conta pelo ID.\n\n"
+    "📦 <b>Meus pedidos</b>\n"
+    "Acompanhe suas compras e entregas.\n\n"
+    "❤️ <b>Enviar likes</b>\n"
+    "Em grupos, use <code>/like ID</code>.\n\n"
+    "👇 Escolha uma opção abaixo:"
 )
 
 STORE_HEADER = (
