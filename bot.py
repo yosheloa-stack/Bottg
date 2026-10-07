@@ -20,7 +20,7 @@ from app.delivery import DeliveryService
 from app.handlers import register_handlers
 from app.services.autolike import AutoLikeApi
 from app.services.autosystem_likes import AutoSystemLikesApi
-from app.services.ffhub_shop import FFHubShopApi
+from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
 from app.services.payments import EfiGateway, PaymentStatus
@@ -106,13 +106,9 @@ async def watch_ffhub_autolikes(
                     continue
 
                 data = result.data if isinstance(result.data, dict) else {}
-                sent = (
-                    data.get("likes_enviados")
-                    or data.get("likes_sent")
-                    or data.get("enviados")
-                    or data.get("likes")
-                    or "—"
-                )
+                parsed_like = parse_like_delivery(data)
+                sent = parsed_like["sent"]
+                sent_display = sent if sent is not None else "—"
                 done = int(updated["sends_done"])
                 total = int(updated["days_total"])
 
@@ -121,7 +117,7 @@ async def watch_ffhub_autolikes(
                         int(updated["user_id"]),
                         "💚 <b>Auto-Like Premium enviado!</b>\n\n"
                         f"🆔 UID: <code>{updated['game_id']}</code>\n"
-                        f"❤️ Likes: <b>+{sent}</b>\n"
+                        f"❤️ Likes: <b>+{sent_display}</b>\n"
                         f"📆 Entrega: <b>{done}/{total}</b>",
                     )
                 except Exception:  # noqa: BLE001
