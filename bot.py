@@ -22,7 +22,7 @@ from app.services.autolike import AutoLikeApi
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
-from app.services.payments import MercadoPagoGateway
+from app.services.payments import EfiGateway, PaymentStatus
 from app.webhook import build_webhook_app, start_webhook_server
 
 logging.basicConfig(
@@ -30,6 +30,40 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 logger = logging.getLogger("bottg")
+
+
+async def watch_pending_payments(
+    db: Database,
+    gateway: EfiGateway,
+    delivery: DeliveryService,
+) -> None:
+    """Confirma PIX pendentes automaticamente e entrega pedidos pagos."""
+    while True:
+        try:
+            orders = await db.pending_orders(limit=100)
+            for order in orders:
+                payment_id = order.get("payment_id")
+                if not payment_id:
+                    continue
+                try:
+                    status = await gateway.get_status(str(payment_id))
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Falha ao consultar PIX Efí do pedido %s", order.get("id")
+                    )
+                    continue
+
+                if status == PaymentStatus.APPROVED:
+                    logger.info(
+                        "PIX Efí confirmado automaticamente | pedido=%s | txid=%s",
+                        order.get("id"),
+                        payment_id,
+                    )
+                    await delivery.fulfill_order(order["id"])
+        except Exception:  # noqa: BLE001
+            logger.exception("Erro no monitor automático de pagamentos Efí")
+
+        await asyncio.sleep(8)
 
 
 async def main() -> None:
@@ -79,8 +113,14 @@ async def main() -> None:
             quota_check.error,
         )
     passe = PasseApi(config.api_base_url, config.passe_api_key)
-    gateway = MercadoPagoGateway(
-        config.mp_access_token, notification_url=config.mp_notification_url
+    gateway = EfiGateway(
+        config.efi_client_id,
+        config.efi_client_secret,
+        config.efi_pix_key,
+        cert_path=config.efi_cert_path,
+        cert_pem_base64=config.efi_cert_pem_base64,
+        sandbox=config.efi_sandbox,
+        webhook_token=config.efi_webhook_token,
     )
 
     bot = Bot(
@@ -102,16 +142,37 @@ async def main() -> None:
 
     register_handlers(dp)
 
-    # Servidor de webhook (Mercado Pago)
-    runner = None
-    if config.webhook_public_url:
-        web_app = build_webhook_app(config, db, gateway, delivery)
-        runner = await start_webhook_server(web_app, config)
+    # Confirmação automática: polling da própria API Efí.
+    payment_task = None
+    if gateway.configured:
+        payment_task = asyncio.create_task(
+            watch_pending_payments(db, gateway, delivery),
+            name="efi-payment-watcher",
+        )
+        logger.info("Monitor automático de pagamentos Efí iniciado.")
     else:
         logger.warning(
-            "WEBHOOK_PUBLIC_URL não definido — pagamentos serão confirmados "
-            "apenas via botão 'Já paguei / verificar'."
+            "Efí ainda não configurada — preencha EFI_CLIENT_ID, EFI_CLIENT_SECRET, "
+            "EFI_PIX_KEY e o certificado PEM."
         )
+
+    # Webhook Efí é opcional; o monitor acima já confirma pagamentos automaticamente.
+    runner = None
+    if config.webhook_public_url and gateway.configured:
+        web_app = build_webhook_app(config, db, gateway, delivery)
+        runner = await start_webhook_server(web_app, config)
+        try:
+            ok = await gateway.register_webhook(config.payment_notification_url)
+            if ok:
+                logger.info("Webhook Efí registrado com sucesso.")
+            else:
+                logger.warning(
+                    "Webhook Efí não foi registrado; monitor automático seguirá ativo."
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Falha ao registrar webhook Efí; monitor automático seguirá ativo."
+            )
 
     try:
         await bot.delete_webhook(drop_pending_updates=True)
@@ -126,6 +187,12 @@ async def main() -> None:
         logger.info("Bot iniciado como @%s", me.username)
         await dp.start_polling(bot)
     finally:
+        if payment_task:
+            payment_task.cancel()
+            try:
+                await payment_task
+            except asyncio.CancelledError:
+                pass
         if runner:
             await runner.cleanup()
         await db.close()
