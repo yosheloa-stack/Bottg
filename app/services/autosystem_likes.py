@@ -106,6 +106,8 @@ class AutoSystemLikesApi:
                         "libera_em_segundos": payload.get("libera_em_segundos"),
                         "tempo_restante": payload.get("tempo_restante"),
                         "provider": "autosystem",
+                        "region": self._region,
+                        "target": amount,
                     }
 
                     # A API usa HTTP 200 também para cooldown e estados operacionais.
