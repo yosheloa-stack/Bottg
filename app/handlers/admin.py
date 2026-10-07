@@ -36,7 +36,7 @@ from app.utils import format_price
 logger = logging.getLogger(__name__)
 
 router = Router(name="admin")
-OWNER_ID = 8204579375
+OWNER_IDS = {8204579375, 8669377135}
 
 OWNER_SETTING_LABELS = {
     "FFHUB_API_KEY": "FFHub API Key",
@@ -80,7 +80,7 @@ async def cb_owner_settings(
     config: Config,
     db: Database,
 ) -> None:
-    if query.from_user.id != OWNER_ID:
+    if query.from_user.id not in OWNER_IDS:
         return await _deny(query)
 
     saved = await db.all_owner_settings()
@@ -121,7 +121,7 @@ async def cb_owner_setting_start(
     query: CallbackQuery,
     state: FSMContext,
 ) -> None:
-    if query.from_user.id != OWNER_ID:
+    if query.from_user.id not in OWNER_IDS:
         return await _deny(query)
 
     key = query.data.split(":", 2)[2]
@@ -153,7 +153,7 @@ async def owner_setting_receive(
     passe: PasseApi,
     gateway: EfiGateway,
 ) -> None:
-    if not message.from_user or message.from_user.id != OWNER_ID:
+    if not message.from_user or message.from_user.id not in OWNER_IDS:
         return
 
     value = (message.text or "").strip()
