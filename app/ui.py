@@ -52,8 +52,8 @@ async def send_menu(
             _banner_file_id = sent.animation.file_id
         elif sent.document:
             _banner_file_id = sent.document.file_id
-    except TelegramBadRequest as exc:
-        logger.warning("Falha ao enviar banner animado (%s); enviando texto", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Falha ao enviar banner/menu (%s); enviando texto", exc)
         await message.answer(text, reply_markup=reply_markup)
 
 
