@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS product_settings (
     price  TEXT,               -- preço em BRL (override do catálogo)
     stock  INTEGER NOT NULL DEFAULT -1  -- -1 = ilimitado; 0 = esgotado
 );
+
+CREATE TABLE IF NOT EXISTS like_cooldowns (
+    user_id       INTEGER PRIMARY KEY,
+    last_sent_at  INTEGER NOT NULL DEFAULT 0,
+    lock_until    INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -86,6 +92,72 @@ class Database:
         async with self.db.execute("SELECT user_id FROM users") as cur:
             rows = await cur.fetchall()
         return [r["user_id"] for r in rows]
+
+    # ----- Likes: limite de 1 envio por usuário a cada 24 horas -----
+    async def acquire_like_slot(self, user_id: int) -> tuple[bool, int]:
+        """Reserva um envio evitando corrida entre comandos simultâneos.
+
+        Retorna (permitido, segundos_restantes). A reserva temporária não
+        consome as 24h; elas só começam após complete_like_slot().
+        """
+        now = int(time.time())
+        cooldown = 24 * 60 * 60
+        lock_seconds = 180
+
+        await self.db.execute("BEGIN IMMEDIATE")
+        try:
+            async with self.db.execute(
+                "SELECT last_sent_at, lock_until FROM like_cooldowns WHERE user_id = ?",
+                (user_id,),
+            ) as cur:
+                row = await cur.fetchone()
+
+            last_sent_at = int(row["last_sent_at"]) if row else 0
+            lock_until = int(row["lock_until"]) if row else 0
+
+            remaining = (last_sent_at + cooldown) - now
+            if remaining > 0:
+                await self.db.commit()
+                return False, remaining
+
+            if lock_until > now:
+                await self.db.commit()
+                return False, max(1, lock_until - now)
+
+            await self.db.execute(
+                """
+                INSERT INTO like_cooldowns (user_id, last_sent_at, lock_until)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET lock_until = excluded.lock_until
+                """,
+                (user_id, last_sent_at, now + lock_seconds),
+            )
+            await self.db.commit()
+            return True, 0
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    async def complete_like_slot(self, user_id: int) -> None:
+        now = int(time.time())
+        await self.db.execute(
+            """
+            INSERT INTO like_cooldowns (user_id, last_sent_at, lock_until)
+            VALUES (?, ?, 0)
+            ON CONFLICT(user_id) DO UPDATE SET
+                last_sent_at = excluded.last_sent_at,
+                lock_until = 0
+            """,
+            (user_id, now),
+        )
+        await self.db.commit()
+
+    async def release_like_slot(self, user_id: int) -> None:
+        await self.db.execute(
+            "UPDATE like_cooldowns SET lock_until = 0 WHERE user_id = ?",
+            (user_id,),
+        )
+        await self.db.commit()
 
     # ----- Orders -----
     async def create_order(
