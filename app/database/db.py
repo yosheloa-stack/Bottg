@@ -60,6 +60,12 @@ CREATE TABLE IF NOT EXISTS ffhub_autolike_subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_ffhub_autolike_due
 ON ffhub_autolike_subscriptions(status, next_send_at);
+
+CREATE TABLE IF NOT EXISTS owner_settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
 """
 
 
@@ -374,6 +380,34 @@ class Database:
             (now + max(60, delay_seconds), result_text, now, subscription_id),
         )
         await self.db.commit()
+
+    # ----- Configurações privadas do dono -----
+    async def get_owner_setting(self, key: str) -> str | None:
+        async with self.db.execute(
+            "SELECT value FROM owner_settings WHERE key = ?", (key,)
+        ) as cur:
+            row = await cur.fetchone()
+        return str(row["value"]) if row else None
+
+    async def set_owner_setting(self, key: str, value: str) -> None:
+        await self.db.execute(
+            """
+            INSERT INTO owner_settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (key, value, int(time.time())),
+        )
+        await self.db.commit()
+
+    async def all_owner_settings(self) -> dict[str, str]:
+        async with self.db.execute(
+            "SELECT key, value FROM owner_settings"
+        ) as cur:
+            rows = await cur.fetchall()
+        return {str(r["key"]): str(r["value"]) for r in rows}
 
     # ----- Product settings (preço / estoque geridos pelo admin) -----
     async def init_product_settings(self, products: dict) -> None:
