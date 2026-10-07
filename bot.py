@@ -67,6 +67,87 @@ async def watch_pending_payments(
         await asyncio.sleep(8)
 
 
+async def watch_ffhub_autolikes(
+    bot: Bot,
+    db: Database,
+    ffhub_shop: FFHubShopApi,
+) -> None:
+    """Executa os envios diários das assinaturas Auto-Like Premium."""
+    while True:
+        try:
+            due = await db.due_ffhub_autolikes(limit=50)
+            for sub in due:
+                sub_id = int(sub["id"])
+                # Reserva antes da chamada remota. Se o processo cair durante o envio,
+                # evita repetir imediatamente e gastar saldo duas vezes.
+                await db.reserve_ffhub_autolike_attempt(sub_id)
+
+                result = await ffhub_shop.send_paid_likes(str(sub["game_id"]))
+                if not result.ok:
+                    logger.warning(
+                        "FFHub Auto-Like falhou | sub=%s uid=%s status=%s error=%s",
+                        sub_id,
+                        sub["game_id"],
+                        result.status,
+                        result.error,
+                    )
+                    await db.retry_ffhub_autolike_later(
+                        sub_id,
+                        result_text=str(result.data or result.error or ""),
+                        delay_seconds=900,
+                    )
+                    continue
+
+                updated = await db.complete_ffhub_autolike_send(
+                    sub_id,
+                    result_text=str(result.data),
+                )
+                if not updated:
+                    continue
+
+                data = result.data if isinstance(result.data, dict) else {}
+                sent = (
+                    data.get("likes_enviados")
+                    or data.get("likes_sent")
+                    or data.get("enviados")
+                    or data.get("likes")
+                    or "—"
+                )
+                done = int(updated["sends_done"])
+                total = int(updated["days_total"])
+
+                try:
+                    await bot.send_message(
+                        int(updated["user_id"]),
+                        "💚 <b>Auto-Like Premium enviado!</b>\n\n"
+                        f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                        f"❤️ Likes: <b>+{sent}</b>\n"
+                        f"📆 Entrega: <b>{done}/{total}</b>",
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Falha ao avisar envio FFHub da assinatura %s", sub_id
+                    )
+
+                if updated["status"] == "completed":
+                    await db.update_order_status(int(updated["order_id"]), "delivered")
+                    try:
+                        await bot.send_message(
+                            int(updated["user_id"]),
+                            "🏁 <b>Plano Auto-Like Premium concluído!</b>\n\n"
+                            f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                            f"✅ Foram concluídas <b>{total} entregas diárias</b>.",
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "Falha ao avisar conclusão FFHub da assinatura %s", sub_id
+                        )
+        except Exception:  # noqa: BLE001
+            logger.exception("Erro no agendador Auto-Like Premium FFHub")
+
+        await asyncio.sleep(10)
+
+
 async def main() -> None:
     config = load_config()
 
@@ -148,6 +229,19 @@ async def main() -> None:
 
     register_handlers(dp)
 
+    # Agendador do Auto-Like Premium FFHub.
+    autolike_task = None
+    if ffhub_shop.configured:
+        autolike_task = asyncio.create_task(
+            watch_ffhub_autolikes(bot, db, ffhub_shop),
+            name="ffhub-autolike-watcher",
+        )
+        logger.info("Agendador Auto-Like Premium FFHub iniciado.")
+    else:
+        logger.warning(
+            "FFHub Shop ainda não configurada — preencha FFHUB_API_KEY."
+        )
+
     # Confirmação automática: polling da própria API Efí.
     payment_task = None
     if gateway.configured:
@@ -194,6 +288,12 @@ async def main() -> None:
         logger.info("Bot iniciado como @%s", me.username)
         await dp.start_polling(bot)
     finally:
+        if autolike_task:
+            autolike_task.cancel()
+            try:
+                await autolike_task
+            except asyncio.CancelledError:
+                pass
         if payment_task:
             payment_task.cancel()
             try:
