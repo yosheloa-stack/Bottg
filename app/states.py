@@ -25,3 +25,7 @@ class AdminPrice(StatesGroup):
 
 class AdminStock(StatesGroup):
     waiting_value = State()
+
+
+class OwnerSetting(StatesGroup):
+    waiting_value = State()
