@@ -239,6 +239,30 @@ async def cmd_like2(
 
     is_owner = message.from_user.id in config.admin_ids
     arg = (command.args or "").strip()
+    anonymous_admin = (
+        message.chat.type in GROUP_TYPES
+        and message.sender_chat is not None
+    )
+
+    # Se foi usado /like2 UID, nunca abre os pacotes.
+    # Em modo "Envio anônimo" o Telegram oculta o ID real do administrador.
+    if arg and not is_owner:
+        if anonymous_admin:
+            await message.reply(
+                "⚠️ <b>Você está enviando como administrador anônimo.</b>\n\n"
+                "O Telegram esconde seu ID real nesse modo, então eu não consigo "
+                "confirmar que você é um dos donos.\n\n"
+                "Desative <b>Envio anônimo</b> nesse grupo e mande novamente:\n"
+                "<code>/like2 SEU_ID</code>\n\n"
+                "Ou use o comando no privado do bot."
+            )
+        else:
+            await message.reply(
+                "🔒 <b>Esse comando direto é exclusivo dos donos.</b>\n\n"
+                f"Seu ID detectado: <code>{message.from_user.id}</code>\n"
+                "Para comprar, use <code>/like2</code> sem informar UID."
+            )
+        return
 
     # Donos usam /like2 UID para envio direto, sem pagamento.
     if is_owner:
