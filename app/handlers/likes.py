@@ -235,11 +235,12 @@ async def cmd_like2(
     await message.answer(
         "💎 <b>AUTO-LIKE PREMIUM</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "Escolha por quantos dias quer receber likes automaticamente.\n\n"
+        "Escolha <b>envio único</b> ou um plano automático.\n\n"
+        "✅ Envio único disponível\n"
+        "✅ Auto-Like de 7, 15 ou 30 dias\n"
         "✅ Pagamento via PIX\n"
         "✅ UID solicitado somente após o pagamento\n"
-        "✅ 1 envio automático por dia\n"
         "✅ Sistema separado do /like grátis\n\n"
-        "👇 Escolha seu plano:",
+        "👇 Escolha uma opção:",
         reply_markup=premium_like_menu(products),
     )
