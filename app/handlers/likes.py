@@ -11,6 +11,7 @@ from aiogram.types import Message
 
 from app import texts
 from app.catalog import resolve_products
+from app.config import Config
 from app.database import Database
 from app.keyboards.inline import premium_like_menu
 from app.services.autosystem_likes import AutoSystemLikesApi
@@ -227,11 +228,9 @@ async def cmd_like(
 async def cmd_like2(
     message: Message,
     db: Database,
+    config: Config,
 ) -> None:
     """Abre os pacotes pagos de Auto-Like Premium."""
-    from app.config import load_config
-
-    config = load_config()
     products = await resolve_products(config, db)
     await message.answer(
         "💎 <b>AUTO-LIKE PREMIUM</b>\n"
