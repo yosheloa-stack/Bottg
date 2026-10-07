@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import logging
+import time
 
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
@@ -31,6 +32,7 @@ async def _do_send_like(
     autosystem_likes_api: AutoSystemLikesApi,
 ) -> None:
     status_msg = await message.reply("⏳ Enviando likes...")
+    started_at = time.perf_counter()
     result = await likes_api.send_like(game_id)
 
     if (
@@ -71,14 +73,20 @@ async def _do_send_like(
         nick = data.get("nickname") or "Jogador"
         before = data.get("likes_before")
         after = data.get("likes_after")
+        region = data.get("region") or "BR"
+        target = data.get("target") or sent
+        elapsed = time.perf_counter() - started_at
 
         await status_msg.edit_text(
             texts.LIKE_SUCCESS.format(
                 game_id=game_id,
                 nick=html.escape(str(nick)),
+                region=html.escape(str(region)),
                 antes=html.escape(str(before)) if before is not None else "—",
                 depois=html.escape(str(after)) if after is not None else "—",
                 enviadas=sent,
+                target=target,
+                tempo=f"{elapsed:.2f}",
             )
         )
         return
