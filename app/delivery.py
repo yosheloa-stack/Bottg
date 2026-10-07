@@ -54,6 +54,25 @@ class DeliveryService:
             await self._notify_failure(order)
             return False
 
+        # Auto-Like Premium: o pagamento libera a etapa de informar o UID.
+        # A entrega diária é feita pelo agendador FFHub, não aqui.
+        if product.delivery == "ffhub_autolike":
+            if order["status"] in {"awaiting_id", "active"}:
+                return True
+            await self.db.update_order_status(order_id, "awaiting_id")
+            try:
+                await self.bot.send_message(
+                    order["user_id"],
+                    texts.PREMIUM_AUTOLIKE_ASK_ID,
+                    reply_markup=back_home(),
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Falha ao solicitar UID do Auto-Like Premium pedido %s",
+                    order_id,
+                )
+            return True
+
         # Marca como pago antes de tentar entregar
         await self.db.update_order_status(order_id, "paid")
 
