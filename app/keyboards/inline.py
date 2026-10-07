@@ -44,6 +44,21 @@ def store_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def premium_like_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for code in ("like2_7d", "like2_15d", "like2_30d"):
+        rp = products.get(code)
+        if not rp:
+            continue
+        if rp.available:
+            label = f"{rp.title}  •  R$ {_price(rp.price)}"
+        else:
+            label = f"{rp.title}  •  ⚠️ Indisponível"
+        kb.row(InlineKeyboardButton(text=label, callback_data=f"buy:{rp.code}"))
+    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
+    return kb.as_markup()
+
+
 def confirm_purchase(product_code: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(
