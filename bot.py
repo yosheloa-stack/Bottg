@@ -38,7 +38,12 @@ async def main() -> None:
     await db.init_product_settings(config.products)
 
     autolike = AutoLikeApi(
-        config.api_base_url, config.autolike_api_key, config.default_region
+        config.api_base_url,
+        config.autolike_api_key,
+        config.default_region,
+        likes_base_url=config.likes_api_base_url,
+        likes_api_key=config.likes_api_key,
+        likes_quantity=config.likes_quantity,
     )
     passe = PasseApi(config.api_base_url, config.passe_api_key)
     gateway = MercadoPagoGateway(
