@@ -104,8 +104,12 @@ async def _do_send_like(
         return
 
     if result.status == 409:
+        cooldown_text = data.get("tempo_restante") or ""
         await status_msg.edit_text(
-            texts.LIKE_ALREADY.format(game_id=game_id, cooldown="")
+            texts.LIKE_ALREADY.format(
+                game_id=game_id,
+                cooldown=(f"⏱ {html.escape(str(cooldown_text))}" if cooldown_text else ""),
+            )
         )
         return
 
@@ -123,12 +127,11 @@ async def _do_send_like(
 
     if result.status == 503:
         await status_msg.edit_text(
-            "⏳ Serviço de likes temporariamente indisponível. "
-            "Tente novamente em instantes."
+            f"⏳ {html.escape(error or 'Serviço de likes temporariamente indisponível. Tente novamente em instantes.')}"
         )
         return
 
-    if error and result.status:
+    if error:
         await status_msg.edit_text(f"❌ {html.escape(error)}")
         return
 
