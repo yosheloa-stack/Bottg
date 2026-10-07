@@ -18,6 +18,7 @@ from app.database import Database
 from app.delivery import DeliveryService
 from app.handlers import register_handlers
 from app.services.autolike import AutoLikeApi
+from app.services.likes import LikesApi
 from app.services.passe import PasseApi
 from app.services.payments import MercadoPagoGateway
 from app.webhook import build_webhook_app, start_webhook_server
@@ -41,9 +42,11 @@ async def main() -> None:
         config.api_base_url,
         config.autolike_api_key,
         config.default_region,
-        likes_base_url=config.likes_api_base_url,
-        likes_api_key=config.likes_api_key,
-        likes_quantity=config.likes_quantity,
+    )
+    likes_api = LikesApi(
+        config.likes_api_base_url,
+        config.likes_api_key,
+        config.likes_quantity,
     )
     passe = PasseApi(config.api_base_url, config.passe_api_key)
     gateway = MercadoPagoGateway(
@@ -61,6 +64,7 @@ async def main() -> None:
     dp["config"] = config
     dp["db"] = db
     dp["autolike"] = autolike
+    dp["likes_api"] = likes_api
     dp["passe"] = passe
     dp["gateway"] = gateway
     dp["delivery"] = delivery
