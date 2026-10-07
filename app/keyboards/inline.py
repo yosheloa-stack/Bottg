@@ -47,17 +47,54 @@ def store_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def premium_like_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
+def premium_like_menu(
+    products: dict[str, ResolvedProduct],
+    *,
+    is_owner: bool = False,
+    ffhub_configured: bool = False,
+) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+
+    if is_owner and not ffhub_configured:
+        kb.row(
+            InlineKeyboardButton(
+                text="🔑 Configurar FFHub API",
+                callback_data="owner:set:FFHUB_API_KEY",
+            )
+        )
+
     for code in ("like2_single", "like2_7d", "like2_15d", "like2_30d"):
         rp = products.get(code)
         if not rp:
             continue
+
+        if rp.price <= 0:
+            if is_owner:
+                kb.row(
+                    InlineKeyboardButton(
+                        text=f"💰 {rp.title} • Definir preço",
+                        callback_data=f"admprod:{rp.code}",
+                    )
+                )
+            continue
+
         if rp.available:
-            label = f"{rp.title}  •  R$ {_price(rp.price)}"
-        else:
-            label = f"{rp.title}  •  ⚠️ Indisponível"
-        kb.row(InlineKeyboardButton(text=label, callback_data=f"buy:{rp.code}"))
+            kb.row(
+                InlineKeyboardButton(
+                    text=f"{rp.title}  •  R$ {_price(rp.price)}",
+                    callback_data=f"buy:{rp.code}",
+                )
+            )
+            continue
+
+        if is_owner:
+            kb.row(
+                InlineKeyboardButton(
+                    text=f"⚙️ {rp.title} • Configurar",
+                    callback_data=f"admprod:{rp.code}",
+                )
+            )
+
     kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
     return kb.as_markup()
 
