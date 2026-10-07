@@ -42,6 +42,24 @@ CREATE TABLE IF NOT EXISTS like_cooldowns (
     last_sent_at  INTEGER NOT NULL DEFAULT 0,
     lock_until    INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS ffhub_autolike_subscriptions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id      INTEGER NOT NULL UNIQUE,
+    user_id       INTEGER NOT NULL,
+    game_id       TEXT NOT NULL,
+    days_total    INTEGER NOT NULL,
+    sends_done    INTEGER NOT NULL DEFAULT 0,
+    next_send_at  INTEGER NOT NULL,
+    last_sent_at  INTEGER,
+    status        TEXT NOT NULL DEFAULT 'active',
+    last_result   TEXT,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ffhub_autolike_due
+ON ffhub_autolike_subscriptions(status, next_send_at);
 """
 
 
@@ -211,6 +229,23 @@ class Database:
             row = await cur.fetchone()
         return dict(row) if row else None
 
+    async def set_order_game_id(self, order_id: int, game_id: str) -> None:
+        await self.db.execute(
+            "UPDATE orders SET game_id = ?, updated_at = ? WHERE id = ?",
+            (game_id, int(time.time()), order_id),
+        )
+        await self.db.commit()
+
+    async def get_awaiting_id_order(self, user_id: int) -> Optional[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM orders "
+            "WHERE user_id = ? AND status = 'awaiting_id' "
+            "ORDER BY id ASC LIMIT 1",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
     async def count_orders(self, status: str | None = None) -> int:
         if status:
             query = "SELECT COUNT(*) AS c FROM orders WHERE status = ?"
@@ -238,6 +273,107 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
+
+    # ----- Auto-Like Premium FFHub -----
+    async def create_ffhub_autolike_subscription(
+        self,
+        order_id: int,
+        user_id: int,
+        game_id: str,
+        days_total: int,
+    ) -> int:
+        now = int(time.time())
+        cur = await self.db.execute(
+            """
+            INSERT OR IGNORE INTO ffhub_autolike_subscriptions
+                (order_id, user_id, game_id, days_total, sends_done,
+                 next_send_at, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, ?, 'active', ?, ?)
+            """,
+            (order_id, user_id, game_id, days_total, now, now, now),
+        )
+        await self.db.commit()
+        if cur.lastrowid:
+            return int(cur.lastrowid)
+        async with self.db.execute(
+            "SELECT id FROM ffhub_autolike_subscriptions WHERE order_id = ?",
+            (order_id,),
+        ) as existing:
+            row = await existing.fetchone()
+        return int(row["id"]) if row else 0
+
+    async def due_ffhub_autolikes(self, limit: int = 50) -> list[dict[str, Any]]:
+        now = int(time.time())
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_subscriptions "
+            "WHERE status = 'active' AND next_send_at <= ? "
+            "ORDER BY next_send_at ASC LIMIT ?",
+            (now, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def reserve_ffhub_autolike_attempt(self, subscription_id: int) -> None:
+        now = int(time.time())
+        await self.db.execute(
+            "UPDATE ffhub_autolike_subscriptions "
+            "SET next_send_at = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'active'",
+            (now + 86400, now, subscription_id),
+        )
+        await self.db.commit()
+
+    async def complete_ffhub_autolike_send(
+        self, subscription_id: int, result_text: str = ""
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_subscriptions WHERE id = ?",
+            (subscription_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return None
+
+        sends_done = int(row["sends_done"]) + 1
+        days_total = int(row["days_total"])
+        status = "completed" if sends_done >= days_total else "active"
+        next_send_at = 0 if status == "completed" else now + 86400
+
+        await self.db.execute(
+            "UPDATE ffhub_autolike_subscriptions "
+            "SET sends_done = ?, last_sent_at = ?, next_send_at = ?, "
+            "status = ?, last_result = ?, updated_at = ? WHERE id = ?",
+            (
+                sends_done,
+                now,
+                next_send_at,
+                status,
+                result_text,
+                now,
+                subscription_id,
+            ),
+        )
+        await self.db.commit()
+
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_subscriptions WHERE id = ?",
+            (subscription_id,),
+        ) as cur:
+            updated = await cur.fetchone()
+        return dict(updated) if updated else None
+
+    async def retry_ffhub_autolike_later(
+        self, subscription_id: int, result_text: str = "", delay_seconds: int = 900
+    ) -> None:
+        now = int(time.time())
+        await self.db.execute(
+            "UPDATE ffhub_autolike_subscriptions "
+            "SET next_send_at = ?, last_result = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'active'",
+            (now + max(60, delay_seconds), result_text, now, subscription_id),
+        )
+        await self.db.commit()
 
     # ----- Product settings (preço / estoque geridos pelo admin) -----
     async def init_product_settings(self, products: dict) -> None:
