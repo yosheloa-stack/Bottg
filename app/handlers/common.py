@@ -29,13 +29,6 @@ async def cmd_start(message: Message, state: FSMContext, db: Database, config: C
         message.from_user.username,
         message.from_user.first_name,
     )
-    # Em grupos, /start não abre o menu (o menu é experiência de privado)
-    if message.chat.type != "private":
-        await message.reply(
-            "👋 Use <code>/like SEU_ID</code> para enviar likes.\n"
-            "Para comprar Passe e Auto-Like, me chame no privado."
-        )
-        return
     await send_menu(
         message,
         config.menu_banner,
@@ -47,8 +40,6 @@ async def cmd_start(message: Message, state: FSMContext, db: Database, config: C
 @router.message(Command("menu"))
 async def cmd_menu(message: Message, state: FSMContext, config: Config) -> None:
     await state.clear()
-    if message.chat.type != "private":
-        return
     await send_menu(
         message,
         config.menu_banner,
