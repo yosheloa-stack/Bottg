@@ -40,6 +40,13 @@ async def main() -> None:
     await db.connect()
     await db.init_product_settings(config.products)
 
+    # Migração do preço antigo do Passe Booyah.
+    # Só troca o valor legado de 19.90; preços personalizados pelo admin são preservados.
+    passe_setting = await db.get_product_setting("passe")
+    if passe_setting and str(passe_setting.get("price")) == "19.90":
+        await db.set_price("passe", "4.00")
+        logger.info("Preço do Passe Booyah migrado de R$ 19,90 para R$ 4,00.")
+
     autolike = AutoLikeApi(
         config.api_base_url,
         config.autolike_api_key,
