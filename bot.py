@@ -281,7 +281,7 @@ async def main() -> None:
                 BotCommand(command="start", description="Abrir menu principal"),
                 BotCommand(command="menu", description="Abrir menu principal"),
                 BotCommand(command="like", description="Enviar likes grátis por ID"),
-                BotCommand(command="like2", description="Enviar likes pagos"),
+                BotCommand(command="like2", description="Auto-Like Premium 7/15/30 dias"),
             ]
         )
         me = await bot.get_me()
