@@ -1,7 +1,7 @@
 # 🤖 Bottg — Bot de Vendas Telegram (Free Fire)
 
 Bot de Telegram **multifunções** para serviços de Free Fire, com botões
-profissionais, integração com a **Auto Like System API** / **Passe Booyah API**
+profissionais, integração com a **Likes Painel API**, **Auto Like System API** / **Passe Booyah API**
 e pagamento automático via **PIX (Mercado Pago)**.
 
 ## ✨ Funcionalidades
@@ -46,7 +46,7 @@ app/
 ├── database/             # SQLite assíncrono (usuários e pedidos)
 ├── keyboards/            # Teclados inline (botões)
 ├── services/
-│   ├── autolike.py       # Cliente Auto Like System API
+│   ├── autolike.py       # Likes Painel + integrações antigas de Auto Like
 │   ├── passe.py          # Cliente Passe Booyah API
 │   └── payments/         # Gateway de pagamento (interface + Mercado Pago)
 └── handlers/             # Handlers: comum, likes, info, loja, admin
@@ -83,7 +83,10 @@ Principais variáveis (veja `.env.example` para a lista completa):
 
 - `BOT_TOKEN` — token do Telegram
 - `ADMIN_IDS` — seu ID numérico (para o painel admin)
-- `AUTOLIKE_API_KEY` / `PASSE_API_KEY` — keys das APIs
+- `LIKES_API_KEY` — Key da Likes Painel API (`X-API-Key`)
+- `LIKES_API_BASE_URL` — base da API de likes (`http://likespainel.squareweb.app`)
+- `LIKES_QUANTITY` — quantidade solicitada pelo comando `/like` (1–200; padrão 100)
+- `AUTOLIKE_API_KEY` / `PASSE_API_KEY` — keys das integrações de consulta/Auto-Like e Passe
 - `MERCADOPAGO_ACCESS_TOKEN` — token do Mercado Pago
 - `WEBHOOK_PUBLIC_URL` — URL pública que recebe o webhook do MP
 - `PRICE_PASSE` / `PRICE_AUTOLIKE_30D` — preços
