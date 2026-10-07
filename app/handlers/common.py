@@ -75,15 +75,7 @@ async def cb_autolike_store(
     products = await resolve_products(config, db)
     await edit_screen(
         query,
-        "💎 <b>AUTO LIKE 500/1000</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
-        "na sua conta do Free Fire.\n\n"
-        "✅ 1 envio automático por dia\n"
-        "✅ Ativação após confirmação do PIX\n"
-        "✅ O bot solicita seu UID após o pagamento\n"
-        "✅ Primeiro envio entra na fila logo após a ativação\n\n"
-        "📆 <b>Escolha a duração do plano:</b>",
+        texts.AUTOLIKE_STORE,
         autolike_plans_menu(products),
     )
     await query.answer()
