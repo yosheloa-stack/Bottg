@@ -117,9 +117,9 @@ LIKE_SUCCESS = (
 )
 
 LIKE_ALREADY = (
-    "⏳ <b>Este ID já recebeu likes hoje.</b>\n\n"
+    "⏳ <b>Este jogador não pode receber mais likes no momento.</b>\n\n"
     "🎮 ID: <code>{game_id}</code>\n"
-    "Tente novamente após o período de 24h.\n{cooldown}"
+    "O perfil atingiu o limite atual. Tente novamente após o próximo reset.\n{cooldown}"
 )
 
 LIKE_NOT_FOUND = "❌ Jogador não encontrado. Verifique o ID e tente novamente."
