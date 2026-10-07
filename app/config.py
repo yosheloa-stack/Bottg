@@ -80,7 +80,7 @@ class Config:
 
 
 def load_config() -> Config:
-    price_passe = Decimal(_get("PRICE_PASSE", "19.90"))
+    price_passe = Decimal(_get("PRICE_PASSE", "4.00"))
     price_autolike = Decimal(_get("PRICE_AUTOLIKE_30D", "14.90"))
 
     likes_quantity = int(_get("LIKES_QUANTITY", "100"))
