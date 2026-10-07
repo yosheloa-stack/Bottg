@@ -109,11 +109,14 @@ DELIVERY_FAILED = (
 )
 
 LIKE_SUCCESS = (
-    "❤️ <b>Likes enviados com sucesso!</b>\n"
-    "━━━━━━━━━━━━━━━━━━━━\n"
-    "🎮 ID: <code>{game_id}</code>\n"
-    "👤 {nick}\n"
-    "➕ Likes enviados: <b>{enviadas}</b>"
+    "╭─── ❤️ <b>LIKES ENVIADOS</b> ───╮\n"
+    "│ 👤 Nick: <b>{nick}</b>\n"
+    "│ 🎮 ID: <code>{game_id}</code>\n"
+    "│\n"
+    "│ 📊 Antes: <b>{antes}</b>\n"
+    "│ 📈 Depois: <b>{depois}</b>\n"
+    "│ ➕ Enviados: <b>{enviadas}</b>\n"
+    "╰────────────────────╯"
 )
 
 LIKE_ALREADY = (
