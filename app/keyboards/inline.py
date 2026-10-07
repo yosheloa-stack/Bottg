@@ -23,7 +23,8 @@ def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❤️ Como enviar likes", callback_data="menu:like_info"),
     )
     kb.row(
-        InlineKeyboardButton(text="🆘 Suporte", callback_data="menu:support")
+        InlineKeyboardButton(text="🆔 Meu ID", callback_data="menu:my_id"),
+        InlineKeyboardButton(text="🆘 Suporte", callback_data="menu:support"),
     )
     if is_admin:
         kb.row(
@@ -106,6 +107,12 @@ def admin_panel() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📦 Estoque API", callback_data="admin:estoque"),
     )
     kb.row(InlineKeyboardButton(text="📢 Broadcast", callback_data="admin:broadcast"))
+    kb.row(
+        InlineKeyboardButton(
+            text="🔐 Configurações do dono",
+            callback_data="owner:settings",
+        )
+    )
     kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
     return kb.as_markup()
 
@@ -131,4 +138,27 @@ def admin_product_edit(code: str) -> InlineKeyboardMarkup:
     )
     kb.row(InlineKeyboardButton(text="♾️ Estoque ilimitado", callback_data=f"admunlim:{code}"))
     kb.row(InlineKeyboardButton(text="⬅️ Voltar", callback_data="admin:products"))
+    return kb.as_markup()
+
+
+def owner_settings_panel() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        InlineKeyboardButton(text="💎 FFHub API Key", callback_data="owner:set:FFHUB_API_KEY")
+    )
+    kb.row(
+        InlineKeyboardButton(text="❤️ Likes API Key", callback_data="owner:set:LIKES_API_KEY"),
+        InlineKeyboardButton(text="🔁 AutoSystem Key", callback_data="owner:set:AUTOSYSTEM_API_KEY"),
+    )
+    kb.row(
+        InlineKeyboardButton(text="🎟️ Passe API Key", callback_data="owner:set:PASSE_API_KEY")
+    )
+    kb.row(
+        InlineKeyboardButton(text="🏦 Efí Client ID", callback_data="owner:set:EFI_CLIENT_ID"),
+        InlineKeyboardButton(text="🔑 Efí Secret", callback_data="owner:set:EFI_CLIENT_SECRET"),
+    )
+    kb.row(
+        InlineKeyboardButton(text="💠 Efí Chave PIX", callback_data="owner:set:EFI_PIX_KEY")
+    )
+    kb.row(InlineKeyboardButton(text="⬅️ Painel Admin", callback_data="admin:panel"))
     return kb.as_markup()
