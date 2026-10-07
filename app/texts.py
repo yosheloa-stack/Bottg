@@ -180,3 +180,32 @@ PREMIUM_AUTOLIKE_ACTIVATED = (
     "❤️ Frequência: <b>1 envio por dia</b>\n\n"
     "⚡ O primeiro envio será processado em instantes."
 )
+
+
+LIKE2_SINGLE_CONFIRM = (
+    "💎 <b>Like2 • Envio único</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "❤️ 1 envio pago pela FFHub\n"
+    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "Após o PIX ser confirmado, eu vou pedir o <b>UID</b> da conta.\n"
+    "Depois disso, o envio é feito automaticamente.\n\n"
+    "Deseja continuar?"
+)
+
+LIKE2_SINGLE_PIX = (
+    "💠 <b>PIX gerado com sucesso!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "📦 Like2 • Envio único\n"
+    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "1️⃣ Faça o pagamento pelo PIX abaixo\n"
+    "2️⃣ A confirmação é automática\n"
+    "3️⃣ Depois do pagamento eu vou pedir o seu UID\n\n"
+    "<code>{qr_code}</code>\n\n"
+    "⏳ <i>Aguardando confirmação do pagamento...</i>"
+)
+
+LIKE2_SINGLE_ASK_ID = (
+    "✅ <b>Pagamento confirmado!</b>\n\n"
+    "💎 Seu envio Like2 está liberado.\n"
+    "Agora envie somente o <b>UID</b> da conta que vai receber os likes."
+)
