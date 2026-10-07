@@ -10,6 +10,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from app import texts
+from app.database import Database
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.likes import LikesApi
 from app.utils import clean_game_id
@@ -30,6 +31,7 @@ async def _do_send_like(
     game_id: str,
     likes_api: LikesApi,
     autosystem_likes_api: AutoSystemLikesApi,
+    db: Database,
 ) -> None:
     status_msg = await message.reply("⏳ Enviando likes...")
     started_at = time.perf_counter()
@@ -70,6 +72,16 @@ async def _do_send_like(
         if sent is None:
             sent = 0
 
+        try:
+            sent_int = int(sent)
+        except (TypeError, ValueError):
+            sent_int = 0
+
+        if sent_int > 0:
+            await db.complete_like_slot(message.from_user.id)
+        else:
+            await db.release_like_slot(message.from_user.id)
+
         nick = data.get("nickname") or "Jogador"
         before = data.get("likes_before")
         after = data.get("likes_after")
@@ -90,6 +102,8 @@ async def _do_send_like(
             )
         )
         return
+
+    await db.release_like_slot(message.from_user.id)
 
     logger.warning(
         "Falha no envio de likes uid=%s status=%s error=%s data=%s",
@@ -157,6 +171,7 @@ async def cmd_like(
     command: CommandObject,
     likes_api: LikesApi,
     autosystem_likes_api: AutoSystemLikesApi,
+    db: Database,
 ) -> None:
     # Bloqueia no privado — likes só em grupos
     if message.chat.type not in GROUP_TYPES:
@@ -175,4 +190,32 @@ async def cmd_like(
         )
         return
 
-    await _do_send_like(message, game_id, likes_api, autosystem_likes_api)
+    allowed, remaining = await db.acquire_like_slot(message.from_user.id)
+    if not allowed:
+        hours, rem = divmod(max(0, remaining), 3600)
+        minutes, seconds = divmod(rem, 60)
+        if hours > 0:
+            wait_text = f"{hours}h {minutes}min"
+        elif minutes > 0:
+            wait_text = f"{minutes}min {seconds}s"
+        else:
+            wait_text = f"{seconds}s"
+
+        await message.reply(
+            "⏳ <b>Limite de envio atingido.</b>\n\n"
+            "Cada pessoa pode fazer <b>1 envio de likes a cada 24 horas</b>.\n"
+            f"Você poderá usar novamente em <b>{wait_text}</b>."
+        )
+        return
+
+    try:
+        await _do_send_like(
+            message,
+            game_id,
+            likes_api,
+            autosystem_likes_api,
+            db,
+        )
+    except Exception:
+        await db.release_like_slot(message.from_user.id)
+        raise
