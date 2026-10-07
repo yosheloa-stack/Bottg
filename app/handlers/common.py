@@ -72,6 +72,26 @@ async def cb_like_info(query: CallbackQuery) -> None:
     await query.answer()
 
 
+@router.callback_query(F.data == "menu:my_id")
+async def cb_my_id(query: CallbackQuery) -> None:
+    await edit_screen(
+        query,
+        "🆔 <b>Seu ID do Telegram</b>\n\n"
+        f"<code>{query.from_user.id}</code>\n\n"
+        "Toque e segure no número para copiar.",
+        back_home(),
+    )
+    await query.answer()
+
+
+@router.message(Command("id", "meuid"))
+async def cmd_my_id(message: Message) -> None:
+    await message.reply(
+        "🆔 <b>Seu ID do Telegram</b>\n\n"
+        f"<code>{message.from_user.id}</code>"
+    )
+
+
 @router.callback_query(F.data == "menu:support")
 async def cb_support(query: CallbackQuery, config: Config) -> None:
     await edit_screen(
