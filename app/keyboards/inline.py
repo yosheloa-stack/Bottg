@@ -35,6 +35,8 @@ def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
 def store_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for rp in products.values():
+        if rp.price <= 0:
+            continue
         if rp.available:
             label = f"{rp.title}  •  R$ {_price(rp.price)}"
         else:
