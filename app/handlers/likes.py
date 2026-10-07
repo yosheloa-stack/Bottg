@@ -232,15 +232,37 @@ async def cmd_like2(
 ) -> None:
     """Abre os pacotes pagos de Auto-Like Premium."""
     products = await resolve_products(config, db)
+    is_owner = message.from_user.id in config.admin_ids
+    ffhub_private_key = await db.get_owner_setting("FFHUB_API_KEY")
+    ffhub_configured = bool(ffhub_private_key or config.ffhub_api_key)
+
+    setup_notes = []
+    if is_owner:
+        if not ffhub_configured:
+            setup_notes.append("🔑 Falta configurar a <b>FFHub API Key</b>.")
+        without_price = [rp for rp in products.values() if rp.code.startswith("like2_") and rp.price <= 0]
+        if without_price:
+            setup_notes.append(
+                f"💰 Falta definir preço em <b>{len(without_price)} produto(s)</b>."
+            )
+
+    setup_text = ""
+    if setup_notes:
+        setup_text = "\n\n⚙️ <b>Configuração do dono</b>\n" + "\n".join(setup_notes)
+
     await message.answer(
-        "💎 <b>AUTO-LIKE PREMIUM</b>\n"
+        "💎 <b>LIKE2 PREMIUM</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "Escolha <b>envio único</b> ou um plano automático.\n\n"
-        "✅ Envio único disponível\n"
+        "✅ Envio único\n"
         "✅ Auto-Like de 7, 15 ou 30 dias\n"
         "✅ Pagamento via PIX\n"
-        "✅ UID solicitado somente após o pagamento\n"
-        "✅ Sistema separado do /like grátis\n\n"
+        "✅ UID solicitado somente após o pagamento"
+        f"{setup_text}\n\n"
         "👇 Escolha uma opção:",
-        reply_markup=premium_like_menu(products),
+        reply_markup=premium_like_menu(
+            products,
+            is_owner=is_owner,
+            ffhub_configured=ffhub_configured,
+        ),
     )
