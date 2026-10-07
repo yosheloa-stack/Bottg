@@ -139,3 +139,44 @@ GENERIC_ERROR = (
 )
 
 CANCELLED = "❌ Operação cancelada. Use /start para voltar ao menu."
+
+
+PREMIUM_AUTOLIKE_CONFIRM = (
+    "💎 <b>{title}</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "⏱ Duração: <b>{days} dias</b>\n"
+    "❤️ Envio automático: <b>1 vez por dia</b>\n"
+    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "Após o PIX ser confirmado, eu vou pedir o <b>UID</b> da conta.\n"
+    "O primeiro envio começa logo após a ativação.\n\n"
+    "Deseja continuar?"
+)
+
+PREMIUM_AUTOLIKE_PIX = (
+    "💠 <b>PIX gerado com sucesso!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "📦 {title}\n"
+    "⏱ Plano: <b>{days} dias</b>\n"
+    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "1️⃣ Faça o pagamento pelo PIX abaixo\n"
+    "2️⃣ A confirmação é automática\n"
+    "3️⃣ Depois do pagamento eu vou pedir o seu UID\n\n"
+    "<code>{qr_code}</code>\n\n"
+    "⏳ <i>Aguardando confirmação do pagamento...</i>"
+)
+
+PREMIUM_AUTOLIKE_ASK_ID = (
+    "✅ <b>Pagamento confirmado!</b>\n\n"
+    "💎 Seu plano de Auto-Like Premium está liberado.\n"
+    "Agora envie somente o <b>UID</b> da conta que vai receber os likes.\n\n"
+    "Assim que eu receber o UID, o primeiro envio entra na fila automaticamente."
+)
+
+PREMIUM_AUTOLIKE_ACTIVATED = (
+    "💚 <b>Auto-Like Premium ativado!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "🆔 UID: <code>{game_id}</code>\n"
+    "📆 Plano: <b>{days} dias</b>\n"
+    "❤️ Frequência: <b>1 envio por dia</b>\n\n"
+    "⚡ O primeiro envio será processado em instantes."
+)
