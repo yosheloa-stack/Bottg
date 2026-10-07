@@ -49,6 +49,8 @@ class Config:
     likes_api_base_url: str
     likes_api_key: str
     likes_quantity: int
+    autosystem_base_url: str
+    autosystem_api_key: str
     passe_api_key: str
     default_region: str
 
@@ -119,6 +121,10 @@ def load_config() -> Config:
         ),
         likes_api_key=_get("LIKES_API_KEY", required=True),
         likes_quantity=likes_quantity,
+        autosystem_base_url=_get(
+            "AUTOSYSTEM_BASE_URL", "https://autolikesystem.com.br"
+        ),
+        autosystem_api_key=_get("AUTOSYSTEM_API_KEY", ""),
         passe_api_key=_get("PASSE_API_KEY", ""),
         default_region=_get("DEFAULT_REGION", "BR"),
         mp_access_token=_get("MERCADOPAGO_ACCESS_TOKEN", ""),
