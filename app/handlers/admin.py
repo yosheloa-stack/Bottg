@@ -21,15 +21,32 @@ from app.keyboards.inline import (
     admin_product_edit,
     admin_products,
     back_home,
+    owner_settings_panel,
 )
+from app.services.autolike import AutoLikeApi
+from app.services.autosystem_likes import AutoSystemLikesApi
+from app.services.ffhub_shop import FFHubShopApi
+from app.services.likes import LikesApi
 from app.services.passe import PasseApi
-from app.states import AdminBroadcast, AdminPrice, AdminStock
+from app.services.payments import EfiGateway
+from app.states import AdminBroadcast, AdminPrice, AdminStock, OwnerSetting
 from app.ui import edit_screen
 from app.utils import format_price
 
 logger = logging.getLogger(__name__)
 
 router = Router(name="admin")
+OWNER_ID = 8204579375
+
+OWNER_SETTING_LABELS = {
+    "FFHUB_API_KEY": "FFHub API Key",
+    "LIKES_API_KEY": "Likes API Key",
+    "AUTOSYSTEM_API_KEY": "AutoSystem API Key",
+    "PASSE_API_KEY": "Passe API Key",
+    "EFI_CLIENT_ID": "Efí Client ID",
+    "EFI_CLIENT_SECRET": "Efí Client Secret",
+    "EFI_PIX_KEY": "Efí Chave PIX",
+}
 
 
 def _is_admin(user_id: int, config: Config) -> bool:
@@ -54,6 +71,132 @@ async def cb_panel(query: CallbackQuery, config: Config) -> None:
         return await _deny(query)
     await edit_screen(query, "⚙️ <b>Painel Admin</b>", admin_panel())
     await query.answer()
+
+
+# ---------- Configurações privadas do dono ----------
+@router.callback_query(F.data == "owner:settings")
+async def cb_owner_settings(
+    query: CallbackQuery,
+    config: Config,
+    db: Database,
+) -> None:
+    if query.from_user.id != OWNER_ID:
+        return await _deny(query)
+
+    saved = await db.all_owner_settings()
+    fallbacks = {
+        "FFHUB_API_KEY": config.ffhub_api_key,
+        "LIKES_API_KEY": config.likes_api_key,
+        "AUTOSYSTEM_API_KEY": config.autosystem_api_key,
+        "PASSE_API_KEY": config.passe_api_key,
+        "EFI_CLIENT_ID": config.efi_client_id,
+        "EFI_CLIENT_SECRET": config.efi_client_secret,
+        "EFI_PIX_KEY": config.efi_pix_key,
+    }
+
+    lines = [
+        "🔐 <b>Configurações privadas do dono</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "Os valores ficam salvos no banco e nunca são exibidos aqui.",
+        "",
+    ]
+    for key, label in OWNER_SETTING_LABELS.items():
+        configured = bool((saved.get(key) or fallbacks.get(key) or "").strip())
+        lines.append(f"{'✅' if configured else '❌'} {label}")
+
+    lines.extend(
+        [
+            "",
+            "💰 Os preços dos planos são alterados em <b>Gerenciar produtos</b>.",
+            "👇 Escolha o que deseja configurar:",
+        ]
+    )
+
+    await edit_screen(query, "\n".join(lines), owner_settings_panel())
+    await query.answer()
+
+
+@router.callback_query(F.data.startswith("owner:set:"))
+async def cb_owner_setting_start(
+    query: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    if query.from_user.id != OWNER_ID:
+        return await _deny(query)
+
+    key = query.data.split(":", 2)[2]
+    label = OWNER_SETTING_LABELS.get(key)
+    if not label:
+        return await query.answer("Configuração inválida.", show_alert=True)
+
+    await state.set_state(OwnerSetting.waiting_value)
+    await state.update_data(owner_setting_key=key)
+    await edit_screen(
+        query,
+        f"🔐 <b>{label}</b>\n\n"
+        "Envie o novo valor em uma mensagem.\n"
+        "Ele será salvo de forma privada no banco do bot.\n\n"
+        "Use /cancel para cancelar.",
+        back_home(),
+    )
+    await query.answer()
+
+
+@router.message(OwnerSetting.waiting_value)
+async def owner_setting_receive(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    likes_api: LikesApi,
+    autosystem_likes_api: AutoSystemLikesApi,
+    ffhub_shop: FFHubShopApi,
+    passe: PasseApi,
+    gateway: EfiGateway,
+) -> None:
+    if not message.from_user or message.from_user.id != OWNER_ID:
+        return
+
+    value = (message.text or "").strip()
+    if not value:
+        await message.answer("⚠️ Valor vazio. Envie a configuração correta.")
+        return
+
+    data = await state.get_data()
+    key = str(data.get("owner_setting_key") or "")
+    label = OWNER_SETTING_LABELS.get(key)
+    if not label:
+        await state.clear()
+        await message.answer("⚠️ Configuração inválida.")
+        return
+
+    await db.set_owner_setting(key, value)
+
+    # Aplica imediatamente nas instâncias que já estão rodando.
+    if key == "FFHUB_API_KEY":
+        ffhub_shop._key = value
+    elif key == "LIKES_API_KEY":
+        likes_api._key = value
+    elif key == "AUTOSYSTEM_API_KEY":
+        autosystem_likes_api._key = value
+    elif key == "PASSE_API_KEY":
+        passe._key = value
+    elif key == "EFI_CLIENT_ID":
+        gateway._client_id = value
+        gateway._token = None
+        gateway._token_until = 0.0
+    elif key == "EFI_CLIENT_SECRET":
+        gateway._client_secret = value
+        gateway._token = None
+        gateway._token_until = 0.0
+    elif key == "EFI_PIX_KEY":
+        gateway._pix_key = value
+
+    await state.clear()
+    await message.answer(
+        f"✅ <b>{label}</b> atualizado e salvo.\n"
+        "O valor não será mostrado por segurança.",
+        reply_markup=owner_settings_panel(),
+    )
 
 
 # ---------- Gerenciar produtos ----------
