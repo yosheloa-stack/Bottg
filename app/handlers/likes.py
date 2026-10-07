@@ -1,6 +1,7 @@
 """Handler de envio de likes. Funciona SOMENTE em grupos (via /like)."""
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import time
@@ -292,8 +293,31 @@ async def cmd_like2(
 
         status_msg = await message.reply("💎 Enviando Like2...")
         started_at = time.perf_counter()
+        logger.info(
+            "LIKE2 inicio | owner=%s uid=%s",
+            message.from_user.id,
+            game_id,
+        )
         try:
-            result = await ffhub_shop.send_paid_likes(game_id)
+            result = await asyncio.wait_for(
+                ffhub_shop.send_paid_likes(game_id),
+                timeout=60,
+            )
+        except asyncio.TimeoutError:
+            elapsed = time.perf_counter() - started_at
+            logger.error(
+                "LIKE2 timeout externo | owner=%s uid=%s elapsed=%.2fs",
+                message.from_user.id,
+                game_id,
+                elapsed,
+            )
+            await status_msg.edit_text(
+                "⏱️ <b>LIKE2 sem resposta da FFHub</b>\n\n"
+                f"🆔 UID: <code>{game_id}</code>\n"
+                "A API não respondeu em até <b>60 segundos</b>.\n\n"
+                "⚠️ Não vou repetir automaticamente para evitar gastar saldo/enviar duas vezes."
+            )
+            return
         except Exception as exc:  # noqa: BLE001
             logger.exception("Erro inesperado no /like2 uid=%s", game_id)
             await status_msg.edit_text(
@@ -302,6 +326,15 @@ async def cmd_like2(
                 f"⚠️ {html.escape(str(exc) or 'Falha inesperada ao chamar a FFHub.')}"
             )
             return
+
+        logger.info(
+            "LIKE2 fim | owner=%s uid=%s status=%s ok=%s elapsed=%.2fs",
+            message.from_user.id,
+            game_id,
+            result.status,
+            result.ok,
+            time.perf_counter() - started_at,
+        )
 
         data = result.data if isinstance(result.data, dict) else {}
 
