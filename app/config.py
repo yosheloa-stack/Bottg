@@ -123,10 +123,11 @@ def load_config() -> Config:
         ),
         "like2_7d": Product(
             code="like2_7d",
-            title="💎 Auto-Like Premium • 7 dias",
+            title="💎 Auto Like 500/1000 • 7 dias",
             description=(
-                "Likes automáticos pela FFHub por <b>7 dias</b>. "
-                "Após o PIX ser aprovado, o bot solicita seu UID e inicia os envios diários."
+                "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+                "durante <b>7 dias</b>. Após o PIX ser aprovado, o bot solicita "
+                "seu UID e inicia os envios automáticos."
             ),
             price=price_like2_7d,
             delivery="ffhub_autolike",
@@ -134,10 +135,11 @@ def load_config() -> Config:
         ),
         "like2_15d": Product(
             code="like2_15d",
-            title="💎 Auto-Like Premium • 15 dias",
+            title="💎 Auto Like 500/1000 • 15 dias",
             description=(
-                "Likes automáticos pela FFHub por <b>15 dias</b>. "
-                "Após o PIX ser aprovado, o bot solicita seu UID e inicia os envios diários."
+                "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+                "durante <b>15 dias</b>. Após o PIX ser aprovado, o bot solicita "
+                "seu UID e inicia os envios automáticos."
             ),
             price=price_like2_15d,
             delivery="ffhub_autolike",
@@ -145,10 +147,11 @@ def load_config() -> Config:
         ),
         "like2_30d": Product(
             code="like2_30d",
-            title="💎 Auto-Like Premium • 30 dias",
+            title="💎 Auto Like 500/1000 • 30 dias",
             description=(
-                "Likes automáticos pela FFHub por <b>30 dias</b>. "
-                "Após o PIX ser aprovado, o bot solicita seu UID e inicia os envios diários."
+                "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+                "durante <b>30 dias</b>. Após o PIX ser aprovado, o bot solicita "
+                "seu UID e inicia os envios automáticos."
             ),
             price=price_like2_30d,
             delivery="ffhub_autolike",
