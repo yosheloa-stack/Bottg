@@ -57,6 +57,14 @@ class Config:
     mp_access_token: str
     mp_webhook_secret: str
 
+    efi_client_id: str
+    efi_client_secret: str
+    efi_pix_key: str
+    efi_cert_path: str
+    efi_cert_pem_base64: str
+    efi_sandbox: bool
+    efi_webhook_token: str
+
     webhook_public_url: str
     webhook_host: str
     webhook_port: int
@@ -70,13 +78,13 @@ class Config:
     products: dict[str, Product] = field(default_factory=dict)
 
     @property
-    def mp_webhook_path(self) -> str:
-        return "/webhook/mercadopago"
+    def payment_webhook_path(self) -> str:
+        return "/webhook/efi"
 
     @property
-    def mp_notification_url(self) -> str:
+    def payment_notification_url(self) -> str:
         base = self.webhook_public_url.rstrip("/")
-        return f"{base}{self.mp_webhook_path}"
+        return f"{base}{self.payment_webhook_path}"
 
 
 def load_config() -> Config:
@@ -129,6 +137,13 @@ def load_config() -> Config:
         default_region=_get("DEFAULT_REGION", "BR"),
         mp_access_token=_get("MERCADOPAGO_ACCESS_TOKEN", ""),
         mp_webhook_secret=_get("MERCADOPAGO_WEBHOOK_SECRET", ""),
+        efi_client_id=_get("EFI_CLIENT_ID", ""),
+        efi_client_secret=_get("EFI_CLIENT_SECRET", ""),
+        efi_pix_key=_get("EFI_PIX_KEY", ""),
+        efi_cert_path=_get("EFI_CERT_PATH", ""),
+        efi_cert_pem_base64=_get("EFI_CERT_PEM_BASE64", ""),
+        efi_sandbox=_get("EFI_SANDBOX", "false").lower() in {"1", "true", "yes", "on"},
+        efi_webhook_token=_get("EFI_WEBHOOK_TOKEN", ""),
         webhook_public_url=_get("WEBHOOK_PUBLIC_URL", ""),
         webhook_host=_get("WEBHOOK_HOST", "0.0.0.0"),
         # Square Cloud injeta a porta via PORT em deploys de site; usamos como fallback
