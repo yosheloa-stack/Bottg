@@ -91,6 +91,7 @@ class Config:
 
 def load_config() -> Config:
     price_passe = Decimal(_get("PRICE_PASSE", "4.00"))
+    price_like2_single = Decimal(_get("PRICE_LIKE2_SINGLE", "0.00"))
     price_like2_7d = Decimal(_get("PRICE_LIKE2_7D", "0.00"))
     price_like2_15d = Decimal(_get("PRICE_LIKE2_15D", "0.00"))
     price_like2_30d = Decimal(_get("PRICE_LIKE2_30D", "0.00"))
@@ -109,6 +110,16 @@ def load_config() -> Config:
             ),
             price=price_passe,
             delivery="passe",
+        ),
+        "like2_single": Product(
+            code="like2_single",
+            title="💎 Like2 • Envio único",
+            description=(
+                "Um envio pago de likes pela FFHub. "
+                "Após o PIX ser aprovado, o bot solicita seu UID e envia automaticamente."
+            ),
+            price=price_like2_single,
+            delivery="ffhub_like_once",
         ),
         "like2_7d": Product(
             code="like2_7d",
