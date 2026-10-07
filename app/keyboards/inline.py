@@ -35,7 +35,11 @@ def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
 
 def store_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+
+    # Produtos normais aparecem direto na loja.
     for rp in products.values():
+        if rp.code.startswith("like2_"):
+            continue
         if rp.price <= 0:
             continue
         if rp.available:
@@ -43,7 +47,39 @@ def store_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
         else:
             label = f"{rp.title}  •  ❌ Esgotado"
         kb.row(InlineKeyboardButton(text=label, callback_data=f"buy:{rp.code}"))
+
+    # Auto Like fica agrupado em uma categoria própria.
+    kb.row(
+        InlineKeyboardButton(
+            text="💎 Auto Like 500/1000",
+            callback_data="menu:autolike",
+        )
+    )
     kb.row(InlineKeyboardButton(text="⬅️ Voltar", callback_data="menu:home"))
+    return kb.as_markup()
+
+
+def autolike_plans_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for code in ("like2_7d", "like2_15d", "like2_30d"):
+        rp = products.get(code)
+        if not rp:
+            continue
+
+        days = rp.product.days
+        if rp.available:
+            label = f"📆 {days} dias  •  R$ {_price(rp.price)}"
+            callback = f"buy:{rp.code}"
+        elif rp.price <= 0:
+            label = f"📆 {days} dias  •  ⚠️ Indisponível"
+            callback = "noop:unavailable"
+        else:
+            label = f"📆 {days} dias  •  ❌ Esgotado"
+            callback = "noop:unavailable"
+
+        kb.row(InlineKeyboardButton(text=label, callback_data=callback))
+
+    kb.row(InlineKeyboardButton(text="⬅️ Voltar à loja", callback_data="menu:store"))
     return kb.as_markup()
 
 
