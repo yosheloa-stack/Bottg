@@ -52,6 +52,8 @@ class Config:
     autosystem_base_url: str
     autosystem_api_key: str
     passe_api_key: str
+    ffhub_base_url: str
+    ffhub_api_key: str
     default_region: str
 
     mp_access_token: str
@@ -134,6 +136,8 @@ def load_config() -> Config:
         ),
         autosystem_api_key=_get("AUTOSYSTEM_API_KEY", ""),
         passe_api_key=_get("PASSE_API_KEY", ""),
+        ffhub_base_url=_get("FFHUB_BASE_URL", "https://ffhub-shop.shardweb.app"),
+        ffhub_api_key=_get("FFHUB_API_KEY", ""),
         default_region=_get("DEFAULT_REGION", "BR"),
         mp_access_token=_get("MERCADOPAGO_ACCESS_TOKEN", ""),
         mp_webhook_secret=_get("MERCADOPAGO_WEBHOOK_SECRET", ""),
