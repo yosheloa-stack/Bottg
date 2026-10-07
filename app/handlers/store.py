@@ -46,8 +46,23 @@ async def cb_buy(
         await query.answer()
         return
 
-    await state.set_state(PurchaseFlow.waiting_id)
     await state.update_data(product_code=code)
+
+    if rp.product.delivery == "ffhub_autolike":
+        await state.set_state(PurchaseFlow.confirming)
+        await edit_screen(
+            query,
+            texts.PREMIUM_AUTOLIKE_CONFIRM.format(
+                title=rp.title,
+                days=rp.product.days,
+                price=format_price(rp.price),
+            ),
+            confirm_purchase(rp.code),
+        )
+        await query.answer()
+        return
+
+    await state.set_state(PurchaseFlow.waiting_id)
     await edit_screen(
         query,
         texts.PRODUCT_DETAIL.format(
@@ -135,8 +150,8 @@ async def cb_confirm(
 ) -> None:
     data = await state.get_data()
     rp = await resolve_product(config, db, data.get("product_code", ""))
-    game_id = data.get("game_id")
-    if not rp or not game_id:
+    game_id = data.get("game_id") or ""
+    if not rp or (rp.product.delivery != "ffhub_autolike" and not game_id):
         await state.clear()
         await edit_screen(query, texts.GENERIC_ERROR, back_home())
         await query.answer()
@@ -161,7 +176,11 @@ async def cb_confirm(
     try:
         charge = await gateway.create_pix(
             amount=rp.price,
-            description=f"{rp.title} - ID {game_id}",
+            description=(
+            f"{rp.title} - ID {game_id}"
+            if game_id
+            else f"{rp.title}"
+        ),
             external_reference=str(order_id),
             payer_email=f"user{query.from_user.id}@bottg.com",
             payer_name=query.from_user.first_name or "Cliente",
@@ -175,12 +194,20 @@ async def cb_confirm(
     await db.set_order_payment(order_id, charge.payment_id)
     await state.clear()
 
-    caption = texts.PIX_MESSAGE.format(
-        title=rp.title,
-        game_id=game_id,
-        price=format_price(rp.price),
-        qr_code=charge.qr_code,
-    )
+    if rp.product.delivery == "ffhub_autolike":
+        caption = texts.PREMIUM_AUTOLIKE_PIX.format(
+            title=rp.title,
+            days=rp.product.days,
+            price=format_price(rp.price),
+            qr_code=charge.qr_code,
+        )
+    else:
+        caption = texts.PIX_MESSAGE.format(
+            title=rp.title,
+            game_id=game_id,
+            price=format_price(rp.price),
+            qr_code=charge.qr_code,
+        )
     kb = payment_pending(charge.payment_id, charge.ticket_url)
 
     if charge.qr_code_base64:
