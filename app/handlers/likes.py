@@ -292,7 +292,17 @@ async def cmd_like2(
 
         status_msg = await message.reply("💎 Enviando Like2...")
         started_at = time.perf_counter()
-        result = await ffhub_shop.send_paid_likes(game_id)
+        try:
+            result = await ffhub_shop.send_paid_likes(game_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Erro inesperado no /like2 uid=%s", game_id)
+            await status_msg.edit_text(
+                "❌ <b>Erro no LIKE2</b>\n\n"
+                f"🆔 UID: <code>{game_id}</code>\n"
+                f"⚠️ {html.escape(str(exc) or 'Falha inesperada ao chamar a FFHub.')}"
+            )
+            return
+
         data = result.data if isinstance(result.data, dict) else {}
 
         if not result.ok:
