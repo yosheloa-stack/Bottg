@@ -143,7 +143,11 @@ class LikesApi:
             per_request_int,
         )
 
-        return await self._get(
+        result = await self._get(
             "/api/like",
             {"uid": uid, "quantity": amount},
         )
+        if isinstance(result.data, dict):
+            result.data.setdefault("region", "BR")
+            result.data.setdefault("target", requested)
+        return result
