@@ -5,6 +5,8 @@ Autenticação: X-API-Key
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -13,7 +15,12 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = aiohttp.ClientTimeout(total=45)
+TIMEOUT = aiohttp.ClientTimeout(
+    total=120,
+    connect=15,
+    sock_connect=15,
+    sock_read=105,
+)
 
 
 @dataclass
@@ -62,14 +69,24 @@ class FFHubShopApi:
                     headers=self._headers(),
                     json=payload if method != "GET" else None,
                 ) as resp:
-                    try:
-                        data = await resp.json(content_type=None)
-                    except Exception:
-                        raw = await resp.text()
-                        data = {"raw": raw}
+                    raw = await resp.text()
 
-                    if not isinstance(data, dict):
-                        data = {}
+                    logger.info(
+                        "FFHub resposta | path=%s status=%s bytes=%s",
+                        path,
+                        resp.status,
+                        len(raw),
+                    )
+
+                    try:
+                        parsed = json.loads(raw) if raw else {}
+                    except json.JSONDecodeError:
+                        parsed = {"raw": raw}
+
+                    if isinstance(parsed, dict):
+                        data = parsed
+                    else:
+                        data = {"result": parsed}
 
                     # A documentação não define um campo único de sucesso para
                     # todas as rotas. Respeita sucesso/success quando vier;
@@ -80,7 +97,13 @@ class FFHubShopApi:
 
                     ok = 200 <= resp.status < 300
                     if explicit is not None:
-                        ok = ok and bool(explicit)
+                        if isinstance(explicit, str):
+                            explicit_ok = explicit.strip().lower() in {
+                                "true", "1", "ok", "success", "sucesso"
+                            }
+                        else:
+                            explicit_ok = bool(explicit)
+                        ok = ok and explicit_ok
 
                     error = (
                         data.get("erro")
@@ -91,10 +114,10 @@ class FFHubShopApi:
 
                     if not ok:
                         logger.warning(
-                            "FFHub Shop falhou path=%s status=%s data=%s",
+                            "FFHub Shop falhou path=%s status=%s body=%s",
                             path,
                             resp.status,
-                            data,
+                            raw[:1500],
                         )
 
                     return FFHubResult(
@@ -104,6 +127,14 @@ class FFHubShopApi:
                         error=str(error) if error else None,
                     )
 
+        except asyncio.TimeoutError:
+            logger.warning("Timeout FFHub Shop %s após 120s", path)
+            return FFHubResult(
+                ok=False,
+                status=0,
+                data={},
+                error="A FFHub não respondeu em até 120 segundos.",
+            )
         except aiohttp.ClientError as exc:
             logger.warning("Erro de rede FFHub Shop %s: %s", path, exc)
             return FFHubResult(ok=False, status=0, data={}, error=str(exc))
