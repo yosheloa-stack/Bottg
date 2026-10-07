@@ -8,6 +8,7 @@ from app import texts
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import back_home
+from app.services.ffhub_shop import FFHubShopApi
 from app.utils import clean_game_id
 
 router = Router(name="paid_autolike")
@@ -22,6 +23,7 @@ async def receive_paid_autolike_uid(
     message: Message,
     db: Database,
     config: Config,
+    ffhub_shop: FFHubShopApi,
 ) -> None:
     if not message.from_user or message.chat.type != "private":
         return
@@ -39,16 +41,66 @@ async def receive_paid_autolike_uid(
         return
 
     product = config.products.get(order["product_code"])
-    if not product or product.delivery != "ffhub_autolike":
+    if not product or product.delivery not in {"ffhub_autolike", "ffhub_like_once"}:
         await db.update_order_status(order["id"], "failed")
         await message.reply(
-            "⚠️ Não consegui localizar o plano deste pedido. "
+            "⚠️ Não consegui localizar o produto deste pedido. "
             "Fale com o suporte.",
             reply_markup=back_home(),
         )
         return
 
     await db.set_order_game_id(order["id"], uid)
+
+    if product.delivery == "ffhub_like_once":
+        await db.update_order_status(order["id"], "paid")
+        sending = await message.reply("💎 Enviando seus likes...")
+        result = await ffhub_shop.send_paid_likes(uid)
+
+        if not result.ok:
+            await db.update_order_status(
+                order["id"],
+                "failed",
+                str(result.data or result.error or ""),
+            )
+            error = (
+                result.error
+                or (result.data.get("erro") if isinstance(result.data, dict) else None)
+                or (result.data.get("error") if isinstance(result.data, dict) else None)
+                or "A FFHub não conseguiu concluir o envio."
+            )
+            await sending.edit_text(
+                "⚠️ <b>Pagamento confirmado, mas o envio falhou.</b>\n\n"
+                f"🆔 UID: <code>{uid}</code>\n"
+                f"Erro: {error}\n\n"
+                "O pedido ficou registrado para suporte."
+            )
+            return
+
+        data = result.data if isinstance(result.data, dict) else {}
+        sent = (
+            data.get("likes_enviados")
+            or data.get("likes_sent")
+            or data.get("enviados")
+            or data.get("likes")
+            or "—"
+        )
+        nick = data.get("nickname") or data.get("nick") or "Jogador"
+
+        await db.update_order_status(order["id"], "delivered", str(data))
+        await db.decrement_stock(order["product_code"])
+
+        await sending.edit_text(
+            "💚 <b>LIKE2 ENVIADO</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Jogador: <b>{nick}</b>\n"
+            f"🆔 UID: <code>{uid}</code>\n"
+            f"❤️ Enviados: <b>+{sent}</b>\n\n"
+            "✅ Pedido concluído com sucesso.",
+            reply_markup=back_home(),
+        )
+        return
+
     await db.create_ffhub_autolike_subscription(
         order_id=order["id"],
         user_id=message.from_user.id,
