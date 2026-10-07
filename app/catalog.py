@@ -51,6 +51,8 @@ async def resolve_products(config: Config, db: Database) -> dict[str, ResolvedPr
             except (InvalidOperation, ValueError):
                 price = product.price
         stock = int(s.get("stock", -1)) if s.get("stock") is not None else -1
+        if product.delivery == "ffhub_autolike" and not config.ffhub_api_key:
+            stock = 0
         resolved[code] = ResolvedProduct(product=product, price=price, stock=stock)
     return resolved
 
