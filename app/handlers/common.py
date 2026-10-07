@@ -10,7 +10,7 @@ from app import texts
 from app.catalog import resolve_products
 from app.config import Config
 from app.database import Database
-from app.keyboards.inline import back_home, main_menu, store_menu
+from app.keyboards.inline import autolike_plans_menu, back_home, main_menu, store_menu
 from app.ui import edit_screen, send_menu
 from app.utils import format_price
 
@@ -64,6 +64,37 @@ async def cb_store(query: CallbackQuery, config: Config, db: Database) -> None:
     products = await resolve_products(config, db)
     await edit_screen(query, texts.STORE_HEADER, store_menu(products))
     await query.answer()
+
+
+@router.callback_query(F.data == "menu:autolike")
+async def cb_autolike_store(
+    query: CallbackQuery,
+    config: Config,
+    db: Database,
+) -> None:
+    products = await resolve_products(config, db)
+    await edit_screen(
+        query,
+        "💎 <b>AUTO LIKE 500/1000</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+        "na sua conta do Free Fire.\n\n"
+        "✅ 1 envio automático por dia\n"
+        "✅ Ativação após confirmação do PIX\n"
+        "✅ O bot solicita seu UID após o pagamento\n"
+        "✅ Primeiro envio entra na fila logo após a ativação\n\n"
+        "📆 <b>Escolha a duração do plano:</b>",
+        autolike_plans_menu(products),
+    )
+    await query.answer()
+
+
+@router.callback_query(F.data == "noop:unavailable")
+async def cb_unavailable(query: CallbackQuery) -> None:
+    await query.answer(
+        "Este plano ainda não está disponível para compra.",
+        show_alert=True,
+    )
 
 
 @router.callback_query(F.data == "menu:like_info")
