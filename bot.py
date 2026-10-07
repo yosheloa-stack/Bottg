@@ -20,6 +20,7 @@ from app.delivery import DeliveryService
 from app.handlers import register_handlers
 from app.services.autolike import AutoLikeApi
 from app.services.autosystem_likes import AutoSystemLikesApi
+from app.services.ffhub_shop import FFHubShopApi
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
 from app.services.payments import EfiGateway, PaymentStatus
@@ -97,6 +98,10 @@ async def main() -> None:
         config.likes_quantity,
         config.default_region,
     )
+    ffhub_shop = FFHubShopApi(
+        config.ffhub_base_url,
+        config.ffhub_api_key,
+    )
 
     quota_check = await likes_api.quota()
     if quota_check.ok:
@@ -136,6 +141,7 @@ async def main() -> None:
     dp["autolike"] = autolike
     dp["likes_api"] = likes_api
     dp["autosystem_likes_api"] = autosystem_likes_api
+    dp["ffhub_shop"] = ffhub_shop
     dp["passe"] = passe
     dp["gateway"] = gateway
     dp["delivery"] = delivery
@@ -180,7 +186,8 @@ async def main() -> None:
             [
                 BotCommand(command="start", description="Abrir menu principal"),
                 BotCommand(command="menu", description="Abrir menu principal"),
-                BotCommand(command="like", description="Enviar likes por ID"),
+                BotCommand(command="like", description="Enviar likes grátis por ID"),
+                BotCommand(command="like2", description="Enviar likes pagos"),
             ]
         )
         me = await bot.get_me()
