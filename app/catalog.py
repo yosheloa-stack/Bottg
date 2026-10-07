@@ -41,6 +41,8 @@ class ResolvedProduct:
 
 async def resolve_products(config: Config, db: Database) -> dict[str, ResolvedProduct]:
     settings = await db.all_product_settings()
+    ffhub_private_key = await db.get_owner_setting("FFHUB_API_KEY")
+    ffhub_configured = bool(ffhub_private_key or config.ffhub_api_key)
     resolved: dict[str, ResolvedProduct] = {}
     for code, product in config.products.items():
         s = settings.get(code, {})
@@ -51,7 +53,7 @@ async def resolve_products(config: Config, db: Database) -> dict[str, ResolvedPr
             except (InvalidOperation, ValueError):
                 price = product.price
         stock = int(s.get("stock", -1)) if s.get("stock") is not None else -1
-        if product.delivery == "ffhub_autolike" and not config.ffhub_api_key:
+        if product.delivery == "ffhub_autolike" and not ffhub_configured:
             stock = 0
         resolved[code] = ResolvedProduct(product=product, price=price, stock=stock)
     return resolved
