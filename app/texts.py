@@ -4,21 +4,25 @@ WELCOME = (
     "💚 <b>{shop_name}</b>\n"
     "━━━━━━━━━━━━━━━━━━━━\n"
     "<b>Serviços Free Fire • Entrega automática</b>\n\n"
-    "🛒 <b>Comprar</b>\n"
-    "Passe Booyah e Auto-Like Premium.\n\n"
-    "🔎 <b>Consultar jogador</b>\n"
-    "Veja os dados de uma conta pelo ID.\n\n"
-    "📦 <b>Meus pedidos</b>\n"
-    "Acompanhe suas compras e entregas.\n\n"
-    "❤️ <b>Enviar likes</b>\n"
-    "Em grupos, use <code>/like ID</code>.\n\n"
-    "👇 Escolha uma opção abaixo:"
+    "Escolha uma opção abaixo para continuar. 👇"
 )
 
 STORE_HEADER = (
-    "🛒 <b>Loja</b>\n"
+    "🛒 <b>LOJA</b>\n"
     "━━━━━━━━━━━━━━━━━━━━\n"
-    "Selecione um produto para comprar:\n"
+    "Escolha o serviço que deseja comprar:"
+)
+
+AUTOLIKE_STORE = (
+    "💎 <b>AUTO LIKE 500/1000</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+    "na sua conta do Free Fire.\n\n"
+    "✅ 1 envio automático por dia\n"
+    "✅ Ativação após o pagamento\n"
+    "✅ UID solicitado depois do PIX\n"
+    "✅ Primeiro envio inicia após ativação\n\n"
+    "📆 <b>Escolha seu plano:</b>"
 )
 
 MENU_HINT = "👇 Selecione uma opção no menu"
@@ -142,13 +146,15 @@ CANCELLED = "❌ Operação cancelada. Use /start para voltar ao menu."
 
 
 PREMIUM_AUTOLIKE_CONFIRM = (
-    "💎 <b>{title}</b>\n"
+    "💎 <b>Auto Like 500/1000</b>\n"
     "━━━━━━━━━━━━━━━━━━━━\n"
-    "⏱ Duração: <b>{days} dias</b>\n"
-    "❤️ Envio automático: <b>1 vez por dia</b>\n"
+    "❤️ Média diária: <b>500 a 1.000 likes</b>\n"
+    "📆 Duração: <b>{days} dias</b>\n"
     "💰 Valor: <b>R$ {price}</b>\n\n"
-    "Após o PIX ser confirmado, eu vou pedir o <b>UID</b> da conta.\n"
-    "O primeiro envio começa logo após a ativação.\n\n"
+    "Após o pagamento:\n"
+    "1️⃣ você envia seu UID\n"
+    "2️⃣ o plano é ativado\n"
+    "3️⃣ os likes começam automaticamente\n\n"
     "Deseja continuar?"
 )
 
