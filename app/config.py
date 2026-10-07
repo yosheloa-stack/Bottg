@@ -46,6 +46,9 @@ class Config:
 
     api_base_url: str
     autolike_api_key: str
+    likes_api_base_url: str
+    likes_api_key: str
+    likes_quantity: int
     passe_api_key: str
     default_region: str
 
@@ -78,6 +81,10 @@ def load_config() -> Config:
     price_passe = Decimal(_get("PRICE_PASSE", "19.90"))
     price_autolike = Decimal(_get("PRICE_AUTOLIKE_30D", "14.90"))
 
+    likes_quantity = int(_get("LIKES_QUANTITY", "100"))
+    if not 1 <= likes_quantity <= 200:
+        raise RuntimeError("LIKES_QUANTITY deve estar entre 1 e 200.")
+
     products = {
         "passe": Product(
             code="passe",
@@ -107,6 +114,13 @@ def load_config() -> Config:
         admin_ids=_get_int_list("ADMIN_IDS"),
         api_base_url=_get("API_BASE_URL", "https://fluxggx.squareweb.app"),
         autolike_api_key=_get("AUTOLIKE_API_KEY", required=True),
+        likes_api_base_url=_get(
+            "LIKES_API_BASE_URL", "http://likespainel.squareweb.app"
+        ),
+        likes_api_key=_get(
+            "LIKES_API_KEY", _get("AUTOLIKE_API_KEY", ""), required=True
+        ),
+        likes_quantity=likes_quantity,
         passe_api_key=_get("PASSE_API_KEY", ""),
         default_region=_get("DEFAULT_REGION", "BR"),
         mp_access_token=_get("MERCADOPAGO_ACCESS_TOKEN", required=True),
