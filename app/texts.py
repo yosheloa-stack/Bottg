@@ -109,14 +109,16 @@ DELIVERY_FAILED = (
 )
 
 LIKE_SUCCESS = (
-    "╭─── ❤️ <b>LIKES ENVIADOS</b> ───╮\n"
-    "│ 👤 Nick: <b>{nick}</b>\n"
-    "│ 🎮 ID: <code>{game_id}</code>\n"
-    "│\n"
-    "│ 📊 Antes: <b>{antes}</b>\n"
-    "│ 📈 Depois: <b>{depois}</b>\n"
-    "│ ➕ Enviados: <b>{enviadas}</b>\n"
-    "╰────────────────────╯"
+    "💚 𝙇𝙄𝙆𝙀𝙎 𝙀𝙉𝙑𝙄𝘼𝘿𝙊𝙎\n\n"
+    "👤 𝙅𝙤𝙜𝙖𝙙𝙤𝙧: <b>{nick}</b>\n"
+    "🆔 𝙐𝙄𝘿: <code>{game_id}</code>\n"
+    "🌎 𝙍𝙚𝙜𝙞𝙖̃𝙤: <b>{region}</b>\n\n"
+    "📊 𝙇𝙞𝙠𝙚𝙨 𝙖𝙣𝙩𝙚𝙨: <b>{antes}</b>\n"
+    "📈 𝙇𝙞𝙠𝙚𝙨 𝙖𝙜𝙤𝙧𝙖: <b>{depois}</b>\n"
+    "❤️ 𝙀𝙣𝙫𝙞𝙖𝙙𝙤𝙨: <b>+{enviadas}</b>\n"
+    "🎯 𝙈𝙚𝙩𝙖: <b>{target} 𝙡𝙞𝙠𝙚𝙨</b>\n"
+    "⚡ 𝙏𝙚𝙢𝙥𝙤: <b>{tempo}s</b>\n\n"
+    "✅ 𝙇𝙞𝙠𝙚𝙨 𝙘𝙤𝙣𝙛𝙞𝙧𝙢𝙖𝙙𝙤𝙨 𝙘𝙤𝙢 𝙨𝙪𝙘𝙚𝙨𝙨𝙤!"
 )
 
 LIKE_ALREADY = (
