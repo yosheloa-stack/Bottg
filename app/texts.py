@@ -5,7 +5,7 @@ WELCOME = (
     "━━━━━━━━━━━━━━━━━━━━\n"
     "<b>Serviços Free Fire • Entrega automática</b>\n\n"
     "🛒 <b>Comprar</b>\n"
-    "Passe Booyah e Auto-Like.\n\n"
+    "Passe Booyah e Auto-Like Premium.\n\n"
     "🔎 <b>Consultar jogador</b>\n"
     "Veja os dados de uma conta pelo ID.\n\n"
     "📦 <b>Meus pedidos</b>\n"
