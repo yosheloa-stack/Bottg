@@ -15,6 +15,7 @@ from app.config import Config
 from app.database import Database
 from app.keyboards.inline import premium_like_menu
 from app.services.autosystem_likes import AutoSystemLikesApi
+from app.services.ffhub_shop import FFHubShopApi
 from app.services.likes import LikesApi
 from app.utils import clean_game_id
 
@@ -227,28 +228,107 @@ async def cmd_like(
 @router.message(Command("like2"))
 async def cmd_like2(
     message: Message,
+    command: CommandObject,
     db: Database,
     config: Config,
+    ffhub_shop: FFHubShopApi,
 ) -> None:
-    """Abre os pacotes pagos de Auto-Like Premium."""
-    products = await resolve_products(config, db)
+    """Dono envia direto; clientes recebem os pacotes pagos."""
+    if not message.from_user:
+        return
+
     is_owner = message.from_user.id in config.admin_ids
+    arg = (command.args or "").strip()
+
+    # Donos usam /like2 UID para envio direto, sem pagamento.
+    if is_owner:
+        if not arg:
+            await message.reply(
+                "💎 <b>LIKE2 • ENVIO DIRETO</b>\n\n"
+                "Use assim:\n"
+                "<code>/like2 SEU_ID</code>\n\n"
+                "Esse comando envia direto pela FFHub, sem PIX e sem pacote."
+            )
+            return
+
+        game_id = clean_game_id(arg.split()[0])
+        if not _valid_like_uid(game_id):
+            await message.reply(
+                "⚠️ ID inválido. Envie somente números, de 8 a 11 dígitos.\n"
+                "Exemplo: <code>/like2 813856263</code>"
+            )
+            return
+
+        if not ffhub_shop.configured:
+            await message.reply(
+                "⚠️ <b>FFHub não configurada.</b>\n\n"
+                "Abra <b>Painel administrativo → Configurações do dono → FFHub API Key</b>."
+            )
+            return
+
+        status_msg = await message.reply("💎 Enviando Like2...")
+        started_at = time.perf_counter()
+        result = await ffhub_shop.send_paid_likes(game_id)
+        data = result.data if isinstance(result.data, dict) else {}
+
+        if not result.ok:
+            error = (
+                result.error
+                or data.get("erro")
+                or data.get("error")
+                or data.get("mensagem")
+                or data.get("message")
+                or "A FFHub não conseguiu concluir o envio."
+            )
+            await status_msg.edit_text(
+                "❌ <b>LIKE2 não enviado</b>\n\n"
+                f"🆔 UID: <code>{game_id}</code>\n"
+                f"⚠️ {html.escape(str(error))}"
+            )
+            return
+
+        nick = (
+            data.get("nickname")
+            or data.get("nick")
+            or data.get("player_name")
+            or "Jogador"
+        )
+        sent = (
+            data.get("likes_enviados")
+            or data.get("likes_sent")
+            or data.get("enviados")
+            or data.get("likes")
+            or "—"
+        )
+        before = data.get("likes_antes") or data.get("likes_before") or data.get("before")
+        after = data.get("likes_depois") or data.get("likes_after") or data.get("after")
+        elapsed = time.perf_counter() - started_at
+
+        lines = [
+            "💚 <b>LIKE2 ENVIADO</b>",
+            "━━━━━━━━━━━━━━━━━━━━",
+            f"👤 Jogador: <b>{html.escape(str(nick))}</b>",
+            f"🆔 UID: <code>{game_id}</code>",
+        ]
+        if before is not None:
+            lines.append(f"📊 Likes antes: <b>{html.escape(str(before))}</b>")
+        if after is not None:
+            lines.append(f"📈 Likes agora: <b>{html.escape(str(after))}</b>")
+        lines.extend(
+            [
+                f"❤️ Enviados: <b>+{html.escape(str(sent))}</b>",
+                f"⚡ Tempo: <b>{elapsed:.2f}s</b>",
+                "",
+                "✅ Envio direto concluído.",
+            ]
+        )
+        await status_msg.edit_text("\n".join(lines))
+        return
+
+    # Clientes usam /like2 apenas para abrir os pacotes pagos.
+    products = await resolve_products(config, db)
     ffhub_private_key = await db.get_owner_setting("FFHUB_API_KEY")
     ffhub_configured = bool(ffhub_private_key or config.ffhub_api_key)
-
-    setup_notes = []
-    if is_owner:
-        if not ffhub_configured:
-            setup_notes.append("🔑 Falta configurar a <b>FFHub API Key</b>.")
-        without_price = [rp for rp in products.values() if rp.code.startswith("like2_") and rp.price <= 0]
-        if without_price:
-            setup_notes.append(
-                f"💰 Falta definir preço em <b>{len(without_price)} produto(s)</b>."
-            )
-
-    setup_text = ""
-    if setup_notes:
-        setup_text = "\n\n⚙️ <b>Configuração do dono</b>\n" + "\n".join(setup_notes)
 
     await message.answer(
         "💎 <b>LIKE2 PREMIUM</b>\n"
@@ -257,12 +337,12 @@ async def cmd_like2(
         "✅ Envio único\n"
         "✅ Auto-Like de 7, 15 ou 30 dias\n"
         "✅ Pagamento via PIX\n"
-        "✅ UID solicitado somente após o pagamento"
-        f"{setup_text}\n\n"
+        "✅ UID solicitado somente após o pagamento\n\n"
         "👇 Escolha uma opção:",
         reply_markup=premium_like_menu(
             products,
-            is_owner=is_owner,
+            is_owner=False,
             ffhub_configured=ffhub_configured,
         ),
     )
+
