@@ -9,6 +9,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from app import texts
+from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.likes import LikesApi
 from app.utils import clean_game_id
 
@@ -23,9 +24,42 @@ def _valid_like_uid(game_id: str) -> bool:
     return game_id.isdigit() and 8 <= len(game_id) <= 11
 
 
-async def _do_send_like(message: Message, game_id: str, likes_api: LikesApi) -> None:
+async def _do_send_like(
+    message: Message,
+    game_id: str,
+    likes_api: LikesApi,
+    autosystem_likes_api: AutoSystemLikesApi,
+) -> None:
     status_msg = await message.reply("⏳ Enviando likes...")
     result = await likes_api.send_like(game_id)
+
+    if (
+        not result.ok
+        and result.status in (429, 500, 503)
+        and autosystem_likes_api.enabled
+    ):
+        logger.warning(
+            "API principal indisponível/limitada para uid=%s status=%s; "
+            "tentando fallback Auto System",
+            game_id,
+            result.status,
+        )
+        fallback_result = await autosystem_likes_api.send_like(game_id)
+        if fallback_result.ok:
+            logger.info(
+                "Fallback Auto System entregou uid=%s likes=%s",
+                game_id,
+                fallback_result.data.get("likes_sent"),
+            )
+            result = fallback_result
+        else:
+            logger.warning(
+                "Fallback Auto System falhou uid=%s status=%s error=%s",
+                game_id,
+                fallback_result.status,
+                fallback_result.error,
+            )
+            result = fallback_result
     data = result.data if isinstance(result.data, dict) else {}
     error = (result.error or "").strip()
 
@@ -103,7 +137,10 @@ async def _do_send_like(message: Message, game_id: str, likes_api: LikesApi) -> 
 
 @router.message(Command("like", "likes"))
 async def cmd_like(
-    message: Message, command: CommandObject, likes_api: LikesApi
+    message: Message,
+    command: CommandObject,
+    likes_api: LikesApi,
+    autosystem_likes_api: AutoSystemLikesApi,
 ) -> None:
     # Bloqueia no privado — likes só em grupos
     if message.chat.type not in GROUP_TYPES:
@@ -122,4 +159,4 @@ async def cmd_like(
         )
         return
 
-    await _do_send_like(message, game_id, likes_api)
+    await _do_send_like(message, game_id, likes_api, autosystem_likes_api)
