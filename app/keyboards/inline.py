@@ -12,19 +12,23 @@ def _price(value) -> str:
 
 
 def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
-    """Menu principal (privado) — SEM envio de likes (likes só em grupos)."""
+    """Menu principal simples e direto."""
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="🛍️  LOJA", callback_data="menu:store"))
     kb.row(
+        InlineKeyboardButton(text="🛒 Comprar", callback_data="menu:store"),
         InlineKeyboardButton(text="🔎 Consultar ID", callback_data="menu:info"),
-        InlineKeyboardButton(text="📦 Meus pedidos", callback_data="menu:orders"),
     )
     kb.row(
-        InlineKeyboardButton(text="❤️ Like (grupos)", callback_data="menu:like_info"),
-        InlineKeyboardButton(text="🆘 Suporte", callback_data="menu:support"),
+        InlineKeyboardButton(text="📦 Meus pedidos", callback_data="menu:orders"),
+        InlineKeyboardButton(text="❤️ Como enviar likes", callback_data="menu:like_info"),
+    )
+    kb.row(
+        InlineKeyboardButton(text="🆘 Suporte", callback_data="menu:support")
     )
     if is_admin:
-        kb.row(InlineKeyboardButton(text="⚙️  PAINEL ADMIN", callback_data="admin:panel"))
+        kb.row(
+            InlineKeyboardButton(text="⚙️ Painel administrativo", callback_data="admin:panel")
+        )
     return kb.as_markup()
 
 
