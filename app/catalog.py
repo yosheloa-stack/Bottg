@@ -28,7 +28,7 @@ class ResolvedProduct:
 
     @property
     def available(self) -> bool:
-        return self.stock != 0
+        return self.stock != 0 and self.price > 0
 
     @property
     def stock_label(self) -> str:
