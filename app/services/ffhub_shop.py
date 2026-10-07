@@ -31,6 +31,102 @@ class FFHubResult:
     error: str | None = None
 
 
+def _to_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(str(value).strip().replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _find_value(data: Any, keys: tuple[str, ...]) -> Any:
+    """Procura uma chave também dentro de objetos/listas aninhados."""
+    if isinstance(data, dict):
+        for key in keys:
+            if key in data and data[key] is not None:
+                return data[key]
+        for value in data.values():
+            found = _find_value(value, keys)
+            if found is not None:
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = _find_value(item, keys)
+            if found is not None:
+                return found
+    return None
+
+
+def parse_like_delivery(data: dict[str, Any]) -> dict[str, Any]:
+    """Normaliza o retorno da rota /api/buy/likes.
+
+    Não usa o campo genérico 'likes' como quantidade enviada porque algumas
+    respostas da FFHub usam esse nome para outro contador.
+    """
+    before_raw = _find_value(
+        data,
+        (
+            "likes_antes",
+            "likes_before",
+            "before_likes",
+            "old_likes",
+            "previous_likes",
+            "likesBefore",
+        ),
+    )
+    after_raw = _find_value(
+        data,
+        (
+            "likes_depois",
+            "likes_after",
+            "after_likes",
+            "new_likes",
+            "current_likes",
+            "likesAfter",
+        ),
+    )
+    sent_raw = _find_value(
+        data,
+        (
+            "likes_enviados",
+            "likes_sent",
+            "sent_likes",
+            "likes_added",
+            "added_likes",
+            "likes_adicionados",
+            "curtidas_enviadas",
+            "quantidade_enviada",
+            "quantity_sent",
+            "delivered_likes",
+            "enviados",
+        ),
+    )
+
+    before = _to_int(before_raw)
+    after = _to_int(after_raw)
+    sent = _to_int(sent_raw)
+
+    # Quando a API fornece os totais antes/depois, a diferença é a fonte
+    # mais confiável para o que realmente entrou na conta.
+    if before is not None and after is not None and after >= before:
+        delta = after - before
+        if delta > 0:
+            sent = delta
+
+    nick = _find_value(
+        data,
+        ("nickname", "nick", "player_name", "playerName", "nome", "name"),
+    )
+
+    return {
+        "sent": sent,
+        "before": before if before is not None else before_raw,
+        "after": after if after is not None else after_raw,
+        "nickname": nick or "Jogador",
+    }
+
+
 class FFHubShopApi:
     def __init__(self, base_url: str, api_key: str) -> None:
         self._base = base_url.rstrip("/")
