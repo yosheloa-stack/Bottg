@@ -27,23 +27,10 @@ class ApiResult:
 
 
 class AutoLikeApi:
-    def __init__(
-        self,
-        base_url: str,
-        api_key: str,
-        default_region: str = "BR",
-        *,
-        likes_base_url: str = "http://likespainel.squareweb.app",
-        likes_api_key: str | None = None,
-        likes_quantity: int = 100,
-    ) -> None:
+    def __init__(self, base_url: str, api_key: str, default_region: str = "BR") -> None:
         self._base = base_url.rstrip("/")
         self._key = api_key
         self._region = default_region
-
-        self._likes_base = likes_base_url.rstrip("/")
-        self._likes_key = likes_api_key or api_key
-        self._likes_quantity = max(1, min(int(likes_quantity), 200))
 
     async def _get_legacy(self, path: str, params: dict[str, Any]) -> ApiResult:
         """Requisição para a API antiga (info, skin e Auto-Like)."""
@@ -69,55 +56,6 @@ class AutoLikeApi:
             logger.exception("Erro inesperado na API antiga %s", path)
             return ApiResult(ok=False, status=0, data={}, error=str(exc))
 
-    async def _get_likes(
-        self, path: str, params: dict[str, Any] | None = None
-    ) -> ApiResult:
-        """Requisição autenticada para a Likes Painel API."""
-        url = f"{self._likes_base}{path}"
-        headers = {"X-API-Key": self._likes_key}
-
-        try:
-            async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
-                async with session.get(url, params=params or {}, headers=headers) as resp:
-                    try:
-                        payload = await resp.json(content_type=None)
-                    except Exception:
-                        raw = await resp.text()
-                        return ApiResult(
-                            ok=False,
-                            status=resp.status,
-                            data={"raw": raw},
-                            error="Resposta inválida da API de likes.",
-                        )
-
-                    if not isinstance(payload, dict):
-                        return ApiResult(
-                            ok=False,
-                            status=resp.status,
-                            data={},
-                            error="Resposta inválida da API de likes.",
-                        )
-
-                    success = payload.get("success") is True
-                    error = payload.get("error")
-                    api_data = payload.get("data")
-
-                    if not isinstance(api_data, dict):
-                        api_data = {}
-
-                    return ApiResult(
-                        ok=resp.status == 200 and success,
-                        status=resp.status,
-                        data=api_data,
-                        error=str(error) if error else None,
-                    )
-        except aiohttp.ClientError as exc:
-            logger.warning("Erro de rede na Likes Painel API %s: %s", path, exc)
-            return ApiResult(ok=False, status=0, data={}, error=str(exc))
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Erro inesperado na Likes Painel API %s", path)
-            return ApiResult(ok=False, status=0, data={}, error=str(exc))
-
     async def info_player(self, game_id: str, region: str | None = None) -> ApiResult:
         return await self._get_legacy(
             "/info-player", {"id": game_id, "region": region or self._region}
@@ -127,25 +65,6 @@ class AutoLikeApi:
         return await self._get_legacy(
             "/get-skin", {"id": game_id, "region": region or self._region}
         )
-
-    async def send_like(
-        self,
-        game_id: str,
-        region: str | None = None,
-        quantity: int | None = None,
-    ) -> ApiResult:
-        # A nova API atende somente o servidor Brasil e não usa o parâmetro region.
-        del region
-        amount = self._likes_quantity if quantity is None else int(quantity)
-        amount = max(1, min(amount, 200))
-        return await self._get_likes(
-            "/api/like",
-            {"uid": game_id, "quantity": amount},
-        )
-
-    async def quota(self) -> ApiResult:
-        """Consulta quota da Key sem consumir likes."""
-        return await self._get_likes("/api/quota")
 
     async def like_status(self, game_id: str, region: str | None = None) -> ApiResult:
         return await self._get_legacy(
