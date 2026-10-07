@@ -91,7 +91,9 @@ class Config:
 
 def load_config() -> Config:
     price_passe = Decimal(_get("PRICE_PASSE", "4.00"))
-    price_autolike = Decimal(_get("PRICE_AUTOLIKE_30D", "14.90"))
+    price_like2_7d = Decimal(_get("PRICE_LIKE2_7D", "0.00"))
+    price_like2_15d = Decimal(_get("PRICE_LIKE2_15D", "0.00"))
+    price_like2_30d = Decimal(_get("PRICE_LIKE2_30D", "0.00"))
 
     likes_quantity = int(_get("LIKES_QUANTITY", "100"))
     if not 1 <= likes_quantity <= 200:
@@ -108,15 +110,37 @@ def load_config() -> Config:
             price=price_passe,
             delivery="passe",
         ),
-        "autolike_30d": Product(
-            code="autolike_30d",
-            title="🔁 Auto-Like (30 dias)",
+        "like2_7d": Product(
+            code="like2_7d",
+            title="💎 Auto-Like Premium • 7 dias",
             description=(
-                "Assinatura de <b>likes automáticos diários</b> por 30 dias. "
-                "Seu ID recebe likes todos os dias sem precisar pedir."
+                "Likes automáticos pela FFHub por <b>7 dias</b>. "
+                "Após o PIX ser aprovado, o bot solicita seu UID e inicia os envios diários."
             ),
-            price=price_autolike,
-            delivery="autolike",
+            price=price_like2_7d,
+            delivery="ffhub_autolike",
+            days=7,
+        ),
+        "like2_15d": Product(
+            code="like2_15d",
+            title="💎 Auto-Like Premium • 15 dias",
+            description=(
+                "Likes automáticos pela FFHub por <b>15 dias</b>. "
+                "Após o PIX ser aprovado, o bot solicita seu UID e inicia os envios diários."
+            ),
+            price=price_like2_15d,
+            delivery="ffhub_autolike",
+            days=15,
+        ),
+        "like2_30d": Product(
+            code="like2_30d",
+            title="💎 Auto-Like Premium • 30 dias",
+            description=(
+                "Likes automáticos pela FFHub por <b>30 dias</b>. "
+                "Após o PIX ser aprovado, o bot solicita seu UID e inicia os envios diários."
+            ),
+            price=price_like2_30d,
+            delivery="ffhub_autolike",
             days=30,
         ),
     }
