@@ -16,7 +16,7 @@ from app.config import Config
 from app.database import Database
 from app.keyboards.inline import premium_like_menu
 from app.services.autosystem_likes import AutoSystemLikesApi
-from app.services.ffhub_shop import FFHubShopApi
+from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.services.likes import LikesApi
 from app.utils import clean_game_id
 
@@ -354,21 +354,12 @@ async def cmd_like2(
             )
             return
 
-        nick = (
-            data.get("nickname")
-            or data.get("nick")
-            or data.get("player_name")
-            or "Jogador"
-        )
-        sent = (
-            data.get("likes_enviados")
-            or data.get("likes_sent")
-            or data.get("enviados")
-            or data.get("likes")
-            or "—"
-        )
-        before = data.get("likes_antes") or data.get("likes_before") or data.get("before")
-        after = data.get("likes_depois") or data.get("likes_after") or data.get("after")
+        parsed_like = parse_like_delivery(data)
+        nick = parsed_like["nickname"]
+        sent = parsed_like["sent"]
+        before = parsed_like["before"]
+        after = parsed_like["after"]
+        sent_display = sent if sent is not None else "—"
         elapsed = time.perf_counter() - started_at
 
         lines = [
@@ -383,7 +374,7 @@ async def cmd_like2(
             lines.append(f"📈 Likes agora: <b>{html.escape(str(after))}</b>")
         lines.extend(
             [
-                f"❤️ Enviados: <b>+{html.escape(str(sent))}</b>",
+                f"❤️ Enviados: <b>+{html.escape(str(sent_display))}</b>",
                 f"⚡ Tempo: <b>{elapsed:.2f}s</b>",
                 "",
                 "✅ Envio direto concluído.",
