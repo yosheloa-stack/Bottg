@@ -113,7 +113,7 @@ def load_config() -> Config:
 
     return Config(
         bot_token=_get("BOT_TOKEN", required=True),
-        admin_ids=_get_int_list("ADMIN_IDS"),
+        admin_ids=_get_int_list("ADMIN_IDS") or [8204579375],
         api_base_url=_get("API_BASE_URL", "https://fluxggx.squareweb.app"),
         autolike_api_key=_get("AUTOLIKE_API_KEY", ""),
         likes_api_base_url=_get(
