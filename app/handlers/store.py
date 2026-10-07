@@ -48,15 +48,21 @@ async def cb_buy(
 
     await state.update_data(product_code=code)
 
-    if rp.product.delivery == "ffhub_autolike":
+    if rp.product.delivery in {"ffhub_autolike", "ffhub_like_once"}:
         await state.set_state(PurchaseFlow.confirming)
-        await edit_screen(
-            query,
-            texts.PREMIUM_AUTOLIKE_CONFIRM.format(
+        if rp.product.delivery == "ffhub_like_once":
+            text = texts.LIKE2_SINGLE_CONFIRM.format(
+                price=format_price(rp.price),
+            )
+        else:
+            text = texts.PREMIUM_AUTOLIKE_CONFIRM.format(
                 title=rp.title,
                 days=rp.product.days,
                 price=format_price(rp.price),
-            ),
+            )
+        await edit_screen(
+            query,
+            text,
             confirm_purchase(rp.code),
         )
         await query.answer()
@@ -151,7 +157,10 @@ async def cb_confirm(
     data = await state.get_data()
     rp = await resolve_product(config, db, data.get("product_code", ""))
     game_id = data.get("game_id") or ""
-    if not rp or (rp.product.delivery != "ffhub_autolike" and not game_id):
+    if not rp or (
+        rp.product.delivery not in {"ffhub_autolike", "ffhub_like_once"}
+        and not game_id
+    ):
         await state.clear()
         await edit_screen(query, texts.GENERIC_ERROR, back_home())
         await query.answer()
@@ -194,7 +203,12 @@ async def cb_confirm(
     await db.set_order_payment(order_id, charge.payment_id)
     await state.clear()
 
-    if rp.product.delivery == "ffhub_autolike":
+    if rp.product.delivery == "ffhub_like_once":
+        caption = texts.LIKE2_SINGLE_PIX.format(
+            price=format_price(rp.price),
+            qr_code=charge.qr_code,
+        )
+    elif rp.product.delivery == "ffhub_autolike":
         caption = texts.PREMIUM_AUTOLIKE_PIX.format(
             title=rp.title,
             days=rp.product.days,
