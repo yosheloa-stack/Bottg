@@ -156,6 +156,11 @@ async def main() -> None:
     await db.connect()
     await db.init_product_settings(config.products)
 
+    owner_settings = await db.all_owner_settings()
+
+    def private_setting(key: str, fallback: str = "") -> str:
+        return (owner_settings.get(key) or fallback or "").strip()
+
     # Migração do preço antigo do Passe Booyah.
     # Só troca o valor legado de 19.90; preços personalizados pelo admin são preservados.
     passe_setting = await db.get_product_setting("passe")
@@ -170,18 +175,18 @@ async def main() -> None:
     )
     likes_api = LikesApi(
         config.likes_api_base_url,
-        config.likes_api_key,
+        private_setting("LIKES_API_KEY", config.likes_api_key),
         config.likes_quantity,
     )
     autosystem_likes_api = AutoSystemLikesApi(
         config.autosystem_base_url,
-        config.autosystem_api_key,
+        private_setting("AUTOSYSTEM_API_KEY", config.autosystem_api_key),
         config.likes_quantity,
         config.default_region,
     )
     ffhub_shop = FFHubShopApi(
         config.ffhub_base_url,
-        config.ffhub_api_key,
+        private_setting("FFHUB_API_KEY", config.ffhub_api_key),
     )
 
     quota_check = await likes_api.quota()
@@ -198,11 +203,14 @@ async def main() -> None:
             quota_check.status,
             quota_check.error,
         )
-    passe = PasseApi(config.api_base_url, config.passe_api_key)
+    passe = PasseApi(
+        config.api_base_url,
+        private_setting("PASSE_API_KEY", config.passe_api_key),
+    )
     gateway = EfiGateway(
-        config.efi_client_id,
-        config.efi_client_secret,
-        config.efi_pix_key,
+        private_setting("EFI_CLIENT_ID", config.efi_client_id),
+        private_setting("EFI_CLIENT_SECRET", config.efi_client_secret),
+        private_setting("EFI_PIX_KEY", config.efi_pix_key),
         cert_path=config.efi_cert_path,
         cert_pem_base64=config.efi_cert_pem_base64,
         sandbox=config.efi_sandbox,
@@ -282,6 +290,7 @@ async def main() -> None:
                 BotCommand(command="menu", description="Abrir menu principal"),
                 BotCommand(command="like", description="Enviar likes grátis por ID"),
                 BotCommand(command="like2", description="Auto-Like Premium 7/15/30 dias"),
+                BotCommand(command="id", description="Mostrar meu ID do Telegram"),
             ]
         )
         me = await bot.get_me()
