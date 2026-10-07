@@ -18,6 +18,7 @@ from app.database import Database
 from app.delivery import DeliveryService
 from app.handlers import register_handlers
 from app.services.autolike import AutoLikeApi
+from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
 from app.services.payments import MercadoPagoGateway
@@ -47,6 +48,12 @@ async def main() -> None:
         config.likes_api_base_url,
         config.likes_api_key,
         config.likes_quantity,
+    )
+    autosystem_likes_api = AutoSystemLikesApi(
+        config.autosystem_base_url,
+        config.autosystem_api_key,
+        config.likes_quantity,
+        config.default_region,
     )
 
     quota_check = await likes_api.quota()
@@ -80,6 +87,7 @@ async def main() -> None:
     dp["db"] = db
     dp["autolike"] = autolike
     dp["likes_api"] = likes_api
+    dp["autosystem_likes_api"] = autosystem_likes_api
     dp["passe"] = passe
     dp["gateway"] = gateway
     dp["delivery"] = delivery
