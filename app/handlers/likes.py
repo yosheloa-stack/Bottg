@@ -9,7 +9,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from app import texts
-from app.services.autolike import AutoLikeApi
+from app.services.likes import LikesApi
 from app.utils import clean_game_id
 
 router = Router(name="likes")
@@ -23,9 +23,9 @@ def _valid_like_uid(game_id: str) -> bool:
     return game_id.isdigit() and 8 <= len(game_id) <= 11
 
 
-async def _do_send_like(message: Message, game_id: str, autolike: AutoLikeApi) -> None:
+async def _do_send_like(message: Message, game_id: str, likes_api: LikesApi) -> None:
     status_msg = await message.reply("⏳ Enviando likes...")
-    result = await autolike.send_like(game_id)
+    result = await likes_api.send_like(game_id)
     data = result.data if isinstance(result.data, dict) else {}
     error = (result.error or "").strip()
 
@@ -103,7 +103,7 @@ async def _do_send_like(message: Message, game_id: str, autolike: AutoLikeApi) -
 
 @router.message(Command("like", "likes"))
 async def cmd_like(
-    message: Message, command: CommandObject, autolike: AutoLikeApi
+    message: Message, command: CommandObject, likes_api: LikesApi
 ) -> None:
     # Bloqueia no privado — likes só em grupos
     if message.chat.type not in GROUP_TYPES:
@@ -122,4 +122,4 @@ async def cmd_like(
         )
         return
 
-    await _do_send_like(message, game_id, autolike)
+    await _do_send_like(message, game_id, likes_api)
