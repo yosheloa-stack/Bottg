@@ -117,9 +117,7 @@ def load_config() -> Config:
         likes_api_base_url=_get(
             "LIKES_API_BASE_URL", "http://likespainel.squareweb.app"
         ),
-        likes_api_key=_get(
-            "LIKES_API_KEY", _get("AUTOLIKE_API_KEY", ""), required=True
-        ),
+        likes_api_key=_get("LIKES_API_KEY", required=True),
         likes_quantity=likes_quantity,
         passe_api_key=_get("PASSE_API_KEY", ""),
         default_region=_get("DEFAULT_REGION", "BR"),
