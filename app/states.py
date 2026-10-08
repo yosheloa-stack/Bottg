@@ -29,3 +29,11 @@ class AdminStock(StatesGroup):
 
 class OwnerSetting(StatesGroup):
     waiting_value = State()
+
+
+class AdminVipAdd(StatesGroup):
+    waiting_value = State()
+
+
+class AdminVipRemove(StatesGroup):
+    waiting_value = State()
