@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS owner_settings (
     value       TEXT NOT NULL,
     updated_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS vip_users (
+    user_id       INTEGER PRIMARY KEY,
+    expires_at    INTEGER NOT NULL DEFAULT 0,
+    added_by      INTEGER NOT NULL,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vip_expires ON vip_users(expires_at);
 """
 
 
@@ -116,6 +126,74 @@ class Database:
         async with self.db.execute("SELECT user_id FROM users") as cur:
             rows = await cur.fetchall()
         return [r["user_id"] for r in rows]
+
+    # ----- VIP -----
+    async def set_vip(self, user_id: int, days: int, added_by: int) -> dict[str, Any]:
+        """Ativa/renova VIP. days=0 significa permanente."""
+        now = int(time.time())
+        days = max(0, int(days))
+        expires_at = 0 if days == 0 else now + days * 86400
+
+        await self.db.execute(
+            """
+            INSERT INTO vip_users (user_id, expires_at, added_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                expires_at = excluded.expires_at,
+                added_by = excluded.added_by,
+                updated_at = excluded.updated_at
+            """,
+            (int(user_id), expires_at, int(added_by), now, now),
+        )
+        await self.db.commit()
+        return {
+            "user_id": int(user_id),
+            "expires_at": expires_at,
+            "added_by": int(added_by),
+        }
+
+    async def remove_vip(self, user_id: int) -> bool:
+        cur = await self.db.execute(
+            "DELETE FROM vip_users WHERE user_id = ?",
+            (int(user_id),),
+        )
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def get_vip(self, user_id: int) -> Optional[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM vip_users WHERE user_id = ?",
+            (int(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return None
+
+        data = dict(row)
+        expires_at = int(data.get("expires_at") or 0)
+        if expires_at and expires_at <= int(time.time()):
+            await self.remove_vip(int(user_id))
+            return None
+        return data
+
+    async def is_vip(self, user_id: int) -> bool:
+        return await self.get_vip(user_id) is not None
+
+    async def active_vips(self) -> list[dict[str, Any]]:
+        now = int(time.time())
+        await self.db.execute(
+            "DELETE FROM vip_users WHERE expires_at > 0 AND expires_at <= ?",
+            (now,),
+        )
+        await self.db.commit()
+        async with self.db.execute(
+            "SELECT * FROM vip_users ORDER BY expires_at = 0 DESC, expires_at ASC"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def count_active_vips(self) -> int:
+        return len(await self.active_vips())
 
     # ----- Likes: limite de 1 envio por usuário a cada 24 horas -----
     async def acquire_like_slot(self, user_id: int) -> tuple[bool, int]:
