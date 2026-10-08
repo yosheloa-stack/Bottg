@@ -287,6 +287,7 @@ async def main() -> None:
                 BotCommand(command="like", description="Enviar likes grátis por ID"),
                 BotCommand(command="like2", description="Likes pagos: único ou Auto-Like"),
                 BotCommand(command="id", description="Mostrar meu ID do Telegram"),
+                BotCommand(command="vip", description="Consultar ou gerenciar VIP"),
             ]
         )
         me = await bot.get_me()
