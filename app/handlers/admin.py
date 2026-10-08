@@ -346,6 +346,7 @@ async def cb_stats(query: CallbackQuery, config: Config, db: Database) -> None:
     if not _is_admin(query.from_user.id, config):
         return await _deny(query)
     users = await db.count_users()
+    vips = await db.count_active_vips()
     total = await db.count_orders()
     delivered = await db.count_orders("delivered")
     pending = await db.count_orders("pending")
@@ -354,6 +355,7 @@ async def cb_stats(query: CallbackQuery, config: Config, db: Database) -> None:
         "📊 <b>Estatísticas</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"👥 Usuários: <b>{users}</b>\n"
+        f"💎 VIPs ativos: <b>{vips}</b>\n"
         f"🧾 Pedidos totais: <b>{total}</b>\n"
         f"✅ Entregues: <b>{delivered}</b>\n"
         f"⏳ Pendentes: <b>{pending}</b>\n"
