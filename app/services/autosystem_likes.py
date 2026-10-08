@@ -24,7 +24,7 @@ class AutoSystemLikesApi:
         self,
         base_url: str,
         api_key: str,
-        quantity: int = 100,
+        quantity: int = 220,
         region: str = "BR",
     ) -> None:
         self._base = base_url.rstrip("/")
