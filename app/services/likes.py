@@ -27,10 +27,12 @@ class LikesApiResult:
 
 
 class LikesApi:
-    def __init__(self, base_url: str, api_key: str, quantity: int = 100) -> None:
+    def __init__(self, base_url: str, api_key: str, quantity: int = 220) -> None:
         self._base = base_url.rstrip("/")
         self._key = api_key.strip()
-        self._quantity = max(1, min(int(quantity), 200))
+        # Meta do /like é 220. A Likes Painel, porém, aceita no máximo 200
+        # por requisição; o teto dela é aplicado somente na chamada HTTP.
+        self._quantity = max(1, min(int(quantity), 220))
 
     async def _get(
         self, path: str, params: dict[str, Any] | None = None
@@ -96,7 +98,7 @@ class LikesApi:
     ) -> LikesApiResult:
         """Envia likes respeitando quota e limite por requisição da Key."""
         requested = self._quantity if quantity is None else int(quantity)
-        requested = max(1, min(requested, 200))
+        requested = max(1, min(requested, 220))
 
         quota = await self.quota()
         if not quota.ok:
