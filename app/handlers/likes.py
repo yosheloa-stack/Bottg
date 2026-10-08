@@ -37,6 +37,8 @@ async def _do_send_like(
     likes_api: LikesApi,
     autosystem_likes_api: AutoSystemLikesApi,
     db: Database,
+    *,
+    use_cooldown: bool = True,
 ) -> None:
     status_msg = await message.reply("⏳ Enviando likes...")
     started_at = time.perf_counter()
@@ -82,10 +84,11 @@ async def _do_send_like(
         except (TypeError, ValueError):
             sent_int = 0
 
-        if sent_int > 0:
-            await db.complete_like_slot(message.from_user.id)
-        else:
-            await db.release_like_slot(message.from_user.id)
+        if use_cooldown:
+            if sent_int > 0:
+                await db.complete_like_slot(message.from_user.id)
+            else:
+                await db.release_like_slot(message.from_user.id)
 
         nick = data.get("nickname") or "Jogador"
         before = data.get("likes_before")
@@ -108,7 +111,8 @@ async def _do_send_like(
         )
         return
 
-    await db.release_like_slot(message.from_user.id)
+    if use_cooldown:
+        await db.release_like_slot(message.from_user.id)
 
     logger.warning(
         "Falha no envio de likes uid=%s status=%s error=%s data=%s",
@@ -177,9 +181,17 @@ async def cmd_like(
     likes_api: LikesApi,
     autosystem_likes_api: AutoSystemLikesApi,
     db: Database,
+    config: Config,
 ) -> None:
-    # Bloqueia no privado — likes só em grupos
-    if message.chat.type not in GROUP_TYPES:
+    if not message.from_user:
+        return
+
+    is_owner = message.from_user.id in config.admin_ids
+    is_vip = await db.is_vip(message.from_user.id)
+
+    # Usuário comum/VIP segue usando /like em grupos.
+    # Donos têm acesso total e podem usar também no privado.
+    if message.chat.type not in GROUP_TYPES and not is_owner:
         await message.answer(texts.LIKE_PRIVATE_BLOCKED)
         return
 
@@ -195,23 +207,27 @@ async def cmd_like(
         )
         return
 
-    allowed, remaining = await db.acquire_like_slot(message.from_user.id)
-    if not allowed:
-        hours, rem = divmod(max(0, remaining), 3600)
-        minutes, seconds = divmod(rem, 60)
-        if hours > 0:
-            wait_text = f"{hours}h {minutes}min"
-        elif minutes > 0:
-            wait_text = f"{minutes}min {seconds}s"
-        else:
-            wait_text = f"{seconds}s"
+    use_cooldown = not (is_owner or is_vip)
 
-        await message.reply(
-            "⏳ <b>Limite de envio atingido.</b>\n\n"
-            "Cada pessoa pode fazer <b>1 envio de likes a cada 24 horas</b>.\n"
-            f"Você poderá usar novamente em <b>{wait_text}</b>."
-        )
-        return
+    if use_cooldown:
+        allowed, remaining = await db.acquire_like_slot(message.from_user.id)
+        if not allowed:
+            hours, rem = divmod(max(0, remaining), 3600)
+            minutes, seconds = divmod(rem, 60)
+            if hours > 0:
+                wait_text = f"{hours}h {minutes}min"
+            elif minutes > 0:
+                wait_text = f"{minutes}min {seconds}s"
+            else:
+                wait_text = f"{seconds}s"
+
+            await message.reply(
+                "⏳ <b>Limite de envio atingido.</b>\n\n"
+                "Cada pessoa pode fazer <b>1 envio de likes a cada 24 horas</b>.\n"
+                f"Você poderá usar novamente em <b>{wait_text}</b>.\n\n"
+                "💎 Usuários VIP não possuem esse limite."
+            )
+            return
 
     try:
         await _do_send_like(
@@ -220,9 +236,11 @@ async def cmd_like(
             likes_api,
             autosystem_likes_api,
             db,
+            use_cooldown=use_cooldown,
         )
     except Exception:
-        await db.release_like_slot(message.from_user.id)
+        if use_cooldown:
+            await db.release_like_slot(message.from_user.id)
         raise
 
 
