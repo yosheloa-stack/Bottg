@@ -26,13 +26,21 @@ class LikesApiResult:
     error: str | None = None
 
 
+def _counter_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(str(value).strip().replace(".", "").replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
 class LikesApi:
-    def __init__(self, base_url: str, api_key: str, quantity: int = 220) -> None:
+    def __init__(self, base_url: str, api_key: str, quantity: int = 200) -> None:
         self._base = base_url.rstrip("/")
         self._key = api_key.strip()
-        # Meta do /like é 220. A Likes Painel, porém, aceita no máximo 200
-        # por requisição; o teto dela é aplicado somente na chamada HTTP.
-        self._quantity = max(1, min(int(quantity), 220))
+        # A Likes Painel aceita no máximo 200 por chamada.
+        self._quantity = max(1, min(int(quantity), 200))
 
     async def _get(
         self, path: str, params: dict[str, Any] | None = None
@@ -96,9 +104,9 @@ class LikesApi:
     async def send_like(
         self, uid: str, quantity: int | None = None
     ) -> LikesApiResult:
-        """Envia likes respeitando quota e limite por requisição da Key."""
+        """Envia até 200 e normaliza a quantidade REAL pelo contador."""
         requested = self._quantity if quantity is None else int(quantity)
-        requested = max(1, min(requested, 220))
+        requested = max(1, min(requested, 200))
 
         quota = await self.quota()
         if not quota.ok:
@@ -126,7 +134,10 @@ class LikesApi:
                 error="Limite diário atingido.",
             )
 
-        amount = min(requested, remaining_int, per_request_int, 200)
+        # O contrato público aceita até 200. Não reduzimos silenciosamente o
+        # pedido para um per_request_limit antigo retornado pelo /api/quota.
+        # Se a key realmente não aceitar 200, a /api/like devolve o erro real.
+        amount = min(requested, remaining_int, 200)
         if amount <= 0:
             return LikesApiResult(
                 ok=False,
@@ -151,5 +162,32 @@ class LikesApi:
         )
         if isinstance(result.data, dict):
             result.data.setdefault("region", "BR")
-            result.data.setdefault("target", requested)
+            result.data.setdefault("requested", amount)
+
+            before = _counter_int(result.data.get("likes_before"))
+            after = _counter_int(result.data.get("likes_after"))
+            confirmed = _counter_int(result.data.get("likes_confirmed"))
+            reported = _counter_int(result.data.get("likes_sent"))
+
+            # Fonte da verdade: contador antes/depois.
+            if before is not None and after is not None and after >= before:
+                real_sent = after - before
+            elif confirmed is not None:
+                real_sent = max(0, confirmed)
+            elif reported is not None:
+                real_sent = max(0, reported)
+            else:
+                real_sent = 0
+
+            result.data["likes_sent"] = real_sent
+            result.data["likes_confirmed"] = real_sent
+
+            logger.info(
+                "Likes API confirmado | uid=%s antes=%s depois=%s real=%s reportado=%s",
+                uid,
+                before,
+                after,
+                real_sent,
+                reported,
+            )
         return result
