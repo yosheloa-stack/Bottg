@@ -75,13 +75,31 @@ async def _do_send_like(
     error = (result.error or "").strip()
 
     if result.ok:
-        sent = data.get("likes_sent")
-        if sent is None:
-            sent = 0
+        nick = data.get("nickname") or "Jogador"
+        before = data.get("likes_before")
+        after = data.get("likes_after")
+        region = data.get("region") or "BR"
 
-        try:
-            sent_int = int(sent)
-        except (TypeError, ValueError):
+        def to_int(value):
+            if value is None or isinstance(value, bool):
+                return None
+            try:
+                return int(str(value).strip().replace(".", "").replace(",", ""))
+            except (TypeError, ValueError):
+                return None
+
+        before_int = to_int(before)
+        after_int = to_int(after)
+        confirmed_int = to_int(data.get("likes_confirmed"))
+        reported_int = to_int(data.get("likes_sent"))
+
+        if before_int is not None and after_int is not None and after_int >= before_int:
+            sent_int = after_int - before_int
+        elif confirmed_int is not None:
+            sent_int = max(0, confirmed_int)
+        elif reported_int is not None:
+            sent_int = max(0, reported_int)
+        else:
             sent_int = 0
 
         if use_cooldown:
@@ -90,12 +108,15 @@ async def _do_send_like(
             else:
                 await db.release_like_slot(message.from_user.id)
 
-        nick = data.get("nickname") or "Jogador"
-        before = data.get("likes_before")
-        after = data.get("likes_after")
-        region = data.get("region") or "BR"
-        target = data.get("target") or sent
         elapsed = time.perf_counter() - started_at
+
+        logger.info(
+            "LIKE real | uid=%s antes=%s depois=%s enviado=%s",
+            game_id,
+            before_int,
+            after_int,
+            sent_int,
+        )
 
         await status_msg.edit_text(
             texts.LIKE_SUCCESS.format(
@@ -104,8 +125,7 @@ async def _do_send_like(
                 region=html.escape(str(region)),
                 antes=html.escape(str(before)) if before is not None else "—",
                 depois=html.escape(str(after)) if after is not None else "—",
-                enviadas=sent,
-                target=target,
+                enviadas=sent_int,
                 tempo=f"{elapsed:.2f}",
             )
         )
