@@ -277,43 +277,49 @@ async def cmd_like2(
         return
 
     is_owner = message.from_user.id in config.admin_ids
+    is_vip2 = await db.is_vip2(message.from_user.id)
     arg = (command.args or "").strip()
     anonymous_admin = (
         message.chat.type in GROUP_TYPES
         and message.sender_chat is not None
     )
 
-    # Se foi usado /like2 UID, nunca abre os pacotes.
-    # Em modo "Envio anônimo" o Telegram oculta o ID real do administrador.
-    if arg and not is_owner:
+    # Sem UID: dono/VIP2 recebe instrução do envio direto.
+    # Cliente comum continua podendo abrir os produtos pagos.
+    if not arg and (is_owner or is_vip2):
+        perfil = "DONO" if is_owner else "VIP2"
+        await message.reply(
+            f"🔥 <b>LIKE2 • {perfil}</b>\n\n"
+            "Use assim:\n"
+            "<code>/like2 SEU_ID</code>\n\n"
+            "✅ Pode usar em grupos.\n"
+            "✅ Envio direto pela FFHub."
+        )
+        return
+
+    # /like2 UID é uma porta separada: somente dono ou VIP2.
+    # A checagem acontece ANTES de validar FFHub/chamar a API, então quem não
+    # tem VIP2 nunca gera requisição nem consome saldo.
+    if arg and not (is_owner or is_vip2):
         if anonymous_admin:
             await message.reply(
-                "⚠️ <b>Você está enviando como administrador anônimo.</b>\n\n"
-                "O Telegram esconde seu ID real nesse modo, então eu não consigo "
-                "confirmar que você é um dos donos.\n\n"
-                "Desative <b>Envio anônimo</b> nesse grupo e mande novamente:\n"
-                "<code>/like2 SEU_ID</code>\n\n"
-                "Ou use o comando no privado do bot."
+                "⚠️ <b>Envio anônimo ativado.</b>\n\n"
+                "O Telegram esconde seu ID real, então não consigo confirmar "
+                "se você é dono ou VIP2.\n\n"
+                "Desative o envio anônimo e tente novamente."
             )
         else:
             await message.reply(
-                "🔒 <b>Esse comando direto é exclusivo dos donos.</b>\n\n"
-                f"Seu ID detectado: <code>{message.from_user.id}</code>\n"
-                "Para comprar, use <code>/like2</code> sem informar UID."
+                "🔒 <b>LIKE2 exclusivo para VIP2</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "Você não possui acesso VIP2 ativo.\n\n"
+                "Nenhuma requisição foi enviada.\n"
+                "Use <code>/vip2</code> para consultar seu acesso."
             )
         return
 
-    # Donos usam /like2 UID para envio direto, sem pagamento.
-    if is_owner:
-        if not arg:
-            await message.reply(
-                "💎 <b>LIKE2 • ENVIO DIRETO</b>\n\n"
-                "Use assim:\n"
-                "<code>/like2 SEU_ID</code>\n\n"
-                "Esse comando envia direto pela FFHub, sem PIX e sem pacote."
-            )
-            return
-
+    # Daqui pra baixo só entra dono ou VIP2 com UID informado.
+    if arg and (is_owner or is_vip2):
         game_id = clean_game_id(arg.split()[0])
         if not _valid_like_uid(game_id):
             await message.reply(
@@ -324,15 +330,17 @@ async def cmd_like2(
 
         if not ffhub_shop.configured:
             await message.reply(
-                "⚠️ <b>FFHub não configurada.</b>\n\n"
-                "Abra <b>Painel administrativo → Configurações do dono → FFHub API Key</b>."
+                "⚠️ <b>LIKE2 temporariamente indisponível.</b>\n\n"
+                "A integração FFHub ainda não está configurada."
             )
             return
 
-        status_msg = await message.reply("💎 Enviando Like2...")
+        status_msg = await message.reply("🔥 Enviando Like2...")
         started_at = time.perf_counter()
+        access_type = "owner" if is_owner else "vip2"
         logger.info(
-            "LIKE2 inicio | owner=%s uid=%s",
+            "LIKE2 inicio | acesso=%s user=%s uid=%s",
+            access_type,
             message.from_user.id,
             game_id,
         )
@@ -344,7 +352,8 @@ async def cmd_like2(
         except asyncio.TimeoutError:
             elapsed = time.perf_counter() - started_at
             logger.error(
-                "LIKE2 timeout externo | owner=%s uid=%s elapsed=%.2fs",
+                "LIKE2 timeout externo | acesso=%s user=%s uid=%s elapsed=%.2fs",
+                access_type,
                 message.from_user.id,
                 game_id,
                 elapsed,
@@ -353,7 +362,7 @@ async def cmd_like2(
                 "⏱️ <b>LIKE2 sem resposta da FFHub</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
                 "A API não respondeu em até <b>60 segundos</b>.\n\n"
-                "⚠️ Não vou repetir automaticamente para evitar gastar saldo/enviar duas vezes."
+                "⚠️ Não vou repetir automaticamente para evitar envio duplicado."
             )
             return
         except Exception as exc:  # noqa: BLE001
@@ -366,7 +375,8 @@ async def cmd_like2(
             return
 
         logger.info(
-            "LIKE2 fim | owner=%s uid=%s status=%s ok=%s elapsed=%.2fs",
+            "LIKE2 fim | acesso=%s user=%s uid=%s status=%s ok=%s elapsed=%.2fs",
+            access_type,
             message.from_user.id,
             game_id,
             result.status,
@@ -415,7 +425,7 @@ async def cmd_like2(
                 f"❤️ Enviados: <b>+{html.escape(str(sent_display))}</b>",
                 f"⚡ Tempo: <b>{elapsed:.2f}s</b>",
                 "",
-                "✅ Envio direto concluído.",
+                f"✅ Envio concluído via <b>{'DONO' if is_owner else 'VIP2'}</b>.",
             ]
         )
         await status_msg.edit_text("\n".join(lines))
