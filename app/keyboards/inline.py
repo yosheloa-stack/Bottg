@@ -181,11 +181,14 @@ def admin_panel() -> InlineKeyboardMarkup:
     )
     kb.row(InlineKeyboardButton(text="📢 Broadcast", callback_data="admin:broadcast"))
     kb.row(
-        InlineKeyboardButton(text="💎 Gerenciar VIP", callback_data="admin:vip"),
+        InlineKeyboardButton(text="💎 VIP", callback_data="admin:vip"),
+        InlineKeyboardButton(text="🔥 VIP2", callback_data="admin:vip2"),
+    )
+    kb.row(
         InlineKeyboardButton(
             text="🔐 Configurações",
             callback_data="owner:settings",
-        ),
+        )
     )
     kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
     return kb.as_markup()
@@ -247,6 +250,20 @@ def vip_admin_panel() -> InlineKeyboardMarkup:
     )
     kb.row(
         InlineKeyboardButton(text="📋 Listar VIPs", callback_data="vip:list")
+    )
+    kb.row(InlineKeyboardButton(text="⬅️ Painel Admin", callback_data="admin:panel"))
+    return kb.as_markup()
+
+
+
+def vip2_admin_panel() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        InlineKeyboardButton(text="➕ Adicionar VIP2", callback_data="vip2:add"),
+        InlineKeyboardButton(text="➖ Remover VIP2", callback_data="vip2:remove"),
+    )
+    kb.row(
+        InlineKeyboardButton(text="📋 Listar VIP2", callback_data="vip2:list")
     )
     kb.row(InlineKeyboardButton(text="⬅️ Painel Admin", callback_data="admin:panel"))
     return kb.as_markup()
