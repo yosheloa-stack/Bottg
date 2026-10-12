@@ -6,7 +6,7 @@ import html
 import logging
 import time
 
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
@@ -271,6 +271,7 @@ async def cmd_like2(
     db: Database,
     config: Config,
     ffhub_shop: FFHubShopApi,
+    bot: Bot,
 ) -> None:
     """Dono envia direto; clientes recebem os pacotes pagos."""
     if not message.from_user:
@@ -279,15 +280,52 @@ async def cmd_like2(
     is_owner = message.from_user.id in config.admin_ids
     is_vip2 = await db.is_vip2(message.from_user.id)
     arg = (command.args or "").strip()
-    anonymous_admin = (
+
+    # Alguns grupos fazem o Telegram entregar a mensagem como o próprio chat
+    # (sender_chat == chat), mesmo quando o usuário diz não ter ativado
+    # "administrador anônimo". Nesse caso o from_user deixa de ser o ID real.
+    sent_as_group = (
         message.chat.type in GROUP_TYPES
         and message.sender_chat is not None
+        and message.sender_chat.id == message.chat.id
     )
 
-    # Sem UID: dono/VIP2 recebe instrução do envio direto.
-    # Cliente comum continua podendo abrir os produtos pagos.
-    if not arg and (is_owner or is_vip2):
-        perfil = "DONO" if is_owner else "VIP2"
+    owner_group_access = False
+    if sent_as_group:
+        try:
+            admins = await bot.get_chat_administrators(message.chat.id)
+            owner_admins = [
+                member
+                for member in admins
+                if getattr(member, "user", None)
+                and member.user.id in config.admin_ids
+            ]
+            # Só reconhece o envio "como grupo" quando existe um dos donos
+            # configurados entre os administradores reais deste chat.
+            owner_group_access = bool(owner_admins)
+            logger.info(
+                "LIKE2 sender_chat | chat=%s owners_admin=%s autorizado=%s",
+                message.chat.id,
+                [m.user.id for m in owner_admins],
+                owner_group_access,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Falha ao validar administradores do grupo no /like2 chat=%s",
+                message.chat.id,
+            )
+
+    has_direct_access = is_owner or is_vip2 or owner_group_access
+
+    # Sem UID: dono/VIP2/grupo do dono recebe instrução do envio direto.
+    if not arg and has_direct_access:
+        perfil = (
+            "DONO"
+            if is_owner
+            else "VIP2"
+            if is_vip2
+            else "GRUPO DO DONO"
+        )
         await message.reply(
             f"🔥 <b>LIKE2 • {perfil}</b>\n\n"
             "Use assim:\n"
@@ -297,29 +335,20 @@ async def cmd_like2(
         )
         return
 
-    # /like2 UID é uma porta separada: somente dono ou VIP2.
-    # A checagem acontece ANTES de validar FFHub/chamar a API, então quem não
-    # tem VIP2 nunca gera requisição nem consome saldo.
-    if arg and not (is_owner or is_vip2):
-        if anonymous_admin:
-            await message.reply(
-                "⚠️ <b>Envio anônimo ativado.</b>\n\n"
-                "O Telegram esconde seu ID real, então não consigo confirmar "
-                "se você é dono ou VIP2.\n\n"
-                "Desative o envio anônimo e tente novamente."
-            )
-        else:
-            await message.reply(
-                "🔒 <b>LIKE2 exclusivo para VIP2</b>\n"
-                "━━━━━━━━━━━━━━━━━━━━\n"
-                "Você não possui acesso VIP2 ativo.\n\n"
-                "Nenhuma requisição foi enviada.\n"
-                "Use <code>/vip2</code> para consultar seu acesso."
-            )
+    # /like2 UID é uma porta separada: dono, VIP2 ou grupo validado do dono.
+    # Quem não passar daqui NÃO chega à FFHub.
+    if arg and not has_direct_access:
+        await message.reply(
+            "🔒 <b>LIKE2 exclusivo para VIP2</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "Você não possui acesso VIP2 ativo.\n\n"
+            "Nenhuma requisição foi enviada.\n"
+            "Use <code>/vip2</code> para consultar seu acesso."
+        )
         return
 
-    # Daqui pra baixo só entra dono ou VIP2 com UID informado.
-    if arg and (is_owner or is_vip2):
+    # Daqui pra baixo só entra dono/VIP2/grupo do dono com UID informado.
+    if arg and has_direct_access:
         game_id = clean_game_id(arg.split()[0])
         if not _valid_like_uid(game_id):
             await message.reply(
@@ -337,7 +366,13 @@ async def cmd_like2(
 
         status_msg = await message.reply("🔥 Enviando Like2...")
         started_at = time.perf_counter()
-        access_type = "owner" if is_owner else "vip2"
+        access_type = (
+            "owner"
+            if is_owner
+            else "vip2"
+            if is_vip2
+            else "owner_group"
+        )
         logger.info(
             "LIKE2 inicio | acesso=%s user=%s uid=%s",
             access_type,
@@ -425,7 +460,7 @@ async def cmd_like2(
                 f"❤️ Enviados: <b>+{html.escape(str(sent_display))}</b>",
                 f"⚡ Tempo: <b>{elapsed:.2f}s</b>",
                 "",
-                f"✅ Envio concluído via <b>{'DONO' if is_owner else 'VIP2'}</b>.",
+                f"✅ Envio concluído via <b>{'DONO' if (is_owner or owner_group_access) else 'VIP2'}</b>.",
             ]
         )
         await status_msg.edit_text("\n".join(lines))
