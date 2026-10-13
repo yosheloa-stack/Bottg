@@ -96,9 +96,9 @@ def load_config() -> Config:
     price_like2_15d = Decimal(_get("PRICE_LIKE2_15D", "0.00"))
     price_like2_30d = Decimal(_get("PRICE_LIKE2_30D", "0.00"))
 
-    likes_quantity = int(_get("LIKES_QUANTITY", "200"))
-    if not 1 <= likes_quantity <= 200:
-        raise RuntimeError("LIKES_QUANTITY deve estar entre 1 e 200.")
+    # /like usa 200 fixos. Não lê LIKES_QUANTITY do ambiente para evitar
+    # uma variável antiga da Square (ex.: 100) sobrescrever o envio atual.
+    likes_quantity = 200
 
     products = {
         "passe": Product(
