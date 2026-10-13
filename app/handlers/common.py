@@ -1,7 +1,7 @@
 """Handlers comuns: /start, menu, navegação, cancelar, suporte, pedidos."""
 from __future__ import annotations
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -11,6 +11,7 @@ from app.catalog import resolve_products
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import autolike_plans_menu, back_home, main_menu, store_menu
+from app.owner_auth import resolve_owner_id
 from app.ui import edit_screen, send_menu
 from app.utils import format_price
 
@@ -22,29 +23,42 @@ def _is_admin(user_id: int, config: Config) -> bool:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext, db: Database, config: Config) -> None:
+async def cmd_start(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    config: Config,
+    bot: Bot,
+) -> None:
     await state.clear()
     await db.upsert_user(
         message.from_user.id,
         message.from_user.username,
         message.from_user.first_name,
     )
+    owner_id = await resolve_owner_id(message, bot, config)
     await send_menu(
         message,
         config.menu_banner,
         texts.WELCOME.format(shop_name=config.shop_name),
-        main_menu(_is_admin(message.from_user.id, config)),
+        main_menu(owner_id is not None),
     )
 
 
 @router.message(Command("menu"))
-async def cmd_menu(message: Message, state: FSMContext, config: Config) -> None:
+async def cmd_menu(
+    message: Message,
+    state: FSMContext,
+    config: Config,
+    bot: Bot,
+) -> None:
     await state.clear()
+    owner_id = await resolve_owner_id(message, bot, config)
     await send_menu(
         message,
         config.menu_banner,
         texts.WELCOME.format(shop_name=config.shop_name),
-        main_menu(_is_admin(message.from_user.id, config)),
+        main_menu(owner_id is not None),
     )
 
 
