@@ -208,10 +208,23 @@ async def cmd_owner_autolike(
         )
         return
 
+    notify_chat_id = (
+        message.chat.id
+        if message.chat.type in {"group", "supergroup"}
+        else None
+    )
+    notify_thread_id = (
+        message.message_thread_id
+        if notify_chat_id is not None
+        else None
+    )
+
     sub_id, created = await db.create_owner_ffhub_autolike_subscription(
         user_id=owner_id,
         game_id=uid,
         days_total=days,
+        notify_chat_id=notify_chat_id,
+        notify_thread_id=notify_thread_id,
     )
 
     if not created:
@@ -284,5 +297,10 @@ async def cmd_owner_autolike(
         f"📊 Likes depois: <b>{after if after is not None else '—'}</b>\n"
         f"❤️ Total acumulado: <b>+{int(sub.get('total_likes_sent') or 0)}</b>\n"
         f"⏰ Próximo envio: <b>{next_text}</b>\n\n"
-        "✅ Os próximos envios seguirão o mesmo horário do cadastro."
+        "✅ Os próximos envios seguirão o mesmo horário do cadastro.\n"
+        + (
+            "📣 As próximas entregas também serão avisadas neste grupo."
+            if notify_chat_id is not None
+            else "📩 As próximas entregas serão avisadas no privado."
+        )
     )
