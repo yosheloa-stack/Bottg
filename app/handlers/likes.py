@@ -15,6 +15,7 @@ from app.catalog import resolve_products
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import premium_like_menu
+from app.owner_auth import resolve_owner_id
 from app.services.autolike import AutoLikeApi
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
@@ -307,11 +308,13 @@ async def cmd_like(
     autolike: AutoLikeApi,
     db: Database,
     config: Config,
+    bot: Bot,
 ) -> None:
     if not message.from_user:
         return
 
-    is_owner = message.from_user.id in config.admin_ids
+    owner_id = await resolve_owner_id(message, bot, config)
+    is_owner = owner_id is not None
     is_vip = await db.is_vip(message.from_user.id)
 
     # Usuário comum/VIP segue usando /like em grupos.
@@ -383,45 +386,12 @@ async def cmd_like2(
     if not message.from_user:
         return
 
-    is_owner = message.from_user.id in config.admin_ids
+    owner_id = await resolve_owner_id(message, bot, config)
+    is_owner = owner_id is not None
     is_vip2 = await db.is_vip2(message.from_user.id)
     arg = (command.args or "").strip()
 
-    # Alguns grupos fazem o Telegram entregar a mensagem como o próprio chat
-    # (sender_chat == chat), mesmo quando o usuário diz não ter ativado
-    # "administrador anônimo". Nesse caso o from_user deixa de ser o ID real.
-    sent_as_group = (
-        message.chat.type in GROUP_TYPES
-        and message.sender_chat is not None
-        and message.sender_chat.id == message.chat.id
-    )
-
-    owner_group_access = False
-    if sent_as_group:
-        try:
-            admins = await bot.get_chat_administrators(message.chat.id)
-            owner_admins = [
-                member
-                for member in admins
-                if getattr(member, "user", None)
-                and member.user.id in config.admin_ids
-            ]
-            # Só reconhece o envio "como grupo" quando existe um dos donos
-            # configurados entre os administradores reais deste chat.
-            owner_group_access = bool(owner_admins)
-            logger.info(
-                "LIKE2 sender_chat | chat=%s owners_admin=%s autorizado=%s",
-                message.chat.id,
-                [m.user.id for m in owner_admins],
-                owner_group_access,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Falha ao validar administradores do grupo no /like2 chat=%s",
-                message.chat.id,
-            )
-
-    has_direct_access = is_owner or is_vip2 or owner_group_access
+    has_direct_access = is_owner or is_vip2
 
     # Sem UID: dono/VIP2/grupo do dono recebe instrução do envio direto.
     if not arg and has_direct_access:
@@ -566,7 +536,7 @@ async def cmd_like2(
                 f"❤️ Enviados: <b>+{html.escape(str(sent_display))}</b>",
                 f"⚡ Tempo: <b>{elapsed:.2f}s</b>",
                 "",
-                f"✅ Envio concluído via <b>{'DONO' if (is_owner or owner_group_access) else 'VIP2'}</b>.",
+                f"✅ Envio concluído via <b>{'DONO' if is_owner else 'VIP2'}</b>.",
             ]
         )
         await status_msg.edit_text("\n".join(lines))
