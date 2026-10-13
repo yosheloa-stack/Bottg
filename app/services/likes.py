@@ -45,7 +45,10 @@ def _counter_int(value: Any) -> int | None:
 
 class LikesApi:
     def __init__(self, base_url: str, api_key: str, quantity: int = 200) -> None:
-        self._base = base_url.rstrip("/")
+        base = base_url.rstrip("/")
+        if base == "http://likespainel.squareweb.app":
+            base = "https://likespainel.squareweb.app"
+        self._base = base
         self._key = api_key.strip()
         # A Likes Painel aceita no máximo 200 por chamada.
         self._quantity = max(1, min(int(quantity), 200))
