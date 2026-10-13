@@ -464,6 +464,77 @@ class Database:
             row = await existing.fetchone()
         return int(row["id"]) if row else 0
 
+    async def create_owner_ffhub_autolike_subscription(
+        self,
+        user_id: int,
+        game_id: str,
+        days_total: int,
+    ) -> tuple[int, bool]:
+        """Cria Auto-Like FFHub manual do dono sem precisar de pedido/PIX.
+
+        Retorna (subscription_id, created). Se já existir uma assinatura ativa
+        para o mesmo UID, não duplica os envios.
+        """
+        now = int(time.time())
+        days_total = max(1, int(days_total))
+
+        async with self.db.execute(
+            "SELECT id FROM ffhub_autolike_subscriptions "
+            "WHERE game_id = ? AND status = 'active' "
+            "ORDER BY id DESC LIMIT 1",
+            (str(game_id),),
+        ) as cur:
+            existing = await cur.fetchone()
+        if existing:
+            return int(existing["id"]), False
+
+        async with self.db.execute(
+            "SELECT MIN(order_id) AS min_id FROM ffhub_autolike_subscriptions "
+            "WHERE order_id < 0"
+        ) as cur:
+            row = await cur.fetchone()
+        min_id = int(row["min_id"]) if row and row["min_id"] is not None else 0
+        synthetic_order_id = min_id - 1 if min_id < 0 else -1
+
+        cur = await self.db.execute(
+            """
+            INSERT INTO ffhub_autolike_subscriptions
+                (order_id, user_id, game_id, days_total, sends_done,
+                 next_send_at, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, ?, 'active', ?, ?)
+            """,
+            (
+                synthetic_order_id,
+                int(user_id),
+                str(game_id),
+                days_total,
+                now,
+                now,
+                now,
+            ),
+        )
+        await self.db.commit()
+        return int(cur.lastrowid), True
+
+    async def active_ffhub_autolikes(self, limit: int = 100) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_subscriptions "
+            "WHERE status = 'active' ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def cancel_ffhub_autolike_by_uid(self, game_id: str) -> int:
+        cur = await self.db.execute(
+            "UPDATE ffhub_autolike_subscriptions "
+            "SET status = 'cancelled', updated_at = ? "
+            "WHERE game_id = ? AND status = 'active'",
+            (int(time.time()), str(game_id)),
+        )
+        await self.db.commit()
+        return int(cur.rowcount or 0)
+
     async def due_ffhub_autolikes(self, limit: int = 50) -> list[dict[str, Any]]:
         now = int(time.time())
         async with self.db.execute(
