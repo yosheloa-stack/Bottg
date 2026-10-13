@@ -16,6 +16,7 @@ from aiogram.types import CallbackQuery, Message
 from app.catalog import resolve_product, resolve_products
 from app.config import Config
 from app.database import Database
+from app.owner_auth import resolve_owner_id
 from app.keyboards.inline import (
     admin_panel,
     admin_product_edit,
@@ -59,8 +60,9 @@ async def _deny(query: CallbackQuery) -> None:
 
 # ---------- Entrada ----------
 @router.message(Command("admin"))
-async def cmd_admin(message: Message, config: Config) -> None:
-    if not _is_admin(message.from_user.id, config):
+async def cmd_admin(message: Message, config: Config, bot: Bot) -> None:
+    owner_id = await resolve_owner_id(message, bot, config)
+    if owner_id is None:
         return
     await message.answer("⚙️ <b>Painel Admin</b>", reply_markup=admin_panel())
 
