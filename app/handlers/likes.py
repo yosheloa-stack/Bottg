@@ -15,6 +15,7 @@ from app.catalog import resolve_products
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import premium_like_menu
+from app.services.autolike import AutoLikeApi
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.services.likes import LikesApi
@@ -31,17 +32,68 @@ def _valid_like_uid(game_id: str) -> bool:
     return game_id.isdigit() and 8 <= len(game_id) <= 11
 
 
+def _to_counter_int(value) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(str(value).strip().replace(".", "").replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_profile_likes(data: dict) -> int | None:
+    """Extrai curtidas de respostas diferentes da API de info."""
+    if not isinstance(data, dict):
+        return None
+
+    candidates = [data]
+    for key in ("player", "jogador", "basicInfo", "basic_info", "data"):
+        value = data.get(key)
+        if isinstance(value, dict):
+            candidates.append(value)
+
+    for src in candidates:
+        for key in (
+            "likes",
+            "curtidas",
+            "accountLikes",
+            "account_likes",
+            "like",
+            "liked",
+        ):
+            value = _to_counter_int(src.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+async def _profile_likes(autolike: AutoLikeApi, game_id: str) -> int | None:
+    try:
+        result = await autolike.info_player(game_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha ao consultar likes do perfil uid=%s", game_id)
+        return None
+    if not result.ok or not isinstance(result.data, dict):
+        return None
+    return _extract_profile_likes(result.data)
+
+
 async def _do_send_like(
     message: Message,
     game_id: str,
     likes_api: LikesApi,
     autosystem_likes_api: AutoSystemLikesApi,
+    autolike: AutoLikeApi,
     db: Database,
     *,
     use_cooldown: bool = True,
 ) -> None:
     status_msg = await message.reply("⏳ Enviando likes...")
     started_at = time.perf_counter()
+
+    # Guarda um contador independente antes do envio. Ele serve para confirmar
+    # entregas mesmo quando a Likes Painel processa mas não devolve a resposta.
+    verified_before = await _profile_likes(autolike, game_id)
     result = await likes_api.send_like(game_id)
 
     if (
@@ -80,18 +132,10 @@ async def _do_send_like(
         after = data.get("likes_after")
         region = data.get("region") or "BR"
 
-        def to_int(value):
-            if value is None or isinstance(value, bool):
-                return None
-            try:
-                return int(str(value).strip().replace(".", "").replace(",", ""))
-            except (TypeError, ValueError):
-                return None
-
-        before_int = to_int(before)
-        after_int = to_int(after)
-        confirmed_int = to_int(data.get("likes_confirmed"))
-        reported_int = to_int(data.get("likes_sent"))
+        before_int = _to_counter_int(before)
+        after_int = _to_counter_int(after)
+        confirmed_int = _to_counter_int(data.get("likes_confirmed"))
+        reported_int = _to_counter_int(data.get("likes_sent"))
 
         if before_int is not None and after_int is not None and after_int >= before_int:
             sent_int = after_int - before_int
@@ -131,21 +175,63 @@ async def _do_send_like(
         )
         return
 
-    # Timeout após o envio é ambíguo: a API pode ter recebido/processado
-    # e só não ter devolvido a confirmação a tempo. Não chama fallback nem libera
-    # retry imediato para evitar envio duplicado.
+    # Timeout após o envio: verifica o contador real por outra rota antes
+    # de assumir falha. Isso evita falso erro e também evita envio duplicado.
     if data.get("delivery_unknown"):
+        verified_after = None
+        for delay in (2, 4, 6):
+            await asyncio.sleep(delay)
+            verified_after = await _profile_likes(autolike, game_id)
+            if (
+                verified_before is not None
+                and verified_after is not None
+                and verified_after > verified_before
+            ):
+                break
+
+        if (
+            verified_before is not None
+            and verified_after is not None
+            and verified_after > verified_before
+        ):
+            sent_int = verified_after - verified_before
+            elapsed = time.perf_counter() - started_at
+
+            if use_cooldown:
+                await db.complete_like_slot(message.from_user.id)
+
+            logger.info(
+                "LIKE confirmado apos timeout | uid=%s antes=%s depois=%s real=%s",
+                game_id,
+                verified_before,
+                verified_after,
+                sent_int,
+            )
+
+            await status_msg.edit_text(
+                texts.LIKE_SUCCESS.format(
+                    game_id=game_id,
+                    nick="Jogador",
+                    region="BR",
+                    antes=verified_before,
+                    depois=verified_after,
+                    enviadas=sent_int,
+                    tempo=f"{elapsed:.2f}",
+                )
+            )
+            return
+
         logger.warning(
-            "LIKE com confirmacao incerta | uid=%s timeout=true data=%s",
+            "LIKE ainda incerto apos verificacao | uid=%s antes=%s depois=%s",
             game_id,
-            data,
+            verified_before,
+            verified_after,
         )
         await status_msg.edit_text(
-            "⏳ <b>Envio ainda aguardando confirmação</b>\n\n"
+            "⏳ <b>Envio processado, confirmação pendente</b>\n\n"
             f"🆔 UID: <code>{game_id}</code>\n"
-            "A API recebeu a tentativa, mas demorou para devolver o resultado.\n\n"
-            "⚠️ Não vou chamar outra API automaticamente para evitar enviar duas vezes.\n"
-            "Aguarde alguns minutos antes de tentar novamente."
+            "Não consegui confirmar uma mudança no contador ainda.\n\n"
+            "⚠️ Não vou repetir automaticamente para evitar envio duplicado."
         )
         return
 
@@ -218,6 +304,7 @@ async def cmd_like(
     command: CommandObject,
     likes_api: LikesApi,
     autosystem_likes_api: AutoSystemLikesApi,
+    autolike: AutoLikeApi,
     db: Database,
     config: Config,
 ) -> None:
@@ -273,6 +360,7 @@ async def cmd_like(
             game_id,
             likes_api,
             autosystem_likes_api,
+            autolike,
             db,
             use_cooldown=use_cooldown,
         )
