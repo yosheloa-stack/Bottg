@@ -61,6 +61,24 @@ CREATE TABLE IF NOT EXISTS ffhub_autolike_subscriptions (
 CREATE INDEX IF NOT EXISTS idx_ffhub_autolike_due
 ON ffhub_autolike_subscriptions(status, next_send_at);
 
+CREATE TABLE IF NOT EXISTS ffhub_autolike_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    subscription_id INTEGER NOT NULL,
+    game_id         TEXT NOT NULL,
+    nickname        TEXT,
+    likes_before    INTEGER,
+    likes_after     INTEGER,
+    likes_sent      INTEGER NOT NULL DEFAULT 0,
+    raw_result      TEXT,
+    sent_at         INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ffhub_autolike_history_sub
+ON ffhub_autolike_history(subscription_id, sent_at);
+
+CREATE INDEX IF NOT EXISTS idx_ffhub_autolike_history_uid
+ON ffhub_autolike_history(game_id, sent_at);
+
 CREATE TABLE IF NOT EXISTS owner_settings (
     key         TEXT PRIMARY KEY,
     value       TEXT NOT NULL,
@@ -508,7 +526,7 @@ class Database:
                 int(user_id),
                 str(game_id),
                 days_total,
-                now,
+                now + 86400,
                 now,
                 now,
             ),
@@ -535,6 +553,96 @@ class Database:
         await self.db.commit()
         return int(cur.rowcount or 0)
 
+    async def get_ffhub_autolike_status(
+        self, game_id: str
+    ) -> Optional[dict[str, Any]]:
+        """Retorna a assinatura mais recente do UID com totais e última entrega."""
+        async with self.db.execute(
+            """
+            SELECT
+                s.*,
+                COALESCE((
+                    SELECT SUM(h.likes_sent)
+                    FROM ffhub_autolike_history h
+                    WHERE h.subscription_id = s.id
+                ), 0) AS total_likes_sent,
+                (
+                    SELECT h.nickname
+                    FROM ffhub_autolike_history h
+                    WHERE h.subscription_id = s.id
+                      AND h.nickname IS NOT NULL
+                      AND h.nickname != ''
+                    ORDER BY h.sent_at DESC, h.id DESC
+                    LIMIT 1
+                ) AS nickname,
+                (
+                    SELECT h.likes_sent
+                    FROM ffhub_autolike_history h
+                    WHERE h.subscription_id = s.id
+                    ORDER BY h.sent_at DESC, h.id DESC
+                    LIMIT 1
+                ) AS last_likes_sent,
+                (
+                    SELECT h.likes_before
+                    FROM ffhub_autolike_history h
+                    WHERE h.subscription_id = s.id
+                    ORDER BY h.sent_at DESC, h.id DESC
+                    LIMIT 1
+                ) AS last_likes_before,
+                (
+                    SELECT h.likes_after
+                    FROM ffhub_autolike_history h
+                    WHERE h.subscription_id = s.id
+                    ORDER BY h.sent_at DESC, h.id DESC
+                    LIMIT 1
+                ) AS last_likes_after
+            FROM ffhub_autolike_subscriptions s
+            WHERE s.game_id = ?
+            ORDER BY (s.status = 'active') DESC, s.id DESC
+            LIMIT 1
+            """,
+            (str(game_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def active_ffhub_autolikes_with_stats(
+        self, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            """
+            SELECT
+                s.*,
+                COALESCE(SUM(h.likes_sent), 0) AS total_likes_sent,
+                (
+                    SELECT h2.nickname
+                    FROM ffhub_autolike_history h2
+                    WHERE h2.subscription_id = s.id
+                      AND h2.nickname IS NOT NULL
+                      AND h2.nickname != ''
+                    ORDER BY h2.sent_at DESC, h2.id DESC
+                    LIMIT 1
+                ) AS nickname,
+                (
+                    SELECT h3.likes_sent
+                    FROM ffhub_autolike_history h3
+                    WHERE h3.subscription_id = s.id
+                    ORDER BY h3.sent_at DESC, h3.id DESC
+                    LIMIT 1
+                ) AS last_likes_sent
+            FROM ffhub_autolike_subscriptions s
+            LEFT JOIN ffhub_autolike_history h
+              ON h.subscription_id = s.id
+            WHERE s.status = 'active'
+            GROUP BY s.id
+            ORDER BY s.created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
     async def due_ffhub_autolikes(self, limit: int = 50) -> list[dict[str, Any]]:
         now = int(time.time())
         async with self.db.execute(
@@ -557,7 +665,14 @@ class Database:
         await self.db.commit()
 
     async def complete_ffhub_autolike_send(
-        self, subscription_id: int, result_text: str = ""
+        self,
+        subscription_id: int,
+        result_text: str = "",
+        *,
+        nickname: str | None = None,
+        likes_before: int | None = None,
+        likes_after: int | None = None,
+        likes_sent: int | None = None,
     ) -> dict[str, Any] | None:
         now = int(time.time())
         async with self.db.execute(
@@ -571,7 +686,14 @@ class Database:
         sends_done = int(row["sends_done"]) + 1
         days_total = int(row["days_total"])
         status = "completed" if sends_done >= days_total else "active"
-        next_send_at = 0 if status == "completed" else now + 86400
+
+        # Mantém o horário do cadastro como âncora diária.
+        created_at = int(row["created_at"])
+        next_send_at = 0 if status == "completed" else created_at + (sends_done * 86400)
+
+        sent_value = max(0, int(likes_sent or 0))
+        before_value = int(likes_before) if likes_before is not None else None
+        after_value = int(likes_after) if likes_after is not None else None
 
         await self.db.execute(
             "UPDATE ffhub_autolike_subscriptions "
@@ -585,6 +707,25 @@ class Database:
                 result_text,
                 now,
                 subscription_id,
+            ),
+        )
+
+        await self.db.execute(
+            """
+            INSERT INTO ffhub_autolike_history
+                (subscription_id, game_id, nickname, likes_before,
+                 likes_after, likes_sent, raw_result, sent_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                subscription_id,
+                str(row["game_id"]),
+                nickname,
+                before_value,
+                after_value,
+                sent_value,
+                result_text,
+                now,
             ),
         )
         await self.db.commit()
