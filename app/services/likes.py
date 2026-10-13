@@ -7,6 +7,7 @@ Contrato da API:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -15,7 +16,14 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = aiohttp.ClientTimeout(total=35)
+# A rota /api/like pode levar bem mais de 35s para confirmar o contador.
+# Mantemos uma janela maior para não transformar processamento lento em falso erro.
+TIMEOUT = aiohttp.ClientTimeout(
+    total=110,
+    connect=15,
+    sock_connect=15,
+    sock_read=100,
+)
 
 
 @dataclass
@@ -90,6 +98,21 @@ class LikesApi:
                         error=str(error) if error else None,
                     )
 
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            logger.warning("Timeout na Likes Painel API %s: %s", path, exc)
+            return LikesApiResult(
+                ok=False,
+                status=0,
+                data={
+                    "timeout": True,
+                    "delivery_unknown": path == "/api/like",
+                },
+                error=(
+                    "A API demorou para confirmar o resultado."
+                    if path == "/api/like"
+                    else "A API demorou para responder."
+                ),
+            )
         except aiohttp.ClientError as exc:
             logger.warning("Erro de rede na Likes Painel API %s: %s", path, exc)
             return LikesApiResult(ok=False, status=0, data={}, error=str(exc))
