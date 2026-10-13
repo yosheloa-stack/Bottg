@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS ffhub_autolike_subscriptions (
     last_sent_at  INTEGER,
     status        TEXT NOT NULL DEFAULT 'active',
     last_result   TEXT,
+    notify_chat_id INTEGER,
+    notify_thread_id INTEGER,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -117,6 +119,23 @@ class Database:
         self._db = await aiosqlite.connect(self._path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(SCHEMA)
+
+        # Migração leve para bancos já existentes na Square.
+        async with self._db.execute(
+            "PRAGMA table_info(ffhub_autolike_subscriptions)"
+        ) as cur:
+            columns = {str(row["name"]) for row in await cur.fetchall()}
+        if "notify_chat_id" not in columns:
+            await self._db.execute(
+                "ALTER TABLE ffhub_autolike_subscriptions "
+                "ADD COLUMN notify_chat_id INTEGER"
+            )
+        if "notify_thread_id" not in columns:
+            await self._db.execute(
+                "ALTER TABLE ffhub_autolike_subscriptions "
+                "ADD COLUMN notify_thread_id INTEGER"
+            )
+
         await self._db.commit()
 
     async def close(self) -> None:
@@ -487,6 +506,8 @@ class Database:
         user_id: int,
         game_id: str,
         days_total: int,
+        notify_chat_id: int | None = None,
+        notify_thread_id: int | None = None,
     ) -> tuple[int, bool]:
         """Cria Auto-Like FFHub manual do dono sem precisar de pedido/PIX.
 
@@ -518,8 +539,9 @@ class Database:
             """
             INSERT INTO ffhub_autolike_subscriptions
                 (order_id, user_id, game_id, days_total, sends_done,
-                 next_send_at, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 0, ?, 'active', ?, ?)
+                 next_send_at, status, notify_chat_id, notify_thread_id,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, ?, 'active', ?, ?, ?, ?)
             """,
             (
                 synthetic_order_id,
@@ -527,6 +549,8 @@ class Database:
                 str(game_id),
                 days_total,
                 now + 86400,
+                int(notify_chat_id) if notify_chat_id is not None else None,
+                int(notify_thread_id) if notify_thread_id is not None else None,
                 now,
                 now,
             ),
