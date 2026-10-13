@@ -138,7 +138,18 @@ async def _do_send_like(
         return
 
     if result.status == 404:
-        await status_msg.edit_text(texts.LIKE_NOT_FOUND)
+        # HTTP 404 isolado nao comprova que o jogador nao existe.
+        # Exigir sinal explicito da API antes de exibir erro definitivo.
+        code = str(data.get("code") or "").upper()
+        detail = str(error or "").lower()
+        confirmed_missing = code in {"PLAYER_NOTFOUND", "PLAYER_NOT_FOUND", "UID_NOT_FOUND"}
+        if confirmed_missing and ("jogador" in detail or "player" in detail or "uid" in detail):
+            await status_msg.edit_text(texts.LIKE_NOT_FOUND)
+        else:
+            await status_msg.edit_text(
+                "⚠️ Não foi possível confirmar o perfil desse ID agora. "
+                "Tente novamente em alguns minutos. Nenhum envio foi confirmado."
+            )
         return
 
     if result.status == 409:
