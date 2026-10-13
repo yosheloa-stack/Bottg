@@ -7,6 +7,7 @@ long polling do Telegram.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -113,6 +114,7 @@ async def watch_ffhub_autolikes(
                 before = _to_int(parsed_like["before"])
                 after = _to_int(parsed_like["after"])
                 nickname = str(parsed_like["nickname"] or "Jogador")
+                safe_nickname = html.escape(nickname)
 
                 updated = await db.complete_ffhub_autolike_send(
                     sub_id,
@@ -136,7 +138,7 @@ async def watch_ffhub_autolikes(
                     await bot.send_message(
                         int(updated["user_id"]),
                         "💚 <b>Auto-Like Premium enviado!</b>\n\n"
-                        f"👤 Nick: <b>{nickname}</b>\n"
+                        f"👤 Nick: <b>{safe_nickname}</b>\n"
                         f"🆔 UID: <code>{updated['game_id']}</code>\n"
                         f"❤️ Enviado hoje: <b>+{sent}</b>\n"
                         f"❤️ Total acumulado: <b>+{total_accumulated}</b>\n"
@@ -158,7 +160,7 @@ async def watch_ffhub_autolikes(
                         await bot.send_message(
                             int(updated["user_id"]),
                             "🏁 <b>Plano Auto-Like Premium concluído!</b>\n\n"
-                            f"👤 Nick: <b>{nickname}</b>\n"
+                            f"👤 Nick: <b>{safe_nickname}</b>\n"
                             f"🆔 UID: <code>{updated['game_id']}</code>\n"
                             f"❤️ Total enviado: <b>+{total_accumulated}</b>\n"
                             f"✅ Foram concluídas <b>{total} entregas diárias</b>.",
