@@ -228,10 +228,16 @@ async def cmd_owner_autolike(
     )
 
     if not created:
+        extra = (
+            "\n📣 <b>Notificações deste Auto Like vinculadas a este grupo.</b>"
+            if notify_chat_id is not None
+            else ""
+        )
         await message.reply(
             "ℹ️ <b>Esse UID já possui Auto Like ativo.</b>\n\n"
             f"🆔 UID: <code>{uid}</code>\n"
-            f"📄 Assinatura: <code>#{sub_id}</code>\n\n"
+            f"📄 Assinatura: <code>#{sub_id}</code>"
+            f"{extra}\n\n"
             f"Use <code>/autolike status {uid}</code> para consultar."
         )
         return
