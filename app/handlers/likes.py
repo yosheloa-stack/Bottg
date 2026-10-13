@@ -16,10 +16,8 @@ from app.config import Config
 from app.database import Database
 from app.keyboards.inline import premium_like_menu
 from app.owner_auth import resolve_owner_id
-from app.services.autolike import AutoLikeApi
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
-from app.services.likes import LikesApi
 from app.utils import clean_game_id
 
 router = Router(name="likes")
@@ -29,7 +27,7 @@ GROUP_TYPES = {"group", "supergroup"}
 
 
 def _valid_like_uid(game_id: str) -> bool:
-    """A Likes Painel API aceita UIDs numéricos de 8 a 11 dígitos."""
+    """Valida UID numérico aceito pelo comando /like."""
     return game_id.isdigit() and 8 <= len(game_id) <= 11
 
 
@@ -42,88 +40,28 @@ def _to_counter_int(value) -> int | None:
         return None
 
 
-def _extract_profile_likes(data: dict) -> int | None:
-    """Extrai curtidas de respostas diferentes da API de info."""
-    if not isinstance(data, dict):
-        return None
-
-    candidates = [data]
-    for key in ("player", "jogador", "basicInfo", "basic_info", "data"):
-        value = data.get(key)
-        if isinstance(value, dict):
-            candidates.append(value)
-
-    for src in candidates:
-        for key in (
-            "likes",
-            "curtidas",
-            "accountLikes",
-            "account_likes",
-            "like",
-            "liked",
-        ):
-            value = _to_counter_int(src.get(key))
-            if value is not None:
-                return value
-    return None
-
-
-async def _profile_likes(autolike: AutoLikeApi, game_id: str) -> int | None:
-    try:
-        result = await autolike.info_player(game_id)
-    except Exception:  # noqa: BLE001
-        logger.exception("Falha ao consultar likes do perfil uid=%s", game_id)
-        return None
-    if not result.ok or not isinstance(result.data, dict):
-        return None
-    return _extract_profile_likes(result.data)
-
-
 async def _do_send_like(
     message: Message,
     game_id: str,
-    likes_api: LikesApi,
     autosystem_likes_api: AutoSystemLikesApi,
-    autolike: AutoLikeApi,
     db: Database,
     *,
     use_cooldown: bool = True,
 ) -> None:
+    """Envia /like exclusivamente pela Auto System."""
     status_msg = await message.reply("⏳ Enviando likes...")
     started_at = time.perf_counter()
 
-    # Guarda um contador independente antes do envio. Ele serve para confirmar
-    # entregas mesmo quando a Likes Painel processa mas não devolve a resposta.
-    verified_before = await _profile_likes(autolike, game_id)
-    result = await likes_api.send_like(game_id)
-
-    if (
-        not result.ok
-        and result.status in (404, 429, 500, 503)
-        and autosystem_likes_api.enabled
-    ):
-        logger.warning(
-            "API principal falhou para uid=%s status=%s; "
-            "tentando fallback Auto System antes de responder ao usuário",
-            game_id,
-            result.status,
+    if not autosystem_likes_api.enabled:
+        if use_cooldown:
+            await db.release_like_slot(message.from_user.id)
+        await status_msg.edit_text(
+            "⚠️ <b>Auto System não configurada.</b>\n"
+            "Avise um administrador."
         )
-        fallback_result = await autosystem_likes_api.send_like(game_id)
-        if fallback_result.ok:
-            logger.info(
-                "Fallback Auto System entregou uid=%s likes=%s",
-                game_id,
-                fallback_result.data.get("likes_sent"),
-            )
-            result = fallback_result
-        else:
-            logger.warning(
-                "Fallback Auto System falhou uid=%s status=%s error=%s",
-                game_id,
-                fallback_result.status,
-                fallback_result.error,
-            )
-            result = fallback_result
+        return
+
+    result = await autosystem_likes_api.send_like(game_id)
     data = result.data if isinstance(result.data, dict) else {}
     error = (result.error or "").strip()
 
@@ -154,9 +92,8 @@ async def _do_send_like(
                 await db.release_like_slot(message.from_user.id)
 
         elapsed = time.perf_counter() - started_at
-
         logger.info(
-            "LIKE real | uid=%s antes=%s depois=%s enviado=%s",
+            "LIKE Auto System | uid=%s antes=%s depois=%s enviado=%s",
             game_id,
             before_int,
             after_int,
@@ -176,71 +113,11 @@ async def _do_send_like(
         )
         return
 
-    # Timeout após o envio: verifica o contador real por outra rota antes
-    # de assumir falha. Isso evita falso erro e também evita envio duplicado.
-    if data.get("delivery_unknown"):
-        verified_after = None
-        for delay in (2, 4, 6):
-            await asyncio.sleep(delay)
-            verified_after = await _profile_likes(autolike, game_id)
-            if (
-                verified_before is not None
-                and verified_after is not None
-                and verified_after > verified_before
-            ):
-                break
-
-        if (
-            verified_before is not None
-            and verified_after is not None
-            and verified_after > verified_before
-        ):
-            sent_int = verified_after - verified_before
-            elapsed = time.perf_counter() - started_at
-
-            if use_cooldown:
-                await db.complete_like_slot(message.from_user.id)
-
-            logger.info(
-                "LIKE confirmado apos timeout | uid=%s antes=%s depois=%s real=%s",
-                game_id,
-                verified_before,
-                verified_after,
-                sent_int,
-            )
-
-            await status_msg.edit_text(
-                texts.LIKE_SUCCESS.format(
-                    game_id=game_id,
-                    nick="Jogador",
-                    region="BR",
-                    antes=verified_before,
-                    depois=verified_after,
-                    enviadas=sent_int,
-                    tempo=f"{elapsed:.2f}",
-                )
-            )
-            return
-
-        logger.warning(
-            "LIKE ainda incerto apos verificacao | uid=%s antes=%s depois=%s",
-            game_id,
-            verified_before,
-            verified_after,
-        )
-        await status_msg.edit_text(
-            "⏳ <b>Envio processado, confirmação pendente</b>\n\n"
-            f"🆔 UID: <code>{game_id}</code>\n"
-            "Não consegui confirmar uma mudança no contador ainda.\n\n"
-            "⚠️ Não vou repetir automaticamente para evitar envio duplicado."
-        )
-        return
-
     if use_cooldown:
         await db.release_like_slot(message.from_user.id)
 
     logger.warning(
-        "Falha no envio de likes uid=%s status=%s error=%s data=%s",
+        "Falha Auto System no /like uid=%s status=%s error=%s data=%s",
         game_id,
         result.status,
         error,
@@ -269,26 +146,24 @@ async def _do_send_like(
         await status_msg.edit_text(
             texts.LIKE_ALREADY.format(
                 game_id=game_id,
-                cooldown=(f"⏱ {html.escape(str(cooldown_text))}" if cooldown_text else ""),
+                cooldown=(
+                    f"⏱ {html.escape(str(cooldown_text))}"
+                    if cooldown_text
+                    else ""
+                ),
             )
         )
         return
 
     if result.status == 429:
-        normalized = error.lower()
-        if "quota" in normalized or "diári" in normalized or "diari" in normalized:
-            await status_msg.edit_text(
-                f"⚠️ {html.escape(error or 'Limite diário de likes atingido.')}"
-            )
-        else:
-            await status_msg.edit_text(
-                f"⏳ {html.escape(error or 'Limite de requisições por minuto atingido. Tente novamente em instantes.')}"
-            )
+        await status_msg.edit_text(
+            f"⏳ {html.escape(error or 'Limite da Auto System atingido. Tente novamente em instantes.')}"
+        )
         return
 
     if result.status == 503:
         await status_msg.edit_text(
-            f"⏳ {html.escape(error or 'Serviço de likes temporariamente indisponível. Tente novamente em instantes.')}"
+            f"⏳ {html.escape(error or 'Auto System temporariamente indisponível. Tente novamente em instantes.')}"
         )
         return
 
@@ -303,9 +178,7 @@ async def _do_send_like(
 async def cmd_like(
     message: Message,
     command: CommandObject,
-    likes_api: LikesApi,
     autosystem_likes_api: AutoSystemLikesApi,
-    autolike: AutoLikeApi,
     db: Database,
     config: Config,
     bot: Bot,
@@ -361,9 +234,7 @@ async def cmd_like(
         await _do_send_like(
             message,
             game_id,
-            likes_api,
             autosystem_likes_api,
-            autolike,
             db,
             use_cooldown=use_cooldown,
         )
