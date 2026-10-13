@@ -131,6 +131,24 @@ async def _do_send_like(
         )
         return
 
+    # Timeout após o envio é ambíguo: a API pode ter recebido/processado
+    # e só não ter devolvido a confirmação a tempo. Não chama fallback nem libera
+    # retry imediato para evitar envio duplicado.
+    if data.get("delivery_unknown"):
+        logger.warning(
+            "LIKE com confirmacao incerta | uid=%s timeout=true data=%s",
+            game_id,
+            data,
+        )
+        await status_msg.edit_text(
+            "⏳ <b>Envio ainda aguardando confirmação</b>\n\n"
+            f"🆔 UID: <code>{game_id}</code>\n"
+            "A API recebeu a tentativa, mas demorou para devolver o resultado.\n\n"
+            "⚠️ Não vou chamar outra API automaticamente para evitar enviar duas vezes.\n"
+            "Aguarde alguns minutos antes de tentar novamente."
+        )
+        return
+
     if use_cooldown:
         await db.release_like_slot(message.from_user.id)
 
