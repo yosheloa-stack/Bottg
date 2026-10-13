@@ -1,12 +1,13 @@
 """Comando de Auto Like FFHub exclusivo dos donos."""
 from __future__ import annotations
 
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from app.config import Config
 from app.database import Database
+from app.owner_auth import resolve_owner_id
 from app.services.ffhub_shop import FFHubShopApi
 from app.utils import clean_game_id
 
@@ -24,15 +25,11 @@ async def cmd_owner_autolike(
     config: Config,
     db: Database,
     ffhub_shop: FFHubShopApi,
+    bot: Bot,
 ) -> None:
-    if not message.from_user:
-        return
-
-    # Exclusivo dos donos, tanto no privado quanto em grupos.
-    if message.from_user.id not in config.admin_ids:
-        await message.reply(
-            "🔒 <b>Comando exclusivo dos donos.</b>"
-        )
+    owner_id = await resolve_owner_id(message, bot, config)
+    if owner_id is None:
+        await message.reply("🔒 <b>Comando exclusivo dos donos.</b>")
         return
 
     args = (command.args or "").split()
@@ -128,7 +125,7 @@ async def cmd_owner_autolike(
         return
 
     sub_id, created = await db.create_owner_ffhub_autolike_subscription(
-        user_id=message.from_user.id,
+        user_id=owner_id,
         game_id=uid,
         days_total=days,
     )
