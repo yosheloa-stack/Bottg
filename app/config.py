@@ -165,7 +165,7 @@ def load_config() -> Config:
         api_base_url=_get("API_BASE_URL", "https://fluxggx.squareweb.app"),
         autolike_api_key=_get("AUTOLIKE_API_KEY", ""),
         likes_api_base_url=_get(
-            "LIKES_API_BASE_URL", "http://likespainel.squareweb.app"
+            "LIKES_API_BASE_URL", "https://likespainel.squareweb.app"
         ),
         likes_api_key=_get("LIKES_API_KEY", required=True),
         likes_quantity=likes_quantity,
