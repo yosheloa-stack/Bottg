@@ -525,7 +525,21 @@ class Database:
         ) as cur:
             existing = await cur.fetchone()
         if existing:
-            return int(existing["id"]), False
+            existing_id = int(existing["id"])
+            if notify_chat_id is not None:
+                await self.db.execute(
+                    "UPDATE ffhub_autolike_subscriptions "
+                    "SET notify_chat_id = ?, notify_thread_id = ?, updated_at = ? "
+                    "WHERE id = ?",
+                    (
+                        int(notify_chat_id),
+                        int(notify_thread_id) if notify_thread_id is not None else None,
+                        now,
+                        existing_id,
+                    ),
+                )
+                await self.db.commit()
+            return existing_id, False
 
         async with self.db.execute(
             "SELECT MIN(order_id) AS min_id FROM ffhub_autolike_subscriptions "
