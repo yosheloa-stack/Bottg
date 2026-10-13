@@ -185,21 +185,7 @@ async def main() -> None:
         private_setting("FFHUB_API_KEY", config.ffhub_api_key),
     )
 
-    quota_check = await likes_api.quota()
-    if quota_check.ok:
-        logger.info(
-            "Likes API OK | quota restante=%s | limite diario=%s | por requisicao=%s",
-            quota_check.data.get("remaining"),
-            quota_check.data.get("daily_limit"),
-            quota_check.data.get("per_request_limit"),
-        )
-    else:
-        logger.warning(
-            "Likes API quota check falhou | status=%s | erro=%s",
-            quota_check.status,
-            quota_check.error,
-        )
-    passe = PasseApi(
+    # Likes Painel fica sem chamadas automáticas; /like usa apenas Auto System.\n    passe = PasseApi(
         config.api_base_url,
         private_setting("PASSE_API_KEY", config.passe_api_key),
     )
