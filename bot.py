@@ -98,17 +98,37 @@ async def watch_ffhub_autolikes(
                     )
                     continue
 
+                data = result.data if isinstance(result.data, dict) else {}
+                parsed_like = parse_like_delivery(data)
+
+                def _to_int(value):
+                    if value is None or isinstance(value, bool):
+                        return None
+                    try:
+                        return int(str(value).strip().replace(".", "").replace(",", ""))
+                    except (TypeError, ValueError):
+                        return None
+
+                sent = _to_int(parsed_like["sent"]) or 0
+                before = _to_int(parsed_like["before"])
+                after = _to_int(parsed_like["after"])
+                nickname = str(parsed_like["nickname"] or "Jogador")
+
                 updated = await db.complete_ffhub_autolike_send(
                     sub_id,
-                    result_text=str(result.data),
+                    result_text=str(data),
+                    nickname=nickname,
+                    likes_before=before,
+                    likes_after=after,
+                    likes_sent=sent,
                 )
                 if not updated:
                     continue
 
-                data = result.data if isinstance(result.data, dict) else {}
-                parsed_like = parse_like_delivery(data)
-                sent = parsed_like["sent"]
-                sent_display = sent if sent is not None else "—"
+                stats = await db.get_ffhub_autolike_status(str(updated["game_id"]))
+                total_accumulated = (
+                    int(stats.get("total_likes_sent") or 0) if stats else sent
+                )
                 done = int(updated["sends_done"])
                 total = int(updated["days_total"])
 
@@ -116,8 +136,10 @@ async def watch_ffhub_autolikes(
                     await bot.send_message(
                         int(updated["user_id"]),
                         "💚 <b>Auto-Like Premium enviado!</b>\n\n"
+                        f"👤 Nick: <b>{nickname}</b>\n"
                         f"🆔 UID: <code>{updated['game_id']}</code>\n"
-                        f"❤️ Likes: <b>+{sent_display}</b>\n"
+                        f"❤️ Enviado hoje: <b>+{sent}</b>\n"
+                        f"❤️ Total acumulado: <b>+{total_accumulated}</b>\n"
                         f"📆 Entrega: <b>{done}/{total}</b>",
                     )
                 except Exception:  # noqa: BLE001
@@ -126,12 +148,19 @@ async def watch_ffhub_autolikes(
                     )
 
                 if updated["status"] == "completed":
-                    await db.update_order_status(int(updated["order_id"]), "delivered")
+                    # Assinaturas manuais do dono usam order_id negativo e não
+                    # possuem pedido PIX para atualizar.
+                    if int(updated["order_id"]) > 0:
+                        await db.update_order_status(
+                            int(updated["order_id"]), "delivered"
+                        )
                     try:
                         await bot.send_message(
                             int(updated["user_id"]),
                             "🏁 <b>Plano Auto-Like Premium concluído!</b>\n\n"
+                            f"👤 Nick: <b>{nickname}</b>\n"
                             f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                            f"❤️ Total enviado: <b>+{total_accumulated}</b>\n"
                             f"✅ Foram concluídas <b>{total} entregas diárias</b>.",
                         )
                     except Exception:  # noqa: BLE001
