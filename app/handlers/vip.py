@@ -13,6 +13,7 @@ from aiogram.types import CallbackQuery, Message
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import admin_panel, vip_admin_panel
+from app.owner_auth import resolve_owner_id
 from app.states import AdminVipAdd, AdminVipRemove
 from app.ui import edit_screen
 
@@ -104,8 +105,9 @@ async def cmd_vip(
     if not message.from_user:
         return
 
-    user_id = message.from_user.id
-    is_owner = _owner(user_id, config)
+    resolved_owner_id = await resolve_owner_id(message, bot, config)
+    user_id = resolved_owner_id or message.from_user.id
+    is_owner = resolved_owner_id is not None
     args = (command.args or "").split()
 
     # Usuário comum consulta o próprio VIP.
