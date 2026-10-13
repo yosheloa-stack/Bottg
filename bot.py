@@ -185,7 +185,8 @@ async def main() -> None:
         private_setting("FFHUB_API_KEY", config.ffhub_api_key),
     )
 
-    # Likes Painel fica sem chamadas automáticas; /like usa apenas Auto System.\n    passe = PasseApi(
+    # Likes Painel fica sem chamadas automáticas; /like usa apenas Auto System.
+    passe = PasseApi(
         config.api_base_url,
         private_setting("PASSE_API_KEY", config.passe_api_key),
     )
