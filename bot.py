@@ -286,6 +286,7 @@ async def main() -> None:
                 BotCommand(command="menu", description="Abrir menu principal"),
                 BotCommand(command="like", description="Enviar likes grátis por ID"),
                 BotCommand(command="like2", description="Likes pagos: único ou Auto-Like"),
+                BotCommand(command="autolike", description="Auto Like 500/1000 (dono)"),
                 BotCommand(command="id", description="Mostrar meu ID do Telegram"),
                 BotCommand(command="vip", description="Consultar ou gerenciar VIP"),
                 BotCommand(command="vip2", description="Consultar ou gerenciar VIP2"),
