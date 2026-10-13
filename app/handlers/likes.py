@@ -98,12 +98,12 @@ async def _do_send_like(
 
     if (
         not result.ok
-        and result.status in (429, 500, 503)
+        and result.status in (404, 429, 500, 503)
         and autosystem_likes_api.enabled
     ):
         logger.warning(
-            "API principal indisponível/limitada para uid=%s status=%s; "
-            "tentando fallback Auto System",
+            "API principal falhou para uid=%s status=%s; "
+            "tentando fallback Auto System antes de responder ao usuário",
             game_id,
             result.status,
         )
