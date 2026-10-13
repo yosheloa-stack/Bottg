@@ -134,20 +134,43 @@ async def watch_ffhub_autolikes(
                 done = int(updated["sends_done"])
                 total = int(updated["days_total"])
 
+                delivery_text = (
+                    "💚 <b>Auto-Like Premium enviado!</b>\n\n"
+                    f"👤 Nick: <b>{safe_nickname}</b>\n"
+                    f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                    f"❤️ Enviado hoje: <b>+{sent}</b>\n"
+                    f"❤️ Total acumulado: <b>+{total_accumulated}</b>\n"
+                    f"📆 Entrega: <b>{done}/{total}</b>"
+                )
+
                 try:
                     await bot.send_message(
                         int(updated["user_id"]),
-                        "💚 <b>Auto-Like Premium enviado!</b>\n\n"
-                        f"👤 Nick: <b>{safe_nickname}</b>\n"
-                        f"🆔 UID: <code>{updated['game_id']}</code>\n"
-                        f"❤️ Enviado hoje: <b>+{sent}</b>\n"
-                        f"❤️ Total acumulado: <b>+{total_accumulated}</b>\n"
-                        f"📆 Entrega: <b>{done}/{total}</b>",
+                        delivery_text,
                     )
                 except Exception:  # noqa: BLE001
                     logger.exception(
-                        "Falha ao avisar envio FFHub da assinatura %s", sub_id
+                        "Falha ao avisar dono/cliente do Auto Like %s", sub_id
                     )
+
+                notify_chat_id = updated.get("notify_chat_id")
+                if notify_chat_id is not None:
+                    group_kwargs = {}
+                    notify_thread_id = updated.get("notify_thread_id")
+                    if notify_thread_id is not None:
+                        group_kwargs["message_thread_id"] = int(notify_thread_id)
+                    try:
+                        await bot.send_message(
+                            int(notify_chat_id),
+                            delivery_text,
+                            **group_kwargs,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "Falha ao avisar grupo do Auto Like %s chat=%s",
+                            sub_id,
+                            notify_chat_id,
+                        )
 
                 if updated["status"] == "completed":
                     # Assinaturas manuais do dono usam order_id negativo e não
@@ -156,19 +179,38 @@ async def watch_ffhub_autolikes(
                         await db.update_order_status(
                             int(updated["order_id"]), "delivered"
                         )
+                    completed_text = (
+                        "🏁 <b>Plano Auto-Like Premium concluído!</b>\n\n"
+                        f"👤 Nick: <b>{safe_nickname}</b>\n"
+                        f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                        f"❤️ Total enviado: <b>+{total_accumulated}</b>\n"
+                        f"✅ Foram concluídas <b>{total} entregas diárias</b>."
+                    )
                     try:
                         await bot.send_message(
                             int(updated["user_id"]),
-                            "🏁 <b>Plano Auto-Like Premium concluído!</b>\n\n"
-                            f"👤 Nick: <b>{safe_nickname}</b>\n"
-                            f"🆔 UID: <code>{updated['game_id']}</code>\n"
-                            f"❤️ Total enviado: <b>+{total_accumulated}</b>\n"
-                            f"✅ Foram concluídas <b>{total} entregas diárias</b>.",
+                            completed_text,
                         )
                     except Exception:  # noqa: BLE001
                         logger.exception(
                             "Falha ao avisar conclusão FFHub da assinatura %s", sub_id
                         )
+
+                    if notify_chat_id is not None:
+                        group_kwargs = {}
+                        if notify_thread_id is not None:
+                            group_kwargs["message_thread_id"] = int(notify_thread_id)
+                        try:
+                            await bot.send_message(
+                                int(notify_chat_id),
+                                completed_text,
+                                **group_kwargs,
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "Falha ao avisar conclusão no grupo do Auto Like %s",
+                                sub_id,
+                            )
         except Exception:  # noqa: BLE001
             logger.exception("Erro no agendador Auto-Like Premium FFHub")
 
