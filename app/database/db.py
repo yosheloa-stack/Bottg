@@ -106,6 +106,12 @@ CREATE TABLE IF NOT EXISTS vip2_users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vip2_expires ON vip2_users(expires_at);
+
+CREATE TABLE IF NOT EXISTS vip2_cooldowns (
+    user_id       INTEGER PRIMARY KEY,
+    last_sent_at  INTEGER NOT NULL DEFAULT 0,
+    lock_until    INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -309,6 +315,70 @@ class Database:
 
     async def count_active_vip2s(self) -> int:
         return len(await self.active_vip2s())
+
+    # ----- VIP2: 1 envio /like2 por usuário a cada 24 horas -----
+    async def acquire_vip2_slot(self, user_id: int) -> tuple[bool, int]:
+        """Reserva uma tentativa do VIP2 sem consumir as 24h antes do sucesso."""
+        now = int(time.time())
+        cooldown = 24 * 60 * 60
+        lock_seconds = 180
+
+        await self.db.execute("BEGIN IMMEDIATE")
+        try:
+            async with self.db.execute(
+                "SELECT last_sent_at, lock_until FROM vip2_cooldowns WHERE user_id = ?",
+                (int(user_id),),
+            ) as cur:
+                row = await cur.fetchone()
+
+            last_sent_at = int(row["last_sent_at"]) if row else 0
+            lock_until = int(row["lock_until"]) if row else 0
+
+            remaining = (last_sent_at + cooldown) - now
+            if remaining > 0:
+                await self.db.commit()
+                return False, remaining
+
+            if lock_until > now:
+                await self.db.commit()
+                return False, max(1, lock_until - now)
+
+            await self.db.execute(
+                """
+                INSERT INTO vip2_cooldowns (user_id, last_sent_at, lock_until)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    last_sent_at = excluded.last_sent_at,
+                    lock_until = excluded.lock_until
+                """,
+                (int(user_id), last_sent_at, now + lock_seconds),
+            )
+            await self.db.commit()
+            return True, 0
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    async def complete_vip2_slot(self, user_id: int) -> None:
+        now = int(time.time())
+        await self.db.execute(
+            """
+            INSERT INTO vip2_cooldowns (user_id, last_sent_at, lock_until)
+            VALUES (?, ?, 0)
+            ON CONFLICT(user_id) DO UPDATE SET
+                last_sent_at = excluded.last_sent_at,
+                lock_until = 0
+            """,
+            (int(user_id), now),
+        )
+        await self.db.commit()
+
+    async def release_vip2_slot(self, user_id: int) -> None:
+        await self.db.execute(
+            "UPDATE vip2_cooldowns SET lock_until = 0 WHERE user_id = ?",
+            (int(user_id),),
+        )
+        await self.db.commit()
 
     # ----- Likes: limite de 1 envio por usuário a cada 24 horas -----
     async def acquire_like_slot(self, user_id: int) -> tuple[bool, int]:
