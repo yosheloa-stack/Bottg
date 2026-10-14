@@ -322,6 +322,29 @@ async def cmd_like2(
             )
             return
 
+        # VIP2 pode fazer somente 1 envio concluído a cada 24 horas.
+        # Donos continuam sem limite.
+        vip2_slot_reserved = False
+        if is_vip2 and not is_owner:
+            allowed, remaining = await db.acquire_vip2_slot(message.from_user.id)
+            if not allowed:
+                hours, rem = divmod(max(0, remaining), 3600)
+                minutes, seconds = divmod(rem, 60)
+                if hours > 0:
+                    wait_text = f"{hours}h {minutes}min"
+                elif minutes > 0:
+                    wait_text = f"{minutes}min {seconds}s"
+                else:
+                    wait_text = f"{seconds}s"
+
+                await message.reply(
+                    "⏳ <b>Limite diário do VIP2 atingido.</b>\n\n"
+                    "Seu VIP2 permite <b>1 envio de Like2 a cada 24 horas</b>.\n"
+                    f"Você poderá enviar novamente em <b>{wait_text}</b>."
+                )
+                return
+            vip2_slot_reserved = True
+
         status_msg = await message.reply("🔥 Enviando Like2...")
         started_at = time.perf_counter()
         access_type = (
@@ -343,6 +366,8 @@ async def cmd_like2(
                 timeout=60,
             )
         except asyncio.TimeoutError:
+            if vip2_slot_reserved:
+                await db.release_vip2_slot(message.from_user.id)
             elapsed = time.perf_counter() - started_at
             logger.error(
                 "LIKE2 timeout externo | acesso=%s user=%s uid=%s elapsed=%.2fs",
@@ -359,6 +384,8 @@ async def cmd_like2(
             )
             return
         except Exception as exc:  # noqa: BLE001
+            if vip2_slot_reserved:
+                await db.release_vip2_slot(message.from_user.id)
             logger.exception("Erro inesperado no /like2 uid=%s", game_id)
             await status_msg.edit_text(
                 "❌ <b>Erro no LIKE2</b>\n\n"
@@ -380,6 +407,8 @@ async def cmd_like2(
         data = result.data if isinstance(result.data, dict) else {}
 
         if not result.ok:
+            if vip2_slot_reserved:
+                await db.release_vip2_slot(message.from_user.id)
             error = (
                 result.error
                 or data.get("erro")
@@ -394,6 +423,9 @@ async def cmd_like2(
                 f"⚠️ {html.escape(str(error))}"
             )
             return
+
+        if vip2_slot_reserved:
+            await db.complete_vip2_slot(message.from_user.id)
 
         parsed_like = parse_like_delivery(data)
         nick = parsed_like["nickname"]
