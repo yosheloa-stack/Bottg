@@ -68,6 +68,7 @@ def _vip2_text(vip: dict | None, user_id: int, *, owner: bool = False) -> str:
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"🆔 Telegram ID: <code>{user_id}</code>\n"
         "✅ <code>/like2 UID</code> liberado\n"
+        "🕒 Limite: <b>1 envio a cada 24 horas</b>\n"
         "✅ Pode usar em grupos\n"
         f"📅 Validade: <b>{_fmt_expiry(expires_at)}</b>\n"
         f"⏳ Restante: <b>{_remaining(expires_at)}</b>"
@@ -88,6 +89,7 @@ async def _panel_text(db: Database) -> str:
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"👥 VIP2 ativos: <b>{len(vips)}</b>\n\n"
         "VIP2 libera exclusivamente o comando <code>/like2 UID</code>.\n"
+        "Cada VIP2 pode fazer <b>1 envio a cada 24 horas</b>.\n"
         "Quem não tiver VIP2 é bloqueado antes da FFHub ser chamada.\n\n"
         "Comandos:\n"
         "<code>/vip2 add ID 30</code>\n"
@@ -157,6 +159,7 @@ async def cmd_vip2(
             target,
             "🔥 <b>Seu VIP2 foi ativado!</b>\n\n"
             "Agora você pode usar <code>/like2 UID</code> nos grupos.\n"
+            "🕒 Limite: <b>1 envio a cada 24 horas</b>.\n"
             f"📅 Validade: <b>{_fmt_expiry(int(vip['expires_at']))}</b>",
         )
         return
@@ -268,6 +271,7 @@ async def vip2_add_receive(
         target,
         "🔥 <b>Seu VIP2 foi ativado!</b>\n\n"
         "Você agora pode usar <code>/like2 UID</code> nos grupos.\n"
+        "🕒 Limite: <b>1 envio a cada 24 horas</b>.\n"
         f"📅 Validade: <b>{_fmt_expiry(int(vip['expires_at']))}</b>",
     )
 
