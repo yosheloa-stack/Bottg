@@ -24,7 +24,7 @@ from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
-from app.services.payments import EfiGateway, PaymentStatus
+from app.services.payments import MercadoPagoGateway, PaymentStatus
 from app.webhook import build_webhook_app, start_webhook_server
 
 logging.basicConfig(
@@ -36,7 +36,7 @@ logger = logging.getLogger("bottg")
 
 async def watch_pending_payments(
     db: Database,
-    gateway: EfiGateway,
+    gateway: MercadoPagoGateway,
     delivery: DeliveryService,
 ) -> None:
     """Confirma PIX pendentes automaticamente e entrega pedidos pagos."""
@@ -51,19 +51,19 @@ async def watch_pending_payments(
                     status = await gateway.get_status(str(payment_id))
                 except Exception:  # noqa: BLE001
                     logger.exception(
-                        "Falha ao consultar PIX Efí do pedido %s", order.get("id")
+                        "Falha ao consultar PIX Mercado Pago do pedido %s", order.get("id")
                     )
                     continue
 
                 if status == PaymentStatus.APPROVED:
                     logger.info(
-                        "PIX Efí confirmado automaticamente | pedido=%s | txid=%s",
+                        "PIX Mercado Pago confirmado automaticamente | pedido=%s | txid=%s",
                         order.get("id"),
                         payment_id,
                     )
                     await delivery.fulfill_order(order["id"])
         except Exception:  # noqa: BLE001
-            logger.exception("Erro no monitor automático de pagamentos Efí")
+            logger.exception("Erro no monitor automático de pagamentos Mercado Pago")
 
         await asyncio.sleep(8)
 
@@ -263,14 +263,11 @@ async def main() -> None:
         config.api_base_url,
         private_setting("PASSE_API_KEY", config.passe_api_key),
     )
-    gateway = EfiGateway(
-        private_setting("EFI_CLIENT_ID", config.efi_client_id),
-        private_setting("EFI_CLIENT_SECRET", config.efi_client_secret),
-        private_setting("EFI_PIX_KEY", config.efi_pix_key),
-        cert_path=config.efi_cert_path,
-        cert_pem_base64=config.efi_cert_pem_base64,
-        sandbox=config.efi_sandbox,
-        webhook_token=config.efi_webhook_token,
+    gateway = MercadoPagoGateway(
+        private_setting("MERCADOPAGO_ACCESS_TOKEN", config.mp_access_token),
+        notification_url=(
+            config.payment_notification_url if config.webhook_public_url else ""
+        ),
     )
 
     bot = Bot(
@@ -306,37 +303,30 @@ async def main() -> None:
             "FFHub Shop ainda não configurada — preencha FFHUB_API_KEY."
         )
 
-    # Confirmação automática: polling da própria API Efí.
+    # Confirmação automática: polling da API do Mercado Pago.
     payment_task = None
     if gateway.configured:
         payment_task = asyncio.create_task(
             watch_pending_payments(db, gateway, delivery),
-            name="efi-payment-watcher",
+            name="mercadopago-payment-watcher",
         )
-        logger.info("Monitor automático de pagamentos Efí iniciado.")
+        logger.info("Monitor automático de pagamentos Mercado Pago iniciado.")
     else:
         logger.warning(
-            "Efí ainda não configurada — preencha EFI_CLIENT_ID, EFI_CLIENT_SECRET, "
-            "EFI_PIX_KEY e o certificado PEM."
+            "Mercado Pago ainda não configurado — informe o Access Token "
+            "no painel do dono."
         )
 
-    # Webhook Efí é opcional; o monitor acima já confirma pagamentos automaticamente.
+    # O bot continua usando long polling do Telegram. Este servidor HTTP existe
+    # apenas para health check e notificações do Mercado Pago.
     runner = None
-    if config.webhook_public_url and gateway.configured:
+    if config.webhook_public_url:
         web_app = build_webhook_app(config, db, gateway, delivery)
         runner = await start_webhook_server(web_app, config)
-        try:
-            ok = await gateway.register_webhook(config.payment_notification_url)
-            if ok:
-                logger.info("Webhook Efí registrado com sucesso.")
-            else:
-                logger.warning(
-                    "Webhook Efí não foi registrado; monitor automático seguirá ativo."
-                )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Falha ao registrar webhook Efí; monitor automático seguirá ativo."
-            )
+        logger.info(
+            "Webhook Mercado Pago disponível em %s",
+            config.payment_notification_url,
+        )
 
     try:
         await bot.delete_webhook(drop_pending_updates=True)
