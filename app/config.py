@@ -81,7 +81,7 @@ class Config:
 
     @property
     def payment_webhook_path(self) -> str:
-        return "/webhook/efi"
+        return "/webhook/mercadopago"
 
     @property
     def payment_notification_url(self) -> str:
@@ -186,7 +186,7 @@ def load_config() -> Config:
         efi_cert_pem_base64=_get("EFI_CERT_PEM_BASE64", ""),
         efi_sandbox=_get("EFI_SANDBOX", "false").lower() in {"1", "true", "yes", "on"},
         efi_webhook_token=_get("EFI_WEBHOOK_TOKEN", ""),
-        webhook_public_url=_get("WEBHOOK_PUBLIC_URL", ""),
+        webhook_public_url=_get("WEBHOOK_PUBLIC_URL", "https://yosh7.squareweb.app"),
         webhook_host=_get("WEBHOOK_HOST", "0.0.0.0"),
         # Square Cloud injeta a porta via PORT em deploys de site; usamos como fallback
         webhook_port=int(_get("WEBHOOK_PORT", _get("PORT", "8080"))),
