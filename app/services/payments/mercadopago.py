@@ -97,6 +97,9 @@ class MercadoPagoGateway(PaymentGateway):
         )
 
     async def get_status(self, payment_id: str) -> PaymentStatus:
+        if not self.configured:
+            return PaymentStatus.UNKNOWN
+
         async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
             async with session.get(
                 f"{API_URL}/v1/payments/{payment_id}",
