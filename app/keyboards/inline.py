@@ -231,11 +231,10 @@ def owner_settings_panel() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🎟️ Passe API Key", callback_data="owner:set:PASSE_API_KEY")
     )
     kb.row(
-        InlineKeyboardButton(text="🏦 Efí Client ID", callback_data="owner:set:EFI_CLIENT_ID"),
-        InlineKeyboardButton(text="🔑 Efí Secret", callback_data="owner:set:EFI_CLIENT_SECRET"),
-    )
-    kb.row(
-        InlineKeyboardButton(text="💠 Efí Chave PIX", callback_data="owner:set:EFI_PIX_KEY")
+        InlineKeyboardButton(
+            text="💳 Mercado Pago Access Token",
+            callback_data="owner:set:MERCADOPAGO_ACCESS_TOKEN",
+        )
     )
     kb.row(InlineKeyboardButton(text="⬅️ Painel Admin", callback_data="admin:panel"))
     return kb.as_markup()
