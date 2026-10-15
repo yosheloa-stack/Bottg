@@ -59,7 +59,11 @@ def store_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def autolike_plans_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardMarkup:
+def autolike_plans_menu(
+    products: dict[str, ResolvedProduct],
+    *,
+    is_owner: bool = False,
+) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for code in ("like2_7d", "like2_15d", "like2_30d"):
         rp = products.get(code)
@@ -71,8 +75,12 @@ def autolike_plans_menu(products: dict[str, ResolvedProduct]) -> InlineKeyboardM
             label = f"📆 {days} dias • R$ {_price(rp.price)}"
             callback = f"buy:{rp.code}"
         elif rp.price <= 0:
-            label = f"📆 {days} dias • Indisponível"
-            callback = "noop:unavailable"
+            if is_owner:
+                label = f"💰 {days} dias • Definir preço"
+                callback = f"admprod:{rp.code}"
+            else:
+                label = f"📆 {days} dias • Indisponível"
+                callback = "noop:unavailable"
         else:
             label = f"📆 {days} dias • Esgotado"
             callback = "noop:unavailable"
