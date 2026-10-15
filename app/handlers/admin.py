@@ -29,7 +29,7 @@ from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
-from app.services.payments import EfiGateway
+from app.services.payments import MercadoPagoGateway
 from app.states import AdminBroadcast, AdminPrice, AdminStock, OwnerSetting
 from app.ui import edit_screen
 from app.utils import format_price
@@ -44,9 +44,7 @@ OWNER_SETTING_LABELS = {
     "LIKES_API_KEY": "Likes API Key",
     "AUTOSYSTEM_API_KEY": "AutoSystem API Key",
     "PASSE_API_KEY": "Passe API Key",
-    "EFI_CLIENT_ID": "Efí Client ID",
-    "EFI_CLIENT_SECRET": "Efí Client Secret",
-    "EFI_PIX_KEY": "Efí Chave PIX",
+    "MERCADOPAGO_ACCESS_TOKEN": "Mercado Pago Access Token",
 }
 
 
@@ -91,9 +89,7 @@ async def cb_owner_settings(
         "LIKES_API_KEY": config.likes_api_key,
         "AUTOSYSTEM_API_KEY": config.autosystem_api_key,
         "PASSE_API_KEY": config.passe_api_key,
-        "EFI_CLIENT_ID": config.efi_client_id,
-        "EFI_CLIENT_SECRET": config.efi_client_secret,
-        "EFI_PIX_KEY": config.efi_pix_key,
+        "MERCADOPAGO_ACCESS_TOKEN": config.mp_access_token,
     }
 
     lines = [
@@ -153,7 +149,7 @@ async def owner_setting_receive(
     autosystem_likes_api: AutoSystemLikesApi,
     ffhub_shop: FFHubShopApi,
     passe: PasseApi,
-    gateway: EfiGateway,
+    gateway: MercadoPagoGateway,
 ) -> None:
     if not message.from_user or message.from_user.id not in OWNER_IDS:
         return
@@ -182,16 +178,8 @@ async def owner_setting_receive(
         autosystem_likes_api._key = value
     elif key == "PASSE_API_KEY":
         passe._key = value
-    elif key == "EFI_CLIENT_ID":
-        gateway._client_id = value
-        gateway._token = None
-        gateway._token_until = 0.0
-    elif key == "EFI_CLIENT_SECRET":
-        gateway._client_secret = value
-        gateway._token = None
-        gateway._token_until = 0.0
-    elif key == "EFI_PIX_KEY":
-        gateway._pix_key = value
+    elif key == "MERCADOPAGO_ACCESS_TOKEN":
+        gateway._token = value
 
     await state.clear()
     await message.answer(
