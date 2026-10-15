@@ -90,7 +90,10 @@ async def cb_autolike_store(
     await edit_screen(
         query,
         texts.AUTOLIKE_STORE,
-        autolike_plans_menu(products),
+        autolike_plans_menu(
+            products,
+            is_owner=_is_admin(query.from_user.id, config),
+        ),
     )
     await query.answer()
 
