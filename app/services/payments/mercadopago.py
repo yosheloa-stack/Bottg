@@ -32,8 +32,12 @@ _STATUS_MAP = {
 
 class MercadoPagoGateway(PaymentGateway):
     def __init__(self, access_token: str, notification_url: str = "") -> None:
-        self._token = access_token
-        self._notification_url = notification_url
+        self._token = access_token.strip()
+        self._notification_url = notification_url.strip()
+
+    @property
+    def configured(self) -> bool:
+        return bool(self._token)
 
     def _headers(self, idempotency_key: str | None = None) -> dict[str, str]:
         headers = {
@@ -52,6 +56,9 @@ class MercadoPagoGateway(PaymentGateway):
         payer_email: str,
         payer_name: str,
     ) -> PixCharge:
+        if not self.configured:
+            raise RuntimeError("Mercado Pago não configurado. Informe o Access Token.")
+
         payload = {
             "transaction_amount": float(amount),
             "description": description,
