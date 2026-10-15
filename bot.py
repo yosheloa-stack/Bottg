@@ -303,18 +303,18 @@ async def main() -> None:
             "FFHub Shop ainda não configurada — preencha FFHUB_API_KEY."
         )
 
-    # Confirmação automática: polling da API do Mercado Pago.
-    payment_task = None
+    # Confirmação automática: o watcher fica ativo mesmo antes do token
+    # ser cadastrado no painel; assim a configuração passa a valer imediatamente.
+    payment_task = asyncio.create_task(
+        watch_pending_payments(db, gateway, delivery),
+        name="mercadopago-payment-watcher",
+    )
     if gateway.configured:
-        payment_task = asyncio.create_task(
-            watch_pending_payments(db, gateway, delivery),
-            name="mercadopago-payment-watcher",
-        )
         logger.info("Monitor automático de pagamentos Mercado Pago iniciado.")
     else:
         logger.warning(
             "Mercado Pago ainda não configurado — informe o Access Token "
-            "no painel do dono."
+            "no painel do dono. O monitor já está aguardando a configuração."
         )
 
     # O bot continua usando long polling do Telegram. Este servidor HTTP existe
