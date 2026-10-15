@@ -172,6 +172,16 @@ async def cb_confirm(
         await query.answer()
         return
 
+    if not getattr(gateway, "configured", True):
+        await query.answer("Pagamento temporariamente indisponível.", show_alert=True)
+        await edit_screen(
+            query,
+            "⚠️ <b>Mercado Pago ainda não está configurado.</b>\n\n"
+            "Avise um administrador.",
+            back_home(),
+        )
+        return
+
     await query.answer("Gerando PIX...")
     await query.message.edit_text("⏳ Gerando pagamento PIX...")
 
