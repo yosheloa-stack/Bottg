@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS orders (
     paid_with     TEXT NOT NULL DEFAULT 'pix',
     payment_chat_id INTEGER,
     payment_message_id INTEGER,
+    purchase_announced INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -278,6 +279,10 @@ class Database:
         if "payment_message_id" not in order_columns:
             await self._db.execute(
                 "ALTER TABLE orders ADD COLUMN payment_message_id INTEGER"
+            )
+        if "purchase_announced" not in order_columns:
+            await self._db.execute(
+                "ALTER TABLE orders ADD COLUMN purchase_announced INTEGER NOT NULL DEFAULT 0"
             )
 
         await self._db.commit()
@@ -667,20 +672,8 @@ class Database:
         cur = await self.db.execute(
             """
             UPDATE orders
-            SET metadata = json_set(
-                COALESCE(NULLIF(metadata, ''), '{}'),
-                '$.purchase_announced',
-                1
-            ),
-            updated_at = ?
-            WHERE id = ?
-              AND COALESCE(
-                    json_extract(
-                        COALESCE(NULLIF(metadata, ''), '{}'),
-                        '$.purchase_announced'
-                    ),
-                    0
-                  ) = 0
+            SET purchase_announced = 1, updated_at = ?
+            WHERE id = ? AND purchase_announced = 0
             """,
             (int(time.time()), int(order_id)),
         )
