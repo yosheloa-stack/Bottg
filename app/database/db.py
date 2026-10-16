@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 import aiosqlite
 
@@ -29,6 +31,7 @@ CREATE TABLE IF NOT EXISTS orders (
     paid_with     TEXT NOT NULL DEFAULT 'pix',
     payment_chat_id INTEGER,
     payment_message_id INTEGER,
+    purchase_announced INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -61,6 +64,7 @@ CREATE TABLE IF NOT EXISTS ffhub_autolike_subscriptions (
     last_result   TEXT,
     notify_chat_id INTEGER,
     notify_thread_id INTEGER,
+    provider      TEXT NOT NULL DEFAULT 'ffhub',
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -131,6 +135,29 @@ CREATE TABLE IF NOT EXISTS bot_rentals (
 CREATE INDEX IF NOT EXISTS idx_bot_rentals_user
 ON bot_rentals(user_id, status, expires_at);
 
+CREATE TABLE IF NOT EXISTS gift_cards (
+    code          TEXT PRIMARY KEY,
+    amount_cents  INTEGER NOT NULL,
+    max_uses      INTEGER NOT NULL DEFAULT 1,
+    uses_count    INTEGER NOT NULL DEFAULT 0,
+    created_by    INTEGER NOT NULL,
+    expires_at    INTEGER NOT NULL DEFAULT 0,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gift_card_redemptions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    code         TEXT NOT NULL,
+    user_id      INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    redeemed_at  INTEGER NOT NULL,
+    UNIQUE(code, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gift_card_redemptions_user
+ON gift_card_redemptions(user_id, redeemed_at);
+
 CREATE TABLE IF NOT EXISTS customer_pending_inputs (
     user_id     INTEGER PRIMARY KEY,
     action      TEXT NOT NULL,
@@ -173,6 +200,20 @@ CREATE TABLE IF NOT EXISTS vip2_cooldowns (
 """
 
 
+BRAZIL_TZ = ZoneInfo("America/Sao_Paulo")
+
+
+def next_nine_am_epoch(now_ts: int | None = None) -> int:
+    now = datetime.fromtimestamp(
+        int(now_ts or time.time()),
+        BRAZIL_TZ,
+    )
+    target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    return int(target.timestamp())
+
+
 class Database:
     def __init__(self, path: str) -> None:
         self._path = path
@@ -199,6 +240,23 @@ class Database:
                 "ALTER TABLE ffhub_autolike_subscriptions "
                 "ADD COLUMN notify_thread_id INTEGER"
             )
+        if "provider" not in columns:
+            await self._db.execute(
+                "ALTER TABLE ffhub_autolike_subscriptions "
+                "ADD COLUMN provider TEXT NOT NULL DEFAULT 'ffhub'"
+            )
+
+        # Planos ativos passam a seguir a janela fixa das 09:00.
+        now_ts = int(time.time())
+        next_9 = next_nine_am_epoch(now_ts)
+        await self._db.execute(
+            """
+            UPDATE ffhub_autolike_subscriptions
+            SET next_send_at = ?, updated_at = ?
+            WHERE status = 'active' AND next_send_at > ?
+            """,
+            (next_9, now_ts, now_ts),
+        )
 
         async with self._db.execute("PRAGMA table_info(orders)") as cur:
             order_columns = {str(row["name"]) for row in await cur.fetchall()}
@@ -221,6 +279,10 @@ class Database:
         if "payment_message_id" not in order_columns:
             await self._db.execute(
                 "ALTER TABLE orders ADD COLUMN payment_message_id INTEGER"
+            )
+        if "purchase_announced" not in order_columns:
+            await self._db.execute(
+                "ALTER TABLE orders ADD COLUMN purchase_announced INTEGER NOT NULL DEFAULT 0"
             )
 
         await self._db.commit()
@@ -250,6 +312,14 @@ class Database:
             (user_id, username, first_name, int(time.time())),
         )
         await self.db.commit()
+
+    async def get_user(self, user_id: int) -> Optional[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM users WHERE user_id = ?",
+            (int(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
 
     async def count_users(self) -> int:
         async with self.db.execute("SELECT COUNT(*) AS c FROM users") as cur:
@@ -597,6 +667,18 @@ class Database:
             (int(time.time()), int(order_id)),
         )
         await self.db.commit()
+
+    async def mark_purchase_announced(self, order_id: int) -> bool:
+        cur = await self.db.execute(
+            """
+            UPDATE orders
+            SET purchase_announced = 1, updated_at = ?
+            WHERE id = ? AND purchase_announced = 0
+            """,
+            (int(time.time()), int(order_id)),
+        )
+        await self.db.commit()
+        return bool(cur.rowcount)
 
     async def update_order_status(
         self, order_id: int, status: str, delivery_info: str | None = None
@@ -952,10 +1034,18 @@ class Database:
             """
             INSERT OR IGNORE INTO ffhub_autolike_subscriptions
                 (order_id, user_id, game_id, days_total, sends_done,
-                 next_send_at, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 0, ?, 'active', ?, ?)
+                 next_send_at, status, provider, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, ?, 'active', 'ffhub', ?, ?)
             """,
-            (order_id, user_id, game_id, days_total, now, now, now),
+            (
+                order_id,
+                user_id,
+                game_id,
+                days_total,
+                next_nine_am_epoch(now),
+                now,
+                now,
+            ),
         )
         await self.db.commit()
         if cur.lastrowid:
@@ -985,7 +1075,7 @@ class Database:
 
         async with self.db.execute(
             "SELECT id FROM ffhub_autolike_subscriptions "
-            "WHERE game_id = ? AND status = 'active' "
+            "WHERE game_id = ? AND status = 'active' AND provider = 'ffhub' "
             "ORDER BY id DESC LIMIT 1",
             (str(game_id),),
         ) as cur:
@@ -1020,15 +1110,15 @@ class Database:
             INSERT INTO ffhub_autolike_subscriptions
                 (order_id, user_id, game_id, days_total, sends_done,
                  next_send_at, status, notify_chat_id, notify_thread_id,
-                 created_at, updated_at)
-            VALUES (?, ?, ?, ?, 0, ?, 'active', ?, ?, ?, ?)
+                 provider, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, ?, 'active', ?, ?, 'ffhub', ?, ?)
             """,
             (
                 synthetic_order_id,
                 int(user_id),
                 str(game_id),
                 days_total,
-                now + 86400,
+                next_nine_am_epoch(now),
                 int(notify_chat_id) if notify_chat_id is not None else None,
                 int(notify_thread_id) if notify_thread_id is not None else None,
                 now,
@@ -1041,7 +1131,8 @@ class Database:
     async def active_ffhub_autolikes(self, limit: int = 100) -> list[dict[str, Any]]:
         async with self.db.execute(
             "SELECT * FROM ffhub_autolike_subscriptions "
-            "WHERE status = 'active' ORDER BY created_at DESC LIMIT ?",
+            "WHERE status = 'active' AND provider = 'ffhub' "
+            "ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ) as cur:
             rows = await cur.fetchall()
@@ -1051,7 +1142,7 @@ class Database:
         cur = await self.db.execute(
             "UPDATE ffhub_autolike_subscriptions "
             "SET status = 'cancelled', updated_at = ? "
-            "WHERE game_id = ? AND status = 'active'",
+            "WHERE game_id = ? AND status = 'active' AND provider = 'ffhub'",
             (int(time.time()), str(game_id)),
         )
         await self.db.commit()
@@ -1101,7 +1192,7 @@ class Database:
                     LIMIT 1
                 ) AS last_likes_after
             FROM ffhub_autolike_subscriptions s
-            WHERE s.game_id = ?
+            WHERE s.game_id = ? AND s.provider = 'ffhub'
             ORDER BY (s.status = 'active') DESC, s.id DESC
             LIMIT 1
             """,
@@ -1137,7 +1228,7 @@ class Database:
             FROM ffhub_autolike_subscriptions s
             LEFT JOIN ffhub_autolike_history h
               ON h.subscription_id = s.id
-            WHERE s.status = 'active'
+            WHERE s.status = 'active' AND s.provider = 'ffhub'
             GROUP BY s.id
             ORDER BY s.created_at DESC
             LIMIT ?
@@ -1151,7 +1242,8 @@ class Database:
         now = int(time.time())
         async with self.db.execute(
             "SELECT * FROM ffhub_autolike_subscriptions "
-            "WHERE status = 'active' AND next_send_at <= ? "
+            "WHERE status = 'active' AND provider = 'ffhub' "
+            "AND next_send_at <= ? "
             "ORDER BY next_send_at ASC LIMIT ?",
             (now, limit),
         ) as cur:
@@ -1164,7 +1256,7 @@ class Database:
             "UPDATE ffhub_autolike_subscriptions "
             "SET next_send_at = ?, updated_at = ? "
             "WHERE id = ? AND status = 'active'",
-            (now + 86400, now, subscription_id),
+            (next_nine_am_epoch(now), now, subscription_id),
         )
         await self.db.commit()
 
@@ -1191,9 +1283,11 @@ class Database:
         days_total = int(row["days_total"])
         status = "completed" if sends_done >= days_total else "active"
 
-        # Mantém o horário do cadastro como âncora diária.
-        created_at = int(row["created_at"])
-        next_send_at = 0 if status == "completed" else created_at + (sends_done * 86400)
+        next_send_at = (
+            0
+            if status == "completed"
+            else next_nine_am_epoch(now)
+        )
 
         sent_value = max(0, int(likes_sent or 0))
         before_value = int(likes_before) if likes_before is not None else None
@@ -1244,14 +1338,206 @@ class Database:
     async def retry_ffhub_autolike_later(
         self, subscription_id: int, result_text: str = "", delay_seconds: int = 900
     ) -> None:
+        # Mesmo em falha, não foge da janela fixa: tenta novamente às 09:00
+        # do próximo dia e mantém a entrega pendente no total do plano.
         now = int(time.time())
         await self.db.execute(
             "UPDATE ffhub_autolike_subscriptions "
             "SET next_send_at = ?, last_result = ?, updated_at = ? "
             "WHERE id = ? AND status = 'active'",
-            (now + max(60, delay_seconds), result_text, now, subscription_id),
+            (
+                next_nine_am_epoch(now),
+                result_text,
+                now,
+                subscription_id,
+            ),
         )
         await self.db.commit()
+
+    async def create_autosystem_autolike_subscription(
+        self,
+        order_id: int,
+        user_id: int,
+        game_id: str,
+        days_total: int,
+    ) -> int:
+        now = int(time.time())
+        cur = await self.db.execute(
+            """
+            INSERT OR IGNORE INTO ffhub_autolike_subscriptions
+                (order_id, user_id, game_id, days_total, sends_done,
+                 next_send_at, status, provider, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, ?, 'active', 'autosystem', ?, ?)
+            """,
+            (
+                int(order_id),
+                int(user_id),
+                str(game_id),
+                max(1, int(days_total)),
+                next_nine_am_epoch(now),
+                now,
+                now,
+            ),
+        )
+        await self.db.commit()
+        if cur.lastrowid:
+            return int(cur.lastrowid)
+        async with self.db.execute(
+            "SELECT id FROM ffhub_autolike_subscriptions WHERE order_id = ?",
+            (int(order_id),),
+        ) as existing:
+            row = await existing.fetchone()
+        return int(row["id"]) if row else 0
+
+    async def due_autosystem_autolikes(
+        self,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        now = int(time.time())
+        async with self.db.execute(
+            """
+            SELECT * FROM ffhub_autolike_subscriptions
+            WHERE status = 'active'
+              AND provider = 'autosystem'
+              AND next_send_at <= ?
+            ORDER BY next_send_at ASC
+            LIMIT ?
+            """,
+            (now, int(limit)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    # ----- Gift cards -----
+    async def create_gift_card(
+        self,
+        code: str,
+        amount_cents: int,
+        created_by: int,
+        max_uses: int = 1,
+        expires_at: int = 0,
+    ) -> None:
+        await self.db.execute(
+            """
+            INSERT INTO gift_cards
+                (code, amount_cents, max_uses, uses_count, created_by,
+                 expires_at, is_active, created_at)
+            VALUES (?, ?, ?, 0, ?, ?, 1, ?)
+            """,
+            (
+                str(code).upper(),
+                max(1, int(amount_cents)),
+                max(1, int(max_uses)),
+                int(created_by),
+                max(0, int(expires_at)),
+                int(time.time()),
+            ),
+        )
+        await self.db.commit()
+
+    async def get_gift_card(self, code: str) -> Optional[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM gift_cards WHERE code = ?",
+            (str(code).strip().upper(),),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def revoke_gift_card(self, code: str) -> bool:
+        cur = await self.db.execute(
+            "UPDATE gift_cards SET is_active = 0 WHERE code = ?",
+            (str(code).strip().upper(),),
+        )
+        await self.db.commit()
+        return bool(cur.rowcount)
+
+    async def redeem_gift_card(
+        self,
+        code: str,
+        user_id: int,
+    ) -> tuple[bool, str, int, int]:
+        code = str(code).strip().upper()
+        user_id = int(user_id)
+        now = int(time.time())
+
+        await self.db.execute("BEGIN IMMEDIATE")
+        try:
+            async with self.db.execute(
+                "SELECT * FROM gift_cards WHERE code = ?",
+                (code,),
+            ) as cur:
+                card = await cur.fetchone()
+
+            if not card:
+                await self.db.rollback()
+                return False, "Gift Card não encontrado.", 0, 0
+
+            data = dict(card)
+            if not int(data.get("is_active") or 0):
+                await self.db.rollback()
+                return False, "Este Gift Card está desativado.", 0, 0
+            if int(data.get("expires_at") or 0) > 0 and int(data["expires_at"]) <= now:
+                await self.db.rollback()
+                return False, "Este Gift Card expirou.", 0, 0
+            if int(data.get("uses_count") or 0) >= int(data.get("max_uses") or 1):
+                await self.db.rollback()
+                return False, "Este Gift Card já foi totalmente utilizado.", 0, 0
+
+            async with self.db.execute(
+                "SELECT 1 FROM gift_card_redemptions "
+                "WHERE code = ? AND user_id = ? LIMIT 1",
+                (code, user_id),
+            ) as cur:
+                already = await cur.fetchone()
+            if already:
+                await self.db.rollback()
+                return False, "Você já resgatou este Gift Card.", 0, 0
+
+            amount_cents = int(data["amount_cents"])
+
+            async with self.db.execute(
+                "SELECT balance_cents FROM wallets WHERE user_id = ?",
+                (user_id,),
+            ) as cur:
+                wallet = await cur.fetchone()
+            current = int(wallet["balance_cents"]) if wallet else 0
+            new_balance = current + amount_cents
+
+            await self.db.execute(
+                """
+                INSERT INTO wallets (user_id, balance_cents, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    balance_cents = excluded.balance_cents,
+                    updated_at = excluded.updated_at
+                """,
+                (user_id, new_balance, now),
+            )
+            await self.db.execute(
+                """
+                INSERT INTO wallet_transactions
+                    (user_id, amount_cents, kind, order_id, description, created_at)
+                VALUES (?, ?, 'gift_card', NULL, ?, ?)
+                """,
+                (user_id, amount_cents, f"Gift Card {code}", now),
+            )
+            await self.db.execute(
+                """
+                INSERT INTO gift_card_redemptions
+                    (code, user_id, amount_cents, redeemed_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (code, user_id, amount_cents, now),
+            )
+            await self.db.execute(
+                "UPDATE gift_cards SET uses_count = uses_count + 1 WHERE code = ?",
+                (code,),
+            )
+            await self.db.commit()
+            return True, "Gift Card resgatado.", amount_cents, new_balance
+        except Exception:
+            await self.db.rollback()
+            raise
 
     # ----- Configurações privadas do dono -----
     async def get_owner_setting(self, key: str) -> str | None:
