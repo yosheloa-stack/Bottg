@@ -45,3 +45,8 @@ class AdminVip2Add(StatesGroup):
 
 class AdminVip2Remove(StatesGroup):
     waiting_value = State()
+
+
+class CustomerPlanFlow(StatesGroup):
+    waiting_days = State()
+    waiting_balance_amount = State()
