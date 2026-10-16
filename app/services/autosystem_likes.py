@@ -36,6 +36,102 @@ class AutoSystemLikesApi:
     def enabled(self) -> bool:
         return bool(self._key)
 
+    async def add_autolike(
+        self,
+        uid: str,
+        days: int,
+        quantity: int = 220,
+    ) -> LikesApiResult:
+        """Cadastra UID no Auto Like diário da AutoSystem."""
+        if not self.enabled:
+            return LikesApiResult(
+                ok=False,
+                status=0,
+                data={},
+                error="API Auto System não configurada.",
+            )
+
+        days = max(1, min(int(days), 90))
+        amount = max(1, min(int(quantity), 2000))
+        url = f"{self._base}/v1/autolike/add"
+        headers = {
+            "X-Api-Key": self._key,
+            "Accept": "application/json",
+        }
+        params = {
+            "uid": uid,
+            "dias": days,
+            "qtd": amount,
+            "region": self._region,
+        }
+
+        try:
+            async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
+                async with session.get(url, params=params, headers=headers) as resp:
+                    try:
+                        payload = await resp.json(content_type=None)
+                    except Exception:
+                        raw = await resp.text()
+                        return LikesApiResult(
+                            ok=False,
+                            status=resp.status,
+                            data={"raw": raw},
+                            error="Resposta inválida da Auto System.",
+                        )
+
+                    if not isinstance(payload, dict):
+                        payload = {}
+
+                    normalized = {
+                        "uid": str(payload.get("uid") or uid),
+                        "nickname": payload.get("nick") or payload.get("nickname"),
+                        "region": payload.get("regiao") or self._region,
+                        "likes_per_send": payload.get("likes_por_envio") or amount,
+                        "days": days,
+                        "deliveries": payload.get("entregas", 0),
+                        "likes_delivered": payload.get("likes_entregues", 0),
+                        "next_send": payload.get("proximo_envio"),
+                        "expires": payload.get("expira"),
+                        "balance": payload.get("saldo"),
+                        "raw": payload,
+                        "provider": "autosystem_autolike",
+                    }
+                    success = payload.get("sucesso") is True
+                    if resp.status == 200 and success:
+                        return LikesApiResult(
+                            ok=True,
+                            status=200,
+                            data=normalized,
+                            error=None,
+                        )
+
+                    error = (
+                        payload.get("erro")
+                        or payload.get("mensagem")
+                        or payload.get("message")
+                        or f"Auto System retornou HTTP {resp.status}."
+                    )
+                    return LikesApiResult(
+                        ok=False,
+                        status=resp.status,
+                        data=normalized,
+                        error=str(error),
+                    )
+        except aiohttp.ClientError as exc:
+            logger.warning("Erro de rede AutoSystem autolike uid=%s: %s", uid, exc)
+            return LikesApiResult(ok=False, status=0, data={}, error=str(exc))
+        except TimeoutError:
+            logger.warning("Timeout AutoSystem autolike uid=%s", uid)
+            return LikesApiResult(
+                ok=False,
+                status=0,
+                data={},
+                error="A Auto System demorou além do esperado.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Erro inesperado AutoSystem autolike")
+            return LikesApiResult(ok=False, status=0, data={}, error=str(exc))
+
     async def send_like(
         self, uid: str, quantity: int | None = None
     ) -> LikesApiResult:
