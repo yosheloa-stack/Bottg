@@ -3,7 +3,13 @@
 WELCOME = (
     "💚 <b>{shop_name}</b>\n"
     "━━━━━━━━━━━━━━━━━━━━\n"
-    "<b>Serviços Free Fire • Entrega automática</b>\n\n"
+    "<b>Serviços automáticos para Free Fire</b>\n\n"
+    "❤️ Auto Like 220/dia\n"
+    "💎 Auto Like 500+ /dia\n"
+    "🎟️ Passe de Elite\n"
+    "🤝 Área de revenda\n"
+    "💰 Carteira e saldo\n"
+    "🤖 Aluguel do bot para grupos\n\n"
     "Escolha uma opção abaixo para continuar. 👇"
 )
 
@@ -16,7 +22,7 @@ STORE_HEADER = (
 AUTOLIKE_STORE = (
     "💎 <b>AUTO LIKE 500/1000</b>\n"
     "━━━━━━━━━━━━━━━━━━━━\n"
-    "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+    "Receba aproximadamente <b>aproximadamente 500 a 1.000 likes por dia</b> "
     "na sua conta do Free Fire.\n\n"
     "✅ 1 envio automático por dia\n"
     "✅ Ativação após o pagamento\n"
@@ -145,9 +151,9 @@ CANCELLED = "❌ Operação cancelada. Use /start para voltar ao menu."
 
 
 PREMIUM_AUTOLIKE_CONFIRM = (
-    "💎 <b>Auto Like 500/1000</b>\n"
+    "💎 <b>Auto Like 500</b>\n"
     "━━━━━━━━━━━━━━━━━━━━\n"
-    "❤️ Média diária: <b>500 a 1.000 likes</b>\n"
+    "❤️ Média diária: <b>aproximadamente 500 a 1.000 likes</b>\n"
     "📆 Duração: <b>{days} dias</b>\n"
     "💰 Valor: <b>R$ {price}</b>\n\n"
     "Após o pagamento:\n"
