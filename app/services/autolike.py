@@ -1,7 +1,6 @@
-"""Cliente da Auto Like System API (likes, info, skin, auto-like).
+"""Cliente legado para consulta de jogador, skin e Auto-Like.
 
-Documentação: https://autolikesystem.com.br/docs
-Base URL padrão: https://autolikesystem.com.br
+O envio avulso de likes NÃO usa este cliente; ele fica em app/services/likes.py.
 """
 from __future__ import annotations
 
@@ -30,7 +29,8 @@ class AutoLikeApi:
         self._key = api_key
         self._region = default_region
 
-    async def _get(self, path: str, params: dict[str, Any]) -> ApiResult:
+    async def _get_legacy(self, path: str, params: dict[str, Any]) -> ApiResult:
+        """Requisição para a API antiga (info, skin e Auto-Like)."""
         url = f"{self._base}{path}"
         params = {"key": self._key, **params}
         try:
@@ -41,43 +41,37 @@ class AutoLikeApi:
                     except Exception:
                         text = await resp.text()
                         data = {"raw": text}
+
                     ok = resp.status == 200 and bool(
                         data.get("sucesso", True) if isinstance(data, dict) else True
                     )
                     return ApiResult(ok=ok, status=resp.status, data=data or {})
         except aiohttp.ClientError as exc:
-            logger.warning("Erro de rede na AutoLike API %s: %s", path, exc)
+            logger.warning("Erro de rede na API antiga %s: %s", path, exc)
             return ApiResult(ok=False, status=0, data={}, error=str(exc))
         except Exception as exc:  # noqa: BLE001
-            logger.exception("Erro inesperado na AutoLike API %s", path)
+            logger.exception("Erro inesperado na API antiga %s", path)
             return ApiResult(ok=False, status=0, data={}, error=str(exc))
 
     async def info_player(self, game_id: str, region: str | None = None) -> ApiResult:
-        return await self._get(
+        return await self._get_legacy(
             "/info-player", {"id": game_id, "region": region or self._region}
         )
 
     async def get_skin(self, game_id: str, region: str | None = None) -> ApiResult:
-        return await self._get(
+        return await self._get_legacy(
             "/get-skin", {"id": game_id, "region": region or self._region}
         )
 
-    async def send_like(self, game_id: str, region: str | None = None) -> ApiResult:
-        # A sub-API atual é /v1/like. O servidor decide internamente entre
-        # GGx e o motor próprio; o bot não expõe esse caminho ao usuário.
-        return await self._get(
-            "/v1/like", {"uid": game_id, "region": region or self._region, "qtd": 220}
-        )
-
     async def like_status(self, game_id: str, region: str | None = None) -> ApiResult:
-        return await self._get(
+        return await self._get_legacy(
             "/like-status", {"id": game_id, "region": region or self._region}
         )
 
     async def add_auto(
         self, game_id: str, days: int = 30, region: str | None = None
     ) -> ApiResult:
-        return await self._get(
+        return await self._get_legacy(
             "/add-auto",
             {"id": game_id, "dias": days, "region": region or self._region},
         )
