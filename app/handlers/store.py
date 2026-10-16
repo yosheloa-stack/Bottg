@@ -352,6 +352,7 @@ async def choose_preset_days(
 async def choose_custom_days(
     query: CallbackQuery,
     state: FSMContext,
+    db: Database,
 ) -> None:
     await _ack(query)
     code = query.data.split(":", 1)[1]
@@ -359,6 +360,12 @@ async def choose_custom_days(
         await query.message.answer("⚠️ Produto inválido.")
         return
 
+    await db.set_customer_pending_input(
+        query.from_user.id,
+        "custom_days",
+        code,
+        ttl_seconds=600,
+    )
     await state.set_state(CustomerPlanFlow.waiting_days)
     await state.update_data(custom_plan_code=code)
     await query.message.answer(
@@ -372,6 +379,47 @@ async def choose_custom_days(
             selective=True,
             input_field_placeholder="Ex.: 33",
         ),
+    )
+
+
+@router.message(
+    F.chat.type == "private",
+    F.text.regexp(r"^\s*(?:[1-9]|[1-8][0-9]|90)\s*$"),
+)
+async def custom_days_persistent_input(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    config: Config,
+) -> None:
+    pending = await db.get_customer_pending_input(message.from_user.id)
+    if not pending or pending.get("action") != "custom_days":
+        return
+
+    code = str(pending.get("value") or "")
+    if code not in AUTOLIKE_CODES:
+        await db.clear_customer_pending_input(message.from_user.id)
+        await state.clear()
+        return
+
+    try:
+        days = int((message.text or "").strip())
+    except ValueError:
+        return
+
+    if not 1 <= days <= 90:
+        await message.reply("⚠️ O período permitido é de <b>1 a 90 dias</b>.")
+        return
+
+    await db.clear_customer_pending_input(message.from_user.id)
+    await state.clear()
+    await _show_dynamic_confirmation(
+        message,
+        db,
+        config,
+        message.from_user.id,
+        code,
+        days,
     )
 
 
@@ -400,6 +448,7 @@ async def custom_days_reply(
         await message.reply("⚠️ O período permitido é de <b>1 a 90 dias</b>.")
         return
 
+    await db.clear_customer_pending_input(message.from_user.id)
     await state.clear()
     await _show_dynamic_confirmation(
         message, db, config, message.from_user.id, match.group(1), days
@@ -427,6 +476,7 @@ async def custom_days_state(
         await message.reply("⚠️ O período permitido é de <b>1 a 90 dias</b>.")
         return
 
+    await db.clear_customer_pending_input(message.from_user.id)
     await state.clear()
     await _show_dynamic_confirmation(
         message, db, config, message.from_user.id, code, days
