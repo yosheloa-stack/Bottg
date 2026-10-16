@@ -85,7 +85,6 @@ async def _show_autolike_category(
             "A integração necessária ainda não está configurada.",
             back_home(),
         )
-        await query.answer()
         return
 
     if unit_price <= 0:
@@ -95,12 +94,10 @@ async def _show_autolike_category(
             "Esse serviço será liberado em breve.",
             back_home(),
         )
-        await query.answer()
         return
 
     if rp.stock == 0:
         await edit_screen(query, texts.OUT_OF_STOCK, back_home())
-        await query.answer()
         return
 
     if code == "autolike220":
@@ -132,8 +129,7 @@ async def _show_autolike_category(
         "O total é calculado automaticamente antes de gerar o PIX.",
         autolike_days_menu(code),
     )
-    await query.answer()
-
+    
 
 async def _show_dynamic_confirmation(
     target: Message | CallbackQuery,
@@ -172,7 +168,6 @@ async def _show_dynamic_confirmation(
     kb = checkout_menu(code, ref_value=str(days), allow_balance=True)
     if isinstance(target, CallbackQuery):
         await edit_screen(target, text, kb)
-        await target.answer()
     else:
         await target.answer(text, reply_markup=kb)
 
@@ -273,11 +268,13 @@ async def _create_pix_order(
 # ---------- Novo menu cliente ----------
 @router.callback_query(F.data == "shop:auto220")
 async def shop_auto220(query: CallbackQuery, db: Database, config: Config) -> None:
+    await query.answer()
     await _show_autolike_category(query, db, config, "autolike220")
 
 
 @router.callback_query(F.data == "shop:auto500")
 async def shop_auto500(query: CallbackQuery, db: Database, config: Config) -> None:
+    await query.answer()
     await _show_autolike_category(query, db, config, "autolike500")
 
 
@@ -287,16 +284,20 @@ async def choose_preset_days(
     db: Database,
     config: Config,
 ) -> None:
+    await query.answer()
     parts = query.data.split(":")
     if len(parts) != 3:
-        return await query.answer("Opção inválida.", show_alert=True)
+        await query.message.answer("⚠️ Opção inválida.")
+        return
     code = parts[1]
     try:
         days = int(parts[2])
     except ValueError:
-        return await query.answer("Quantidade de dias inválida.", show_alert=True)
+        await query.message.answer("⚠️ Quantidade de dias inválida.")
+        return
     if code not in AUTOLIKE_CODES or not 1 <= days <= 90:
-        return await query.answer("Escolha entre 1 e 90 dias.", show_alert=True)
+        await query.message.answer("⚠️ Escolha entre 1 e 90 dias.")
+        return
     await _show_dynamic_confirmation(
         query, db, config, query.from_user.id, code, days
     )
@@ -307,13 +308,14 @@ async def choose_custom_days(
     query: CallbackQuery,
     state: FSMContext,
 ) -> None:
+    await query.answer()
     code = query.data.split(":", 1)[1]
     if code not in AUTOLIKE_CODES:
-        return await query.answer("Produto inválido.", show_alert=True)
+        await query.message.answer("⚠️ Produto inválido.")
+        return
 
     await state.set_state(CustomerPlanFlow.waiting_days)
     await state.update_data(custom_plan_code=code)
-    await query.answer()
     await query.message.answer(
         "📆 <b>ESCOLHER PERÍODO</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
@@ -393,6 +395,7 @@ async def shop_passe(
     db: Database,
     config: Config,
 ) -> None:
+    await query.answer()
     rp = await resolve_product(config, db, "passe")
     if not rp:
         return await query.answer("Produto indisponível.", show_alert=True)
@@ -406,12 +409,10 @@ async def shop_passe(
             "A integração de entrega ainda não está configurada.",
             back_home(),
         )
-        await query.answer()
         return
 
     if price <= 0 or rp.stock == 0:
         await edit_screen(query, texts.OUT_OF_STOCK, back_home())
-        await query.answer()
         return
 
     await state.set_state(PurchaseFlow.waiting_id)
@@ -431,7 +432,6 @@ async def shop_passe(
         "Depois de validar o UID, você escolhe PIX ou saldo.",
         cancel_only(),
     )
-    await query.answer()
 
 
 @router.callback_query(F.data == "shop:reseller")
@@ -440,6 +440,7 @@ async def shop_reseller(
     db: Database,
     config: Config,
 ) -> None:
+    await query.answer()
     if await db.is_reseller(query.from_user.id):
         discount = await reseller_discount_percent(db)
         products = await resolve_products(config, db)
@@ -472,7 +473,6 @@ async def shop_reseller(
             "Os valores já entram com desconto automaticamente no checkout.",
             reseller_area_menu(),
         )
-        await query.answer()
         return
 
     rp = await resolve_product(config, db, "reseller_access")
@@ -483,7 +483,6 @@ async def shop_reseller(
             "O acesso de revendedor ainda não está disponível para compra.",
             back_home(),
         )
-        await query.answer()
         return
 
     discount = await reseller_discount_percent(db)
@@ -498,7 +497,6 @@ async def shop_reseller(
         "O acesso fica vinculado ao seu Telegram.",
         checkout_menu("reseller_access", allow_balance=True),
     )
-    await query.answer()
 
 
 @router.callback_query(F.data == "shop:balance")
@@ -507,6 +505,7 @@ async def shop_balance(
     state: FSMContext,
     db: Database,
 ) -> None:
+    await query.answer()
     balance = _from_cents(await db.get_balance_cents(query.from_user.id))
     await state.set_state(CustomerPlanFlow.waiting_balance_amount)
     await query.answer()
@@ -648,6 +647,7 @@ async def shop_rent(
     db: Database,
     config: Config,
 ) -> None:
+    await query.answer()
     rp = await resolve_product(config, db, "bot_rental")
     if not rp:
         return await query.answer("Produto indisponível.", show_alert=True)
@@ -661,7 +661,6 @@ async def shop_rent(
             "O aluguel ainda não está disponível para compra.",
             back_home(),
         )
-        await query.answer()
         return
 
     reseller_line = (
