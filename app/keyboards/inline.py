@@ -68,11 +68,11 @@ def autolike_days_menu(product_code: str) -> InlineKeyboardMarkup:
 def checkout_menu(
     product_code: str,
     *,
-    days: int = 0,
+    ref_value: str = "",
     allow_balance: bool = True,
 ) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    suffix = f":{days}" if days else ""
+    suffix = f":{ref_value}" if ref_value else ""
     kb.row(
         InlineKeyboardButton(
             text="💠 Pagar com PIX",
