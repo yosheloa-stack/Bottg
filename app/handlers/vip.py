@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import Message
 
 from app.config import Config
 from app.database import Database
@@ -143,8 +143,7 @@ async def cmd_vip(
         await message.answer(
             "✅ <b>VIP ativado</b>\n\n"
             f"🆔 ID: <code>{target}</code>\n"
-            f"📅 Validade: <b>{_fmt_expiry(int(vip['expires_at']))}</b>",
-            reply_markup=vip_admin_panel(),
+            f"📅 Validade: <b>{_fmt_expiry(int(vip['expires_at']))}</b>"
         )
         await _notify(
             bot,
@@ -162,8 +161,7 @@ async def cmd_vip(
         target = int(args[1])
         removed = await db.remove_vip(target)
         await message.answer(
-            ("✅ VIP removido." if removed else "ℹ️ Esse ID não possui VIP ativo."),
-            reply_markup=vip_admin_panel(),
+            ("✅ VIP removido." if removed else "ℹ️ Esse ID não possui VIP ativo.")
         )
         if removed:
             await _notify(bot, target, "ℹ️ <b>Seu acesso VIP foi encerrado.</b>")
@@ -227,8 +225,7 @@ async def vip_add_receive(
     await message.answer(
         "✅ <b>VIP ativado</b>\n\n"
         f"🆔 <code>{target}</code>\n"
-        f"📅 {_fmt_expiry(int(vip['expires_at']))}",
-        reply_markup=vip_admin_panel(),
+        f"📅 {_fmt_expiry(int(vip['expires_at']))}"
     )
     await _notify(
         bot,
@@ -257,8 +254,7 @@ async def vip_remove_receive(
     removed = await db.remove_vip(target)
     await state.clear()
     await message.answer(
-        "✅ VIP removido." if removed else "ℹ️ Esse ID não possui VIP ativo.",
-        reply_markup=vip_admin_panel(),
+        "✅ VIP removido." if removed else "ℹ️ Esse ID não possui VIP ativo."
     )
     if removed:
         await _notify(bot, target, "ℹ️ <b>Seu acesso VIP foi encerrado.</b>")
