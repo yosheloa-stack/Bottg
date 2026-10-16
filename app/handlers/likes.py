@@ -15,7 +15,7 @@ from app.catalog import resolve_products
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import premium_like_menu
-from app.owner_auth import resolve_owner_id
+from app.owner_auth import group_has_owner_admin, resolve_owner_id
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.utils import clean_game_id
@@ -206,6 +206,20 @@ async def cmd_like(
     if message.chat.type not in GROUP_TYPES and not is_owner:
         await message.answer(texts.LIKE_PRIVATE_BLOCKED)
         return
+
+    # Grupos administrados pelos donos são liberados. Outros grupos precisam
+    # ter uma licença de aluguel ativa.
+    if message.chat.type in GROUP_TYPES and not is_owner:
+        owner_group = await group_has_owner_admin(message, bot, config)
+        if not owner_group:
+            rental = await db.active_rental_for_chat(message.chat.id)
+            if not rental:
+                await message.reply(
+                    "🔒 <b>Bot sem licença ativa neste grupo.</b>\n\n"
+                    "Para usar o envio de likes aqui, alugue o bot pelo menu "
+                    "no privado e vincule a licença a este grupo."
+                )
+                return
 
     arg = (command.args or "").strip()
     if not arg:
