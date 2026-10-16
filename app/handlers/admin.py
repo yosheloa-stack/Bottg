@@ -248,15 +248,65 @@ async def cb_owner_setting_start(
 
     await state.set_state(OwnerSetting.waiting_value)
     await state.update_data(owner_setting_key=key)
-    await edit_screen(
-        query,
-        f"🔐 <b>{label}</b>\n\n"
-        "Envie o novo valor em uma mensagem.\n"
-        "Ele será salvo de forma privada no banco do bot.\n\n"
-        "Use /cancel para cancelar.",
-        back_home(),
-    )
     await query.answer()
+    await query.message.answer(
+        f"🔐 <b>{label}</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Responda esta mensagem com o novo valor.\n"
+        "Ele será salvo no banco e nunca será exibido pelo bot.\n\n"
+        "Use /cancel para cancelar."
+        f"\n🔧 REF: SETTING:{key}",
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder="Cole o valor aqui",
+        ),
+    )
+
+
+@router.message(F.reply_to_message.text.regexp(r"REF:\s*SETTING:[A-Z0-9_]+"))
+async def owner_setting_reply_fallback(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    likes_api: LikesApi,
+    autosystem_likes_api: AutoSystemLikesApi,
+    ffhub_shop: FFHubShopApi,
+    passe: PasseApi,
+    gateway: MercadoPagoGateway,
+) -> None:
+    if not message.from_user or message.from_user.id not in OWNER_IDS:
+        return
+
+    replied_text = message.reply_to_message.text or ""
+    match = re.search(r"REF:\s*SETTING:([A-Z0-9_]+)", replied_text)
+    if not match:
+        return
+
+    key = match.group(1)
+    label = OWNER_SETTING_LABELS.get(key)
+    value = (message.text or "").strip()
+    if not label or not value:
+        await message.answer("⚠️ Configuração inválida ou valor vazio.")
+        return
+
+    await db.set_owner_setting(key, value)
+    if key == "FFHUB_API_KEY":
+        ffhub_shop._key = value
+    elif key == "LIKES_API_KEY":
+        likes_api._key = value
+    elif key == "AUTOSYSTEM_API_KEY":
+        autosystem_likes_api._key = value
+    elif key == "PASSE_API_KEY":
+        passe._key = value
+    elif key == "MERCADOPAGO_ACCESS_TOKEN":
+        gateway._token = value
+
+    await state.clear()
+    await message.answer(
+        f"✅ <b>{label}</b> atualizado e aplicado nesta instância.\n"
+        "O valor não será mostrado por segurança.",
+        reply_markup=owner_settings_panel(),
+    )
 
 
 @router.message(OwnerSetting.waiting_value)
