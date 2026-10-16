@@ -111,17 +111,6 @@ def add_group_button(url: str) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def confirm_purchase(product_code: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.row(
-        InlineKeyboardButton(
-            text="✅ Confirmar e pagar", callback_data=f"confirm:{product_code}"
-        )
-    )
-    kb.row(InlineKeyboardButton(text="❌ Cancelar", callback_data="cancel"))
-    return kb.as_markup()
-
-
 def payment_pending(payment_id: str, ticket_url: str = "") -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(
