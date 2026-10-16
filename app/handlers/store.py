@@ -348,7 +348,7 @@ async def custom_days_reply(
     )
 
 
-@router.message(CustomerPlanFlow.waiting_days)
+@router.message(CustomerPlanFlow.waiting_days, F.text.regexp(r"^(?!/).+"))
 async def custom_days_state(
     message: Message,
     state: FSMContext,
@@ -530,7 +530,7 @@ async def balance_amount_reply(message: Message, state: FSMContext) -> None:
     await _balance_amount_response(message, state)
 
 
-@router.message(CustomerPlanFlow.waiting_balance_amount)
+@router.message(CustomerPlanFlow.waiting_balance_amount, F.text.regexp(r"^(?!/).+"))
 async def balance_amount_state(message: Message, state: FSMContext) -> None:
     await _balance_amount_response(message, state)
 
@@ -764,7 +764,7 @@ async def cb_buy(
 
 
 # ---- 2. Usuário informa o ID do jogo ----
-@router.message(PurchaseFlow.waiting_id)
+@router.message(PurchaseFlow.waiting_id, F.text.regexp(r"^(?!/).+"))
 async def purchase_receive_id(
     message: Message,
     state: FSMContext,
