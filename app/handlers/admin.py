@@ -7,6 +7,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import secrets
+import string
 from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, F, Router
@@ -198,7 +200,13 @@ async def cmd_admin(message: Message, config: Config, bot: Bot) -> None:
         "<code>/setkey ffhub CHAVE</code>\n"
         "<code>/setkey autosystem CHAVE</code>\n"
         "<code>/setkey mp ACCESS_TOKEN</code>\n"
-        "<code>/setkey passe CHAVE</code>\n\n"
+        "<code>/setkey passe CHAVE</code>\n"
+        "<code>/giftcard 20</code> — gera Gift Card de R$ 20\n"
+        "<code>/giftcard 20 5</code> — gera com 5 usos\n"
+        "<code>/anuncios</code> — usar dentro do grupo de avisos\n"
+        "<code>/anuncios off</code> — desliga os avisos\n"
+        "<code>/setmenu</code> — responder uma foto/GIF/vídeo\n"
+        "<code>/setmenu reset</code> — volta ao banner padrão\n\n"
         "VIP: <code>/vip</code> · VIP2: <code>/vip2</code>\n"
         "Auto Like manual: <code>/autolike</code>"
     )
@@ -405,6 +413,201 @@ async def cmd_setkey(
         message.chat.id,
         "✅ <b>Chave atualizada e aplicada.</b>\n"
         "O valor enviado foi removido da conversa quando possível."
+    )
+
+
+@router.message(Command("giftcard"))
+async def cmd_giftcard(
+    message: Message,
+    config: Config,
+    db: Database,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+
+    parts = (message.text or "").split()
+    if len(parts) >= 2 and parts[1].lower() in {"revoke", "revogar", "cancelar"}:
+        if len(parts) < 3:
+            await message.reply("Use: <code>/giftcard revoke CODIGO</code>")
+            return
+        ok = await db.revoke_gift_card(parts[2])
+        await message.reply(
+            "✅ Gift Card revogado."
+            if ok
+            else "⚠️ Gift Card não encontrado."
+        )
+        return
+
+    if len(parts) >= 2 and parts[1].lower() in {"status", "ver"}:
+        if len(parts) < 3:
+            await message.reply("Use: <code>/giftcard status CODIGO</code>")
+            return
+        card = await db.get_gift_card(parts[2])
+        if not card:
+            await message.reply("⚠️ Gift Card não encontrado.")
+            return
+        await message.reply(
+            "🎁 <b>GIFT CARD</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔑 Código: <code>{card['code']}</code>\n"
+            f"💰 Valor: <b>R$ {format_price(int(card['amount_cents']) / 100)}</b>\n"
+            f"♻️ Usos: <b>{card['uses_count']}/{card['max_uses']}</b>\n"
+            f"📌 Status: <b>{'Ativo' if int(card['is_active']) else 'Revogado'}</b>"
+        )
+        return
+
+    if len(parts) < 2:
+        await message.reply(
+            "Use:\n"
+            "<code>/giftcard 20</code> — R$ 20, 1 uso\n"
+            "<code>/giftcard 20 5</code> — R$ 20, 5 usos"
+        )
+        return
+
+    value = _parse_price(parts[1])
+    if value is None:
+        await message.reply("⚠️ Valor inválido.")
+        return
+
+    max_uses = 1
+    if len(parts) >= 3:
+        try:
+            max_uses = int(parts[2])
+        except ValueError:
+            await message.reply("⚠️ Quantidade de usos inválida.")
+            return
+        if not 1 <= max_uses <= 1000:
+            await message.reply("⚠️ Use entre 1 e 1000 usos.")
+            return
+
+    alphabet = string.ascii_uppercase + string.digits
+    for _ in range(20):
+        code = (
+            "AURORA-"
+            + "".join(secrets.choice(alphabet) for _ in range(4))
+            + "-"
+            + "".join(secrets.choice(alphabet) for _ in range(4))
+        )
+        if not await db.get_gift_card(code):
+            break
+    else:
+        await message.reply("⚠️ Não consegui gerar um código único agora.")
+        return
+
+    amount_cents = int((value * 100).to_integral_value())
+    await db.create_gift_card(
+        code,
+        amount_cents,
+        message.from_user.id,
+        max_uses=max_uses,
+    )
+    await message.reply(
+        "🎁 <b>GIFT CARD GERADO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔑 <code>{code}</code>\n"
+        f"💰 Valor: <b>R$ {format_price(value)}</b>\n"
+        f"♻️ Usos: <b>{max_uses}</b>\n\n"
+        "O cliente pode usar:\n"
+        f"<code>/resgatar {code}</code>"
+    )
+
+
+@router.message(Command("anuncios"))
+async def cmd_announcements_group(
+    message: Message,
+    config: Config,
+    db: Database,
+    bot: Bot,
+) -> None:
+    owner_id = await resolve_owner_id(message, bot, config)
+    if owner_id is None:
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    action = parts[1].strip().lower() if len(parts) > 1 else ""
+
+    if action in {"off", "desligar", "disable"}:
+        await db.set_owner_setting("ANNOUNCEMENT_CHAT_ID", "")
+        await db.set_owner_setting("ANNOUNCEMENT_THREAD_ID", "")
+        await message.reply("✅ Avisos públicos desativados.")
+        return
+
+    if action in {"status", "ver"}:
+        chat_id = await db.get_owner_setting("ANNOUNCEMENT_CHAT_ID")
+        thread_id = await db.get_owner_setting("ANNOUNCEMENT_THREAD_ID")
+        await message.reply(
+            "📣 <b>GRUPO DE ANÚNCIOS</b>\n"
+            f"Chat: <code>{chat_id or 'não configurado'}</code>\n"
+            f"Tópico: <code>{thread_id or '—'}</code>"
+        )
+        return
+
+    if message.chat.type not in {"group", "supergroup"}:
+        await message.reply(
+            "📣 Envie <code>/anuncios</code> dentro do grupo onde quer receber "
+            "os avisos de compras e envios."
+        )
+        return
+
+    thread_id = message.message_thread_id
+    await db.set_owner_setting("ANNOUNCEMENT_CHAT_ID", str(message.chat.id))
+    await db.set_owner_setting(
+        "ANNOUNCEMENT_THREAD_ID",
+        str(thread_id) if thread_id is not None else "",
+    )
+    await message.reply(
+        "✅ <b>GRUPO DE ANÚNCIOS CONFIGURADO</b>\n\n"
+        "Compras confirmadas e envios de Auto Like serão publicados aqui "
+        "com o botão <b>Adquirir</b>."
+    )
+
+
+@router.message(Command("setmenu"))
+async def cmd_set_menu_media(
+    message: Message,
+    config: Config,
+    db: Database,
+    bot: Bot,
+) -> None:
+    owner_id = await resolve_owner_id(message, bot, config)
+    if owner_id is None:
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    action = parts[1].strip().lower() if len(parts) > 1 else ""
+    if action in {"reset", "padrao", "padrão"}:
+        await db.set_owner_setting("MENU_MEDIA", "")
+        await message.reply("✅ Mídia do menu voltou ao padrão.")
+        return
+
+    replied = message.reply_to_message
+    if not replied:
+        await message.reply(
+            "Responda uma <b>foto, GIF ou vídeo</b> com <code>/setmenu</code>.\n"
+            "Para restaurar: <code>/setmenu reset</code>"
+        )
+        return
+
+    media = ""
+    label = ""
+    if replied.animation:
+        media = f"tg:animation:{replied.animation.file_id}"
+        label = "GIF"
+    elif replied.video:
+        media = f"tg:video:{replied.video.file_id}"
+        label = "vídeo"
+    elif replied.photo:
+        media = f"tg:photo:{replied.photo[-1].file_id}"
+        label = "foto"
+
+    if not media:
+        await message.reply("⚠️ Responda uma foto, GIF ou vídeo válido.")
+        return
+
+    await db.set_owner_setting("MENU_MEDIA", media)
+    await message.reply(
+        f"✅ <b>{label.capitalize()} do menu atualizado.</b>\n"
+        "O próximo <code>/start</code> já usa essa mídia."
     )
 
 
