@@ -134,13 +134,12 @@ async def cb_home(
 
 @router.callback_query(F.data == "menu:store")
 async def cb_store(query: CallbackQuery, config: Config, db: Database) -> None:
-    # Compatibilidade com mensagens antigas: volta para o menu novo.
     await edit_screen(
         query,
         await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
-    await query.answer()
+    await query.answer("Menu atualizado.")
 
 
 @router.callback_query(F.data == "menu:autolike")
@@ -149,14 +148,12 @@ async def cb_autolike_store(
     config: Config,
     db: Database,
 ) -> None:
-    # Compatibilidade com o botão antigo do Auto Like 500/1000.
     await edit_screen(
         query,
-        "💎 <b>Auto Like</b>\n\n"
-        "Agora existem duas modalidades. Escolha no menu principal:",
+        await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
-    await query.answer()
+    await query.answer("Menu atualizado.")
 
 
 @router.callback_query(F.data == "noop:unavailable")
