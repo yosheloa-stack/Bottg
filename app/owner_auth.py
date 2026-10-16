@@ -61,3 +61,28 @@ async def resolve_owner_id(
             return int(owner_id)
 
     return None
+
+
+async def group_has_owner_admin(
+    message: Message,
+    bot: Bot,
+    config: Config,
+) -> bool:
+    """True quando o grupo pertence/é administrado por um dos donos configurados."""
+    if message.chat.type not in GROUP_TYPES:
+        return False
+    try:
+        admins = await bot.get_chat_administrators(message.chat.id)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Falha ao consultar admins para licença do grupo chat=%s",
+            message.chat.id,
+        )
+        return False
+
+    owner_ids = {int(x) for x in config.admin_ids}
+    return any(
+        getattr(member, "user", None) is not None
+        and int(member.user.id) in owner_ids
+        for member in admins
+    )
