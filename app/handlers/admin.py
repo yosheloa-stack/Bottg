@@ -385,7 +385,7 @@ async def cb_price_start(
     )
 
 
-@router.message(F.reply_to_message.text.regexp(r"REF:\\s*(PRECO|ESTOQUE):[A-Za-z0-9_-]+"))
+@router.message(F.reply_to_message.text.regexp(r"REF:\s*(PRECO|ESTOQUE):[A-Za-z0-9_-]+"))
 async def admin_product_reply_fallback(
     message: Message,
     state: FSMContext,
