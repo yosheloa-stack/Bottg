@@ -1338,12 +1338,19 @@ class Database:
     async def retry_ffhub_autolike_later(
         self, subscription_id: int, result_text: str = "", delay_seconds: int = 900
     ) -> None:
+        # Mesmo em falha, não foge da janela fixa: tenta novamente às 09:00
+        # do próximo dia e mantém a entrega pendente no total do plano.
         now = int(time.time())
         await self.db.execute(
             "UPDATE ffhub_autolike_subscriptions "
             "SET next_send_at = ?, last_result = ?, updated_at = ? "
             "WHERE id = ? AND status = 'active'",
-            (now + max(60, delay_seconds), result_text, now, subscription_id),
+            (
+                next_nine_am_epoch(now),
+                result_text,
+                now,
+                subscription_id,
+            ),
         )
         await self.db.commit()
 
