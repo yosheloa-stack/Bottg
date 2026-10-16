@@ -16,6 +16,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
+from app.announcements import announce_autolike_send
 from app.config import load_config
 from app.database import Database
 from app.delivery import DeliveryService
@@ -188,6 +189,22 @@ async def watch_ffhub_autolikes(
                             notify_chat_id,
                         )
 
+                try:
+                    await announce_autolike_send(
+                        bot,
+                        db,
+                        user_id=int(updated["user_id"]),
+                        plan_name="Auto Like 500",
+                        uid=str(updated["game_id"]),
+                        nickname=nickname,
+                        likes_sent=sent,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Falha ao anunciar envio Auto Like 500 sub=%s",
+                        sub_id,
+                    )
+
                 if updated["status"] == "completed":
                     # Assinaturas manuais do dono usam order_id negativo e não
                     # possuem pedido PIX para atualizar.
@@ -229,6 +246,134 @@ async def watch_ffhub_autolikes(
                             )
         except Exception:  # noqa: BLE001
             logger.exception("Erro no agendador Auto-Like Premium FFHub")
+
+        await asyncio.sleep(10)
+
+
+async def watch_autosystem_autolikes(
+    bot: Bot,
+    db: Database,
+    autosystem_likes_api: AutoSystemLikesApi,
+) -> None:
+    """Executa o Auto Like 220 diário sempre na janela das 09:00."""
+    while True:
+        if not autosystem_likes_api.enabled:
+            await asyncio.sleep(10)
+            continue
+
+        try:
+            due = await db.due_autosystem_autolikes(limit=50)
+            for sub in due:
+                sub_id = int(sub["id"])
+                await db.reserve_ffhub_autolike_attempt(sub_id)
+
+                result = await autosystem_likes_api.send_like(
+                    str(sub["game_id"]),
+                    quantity=220,
+                )
+                if not result.ok:
+                    logger.warning(
+                        "AutoSystem Auto Like 220 falhou | sub=%s uid=%s status=%s error=%s",
+                        sub_id,
+                        sub["game_id"],
+                        result.status,
+                        result.error,
+                    )
+                    if result.status != 0:
+                        await db.retry_ffhub_autolike_later(
+                            sub_id,
+                            result_text=str(result.data or result.error or ""),
+                            delay_seconds=900,
+                        )
+                    continue
+
+                data = result.data if isinstance(result.data, dict) else {}
+
+                def _to_int(value):
+                    if value is None or isinstance(value, bool):
+                        return None
+                    try:
+                        return int(str(value).strip().replace(".", "").replace(",", ""))
+                    except (TypeError, ValueError):
+                        return None
+
+                before = _to_int(data.get("likes_before"))
+                after = _to_int(data.get("likes_after"))
+                sent = _to_int(data.get("likes_sent")) or 0
+                confirmed = _to_int(data.get("likes_confirmed"))
+                if before is not None and after is not None and after >= before:
+                    sent = max(sent, after - before)
+                if confirmed is not None:
+                    sent = max(sent, confirmed)
+
+                nickname = str(data.get("nickname") or "Jogador")
+                updated = await db.complete_ffhub_autolike_send(
+                    sub_id,
+                    result_text=str(data),
+                    nickname=nickname,
+                    likes_before=before,
+                    likes_after=after,
+                    likes_sent=sent,
+                )
+                if not updated:
+                    continue
+
+                done = int(updated["sends_done"])
+                total = int(updated["days_total"])
+                delivery_text = (
+                    "❤️ <b>AUTO LIKE 220 ENVIADO</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👤 Nick: <b>{html.escape(nickname)}</b>\n"
+                    f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                    f"❤️ Enviado hoje: <b>+{sent}</b>\n"
+                    f"📆 Entrega: <b>{done}/{total}</b>\n"
+                    "⏰ Horário padrão: <b>09:00</b>"
+                )
+
+                try:
+                    await bot.send_message(int(updated["user_id"]), delivery_text)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Falha ao avisar cliente do Auto Like 220 sub=%s",
+                        sub_id,
+                    )
+
+                try:
+                    await announce_autolike_send(
+                        bot,
+                        db,
+                        user_id=int(updated["user_id"]),
+                        plan_name="Auto Like 220",
+                        uid=str(updated["game_id"]),
+                        nickname=nickname,
+                        likes_sent=sent,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Falha ao anunciar envio Auto Like 220 sub=%s",
+                        sub_id,
+                    )
+
+                if updated["status"] == "completed":
+                    if int(updated["order_id"]) > 0:
+                        await db.update_order_status(
+                            int(updated["order_id"]),
+                            "delivered",
+                        )
+                    try:
+                        await bot.send_message(
+                            int(updated["user_id"]),
+                            "🏁 <b>Auto Like 220 concluído!</b>\n\n"
+                            f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                            f"✅ Foram concluídas <b>{total} entregas</b>.",
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "Falha ao avisar conclusão Auto Like 220 sub=%s",
+                            sub_id,
+                        )
+        except Exception:  # noqa: BLE001
+            logger.exception("Erro no agendador Auto Like 220")
 
         await asyncio.sleep(10)
 
@@ -338,6 +483,17 @@ async def main() -> None:
             "FFHub ainda não configurada — o agendador está aguardando a chave."
         )
 
+    autosystem_task = asyncio.create_task(
+        watch_autosystem_autolikes(bot, db, autosystem_likes_api),
+        name="autosystem-autolike-220-watcher",
+    )
+    if autosystem_likes_api.enabled:
+        logger.info("Agendador Auto Like 220 iniciado para 09:00.")
+    else:
+        logger.warning(
+            "AutoSystem ainda não configurada — o Auto Like 220 aguarda a chave."
+        )
+
     # Confirmação automática: o watcher fica ativo mesmo antes do token
     # ser cadastrado no painel; assim a configuração passa a valer imediatamente.
     payment_task = asyncio.create_task(
@@ -413,6 +569,12 @@ async def main() -> None:
             autolike_task.cancel()
             try:
                 await autolike_task
+            except asyncio.CancelledError:
+                pass
+        if autosystem_task:
+            autosystem_task.cancel()
+            try:
+                await autosystem_task
             except asyncio.CancelledError:
                 pass
         if payment_task:
