@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, ForceReply, Message
 
 from app import texts
 from app.config import Config
@@ -18,6 +18,11 @@ from app.ui import edit_screen, send_menu
 from app.utils import format_price
 
 router = Router(name="common")
+
+
+async def _menu_media(db: Database, config: Config) -> str:
+    override = (await db.get_owner_setting("MENU_MEDIA") or "").strip()
+    return override or config.menu_banner
 
 
 async def _customer_welcome(db: Database, config: Config, user_id: int) -> str:
@@ -89,7 +94,7 @@ async def cmd_start(
     )
     await send_menu(
         message,
-        config.menu_banner,
+        await _menu_media(db, config),
         await _customer_welcome(db, config, message.from_user.id),
         main_menu(False),
     )
@@ -111,7 +116,7 @@ async def cmd_menu(
         return
     await send_menu(
         message,
-        config.menu_banner,
+        await _menu_media(db, config),
         await _customer_welcome(db, config, message.from_user.id),
         main_menu(False),
     )
@@ -134,6 +139,88 @@ async def _open_customer_home(
         await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
+
+
+@router.callback_query(F.data == "shop:giftcard")
+async def cb_giftcard(
+    query: CallbackQuery,
+    db: Database,
+) -> None:
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    await db.set_customer_pending_input(
+        query.from_user.id,
+        "gift_card",
+        "",
+        ttl_seconds=600,
+    )
+    await query.message.answer(
+        "🎁 <b>RESGATAR GIFT CARD</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Responda esta mensagem com o código do Gift Card.\n\n"
+        "Exemplo: <code>AURORA-ABCD-1234</code>\n"
+        "\n🔧 REF: GIFT",
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder="Digite o código",
+        ),
+    )
+
+
+async def _redeem_gift(
+    message: Message,
+    db: Database,
+    code: str,
+) -> None:
+    ok, reason, amount_cents, balance_cents = await db.redeem_gift_card(
+        code,
+        message.from_user.id,
+    )
+    await db.clear_customer_pending_input(message.from_user.id)
+    if not ok:
+        await message.reply(f"⚠️ {reason}")
+        return
+
+    await message.reply(
+        "🎁 <b>GIFT CARD RESGATADO!</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Crédito recebido: <b>R$ {format_price(amount_cents / 100)}</b>\n"
+        f"👛 Saldo atual: <b>R$ {format_price(balance_cents / 100)}</b>\n\n"
+        "✅ O valor já pode ser usado nas compras do bot.",
+        reply_markup=back_home(),
+    )
+
+
+@router.message(F.reply_to_message.text.regexp(r"REF:\s*GIFT"))
+async def giftcard_reply(
+    message: Message,
+    db: Database,
+) -> None:
+    if not message.from_user:
+        return
+    code = (message.text or "").strip()
+    if not code:
+        await message.reply("⚠️ Envie o código do Gift Card.")
+        return
+    await _redeem_gift(message, db, code)
+
+
+@router.message(Command("resgatar"))
+async def cmd_redeem_giftcard(
+    message: Message,
+    db: Database,
+) -> None:
+    if not message.from_user:
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply(
+            "Use: <code>/resgatar CODIGO</code>"
+        )
+        return
+    await _redeem_gift(message, db, parts[1].strip())
 
 
 @router.callback_query(
