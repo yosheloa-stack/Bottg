@@ -12,10 +12,8 @@ from aiogram.types import CallbackQuery, Message
 
 from app.config import Config
 from app.database import Database
-from app.keyboards.inline import vip2_admin_panel
 from app.owner_auth import resolve_owner_id
 from app.states import AdminVip2Add, AdminVip2Remove
-from app.ui import edit_screen
 
 router = Router(name="vip2")
 TZ_BR = ZoneInfo("America/Sao_Paulo")
@@ -206,31 +204,6 @@ async def cmd_vip2(
     await message.answer("⚠️ Ação inválida. Use <code>/vip2</code>.")
 
 
-@router.callback_query(F.data == "admin:vip2")
-async def cb_vip2_panel(query: CallbackQuery, config: Config, db: Database) -> None:
-    if not _owner(query.from_user.id, config):
-        return await query.answer("Sem permissão.", show_alert=True)
-    await edit_screen(query, await _panel_text(db), vip2_admin_panel())
-    await query.answer()
-
-
-@router.callback_query(F.data == "vip2:add")
-async def cb_vip2_add(query: CallbackQuery, state: FSMContext, config: Config) -> None:
-    if not _owner(query.from_user.id, config):
-        return await query.answer("Sem permissão.", show_alert=True)
-    await state.set_state(AdminVip2Add.waiting_value)
-    await edit_screen(
-        query,
-        "➕ <b>Adicionar VIP2</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Envie o <b>ID do Telegram</b> e os <b>dias</b>.\n\n"
-        "Exemplo: <code>123456789 30</code>\n"
-        "Use <code>0</code> para permanente.",
-        vip2_admin_panel(),
-    )
-    await query.answer()
-
-
 @router.message(AdminVip2Add.waiting_value)
 async def vip2_add_receive(
     message: Message,
@@ -276,21 +249,6 @@ async def vip2_add_receive(
     )
 
 
-@router.callback_query(F.data == "vip2:remove")
-async def cb_vip2_remove(query: CallbackQuery, state: FSMContext, config: Config) -> None:
-    if not _owner(query.from_user.id, config):
-        return await query.answer("Sem permissão.", show_alert=True)
-    await state.set_state(AdminVip2Remove.waiting_value)
-    await edit_screen(
-        query,
-        "➖ <b>Remover VIP2</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Envie o ID do Telegram que deseja remover.",
-        vip2_admin_panel(),
-    )
-    await query.answer()
-
-
 @router.message(AdminVip2Remove.waiting_value)
 async def vip2_remove_receive(
     message: Message,
@@ -317,24 +275,3 @@ async def vip2_remove_receive(
     if removed:
         await _notify(bot, target, "ℹ️ <b>Seu acesso VIP2 foi encerrado.</b>")
 
-
-@router.callback_query(F.data == "vip2:list")
-async def cb_vip2_list(query: CallbackQuery, config: Config, db: Database) -> None:
-    if not _owner(query.from_user.id, config):
-        return await query.answer("Sem permissão.", show_alert=True)
-
-    vips = await db.active_vip2s()
-    if not vips:
-        text = "🔥 <b>VIP2 ativos</b>\n\nNenhum VIP2 cadastrado."
-    else:
-        lines = ["🔥 <b>VIP2 ativos</b>", "━━━━━━━━━━━━━━━━━━━━"]
-        for vip in vips[:40]:
-            uid = int(vip["user_id"])
-            exp = int(vip.get("expires_at") or 0)
-            lines.append(f"• <code>{uid}</code> — {_fmt_expiry(exp)}")
-        if len(vips) > 40:
-            lines.append(f"\n… e mais {len(vips) - 40}.")
-        text = "\n".join(lines)
-
-    await edit_screen(query, text, vip2_admin_panel())
-    await query.answer()
