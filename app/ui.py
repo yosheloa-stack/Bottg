@@ -52,8 +52,8 @@ async def send_menu(
             _banner_file_id = sent.animation.file_id
         elif sent.document:
             _banner_file_id = sent.document.file_id
-    except TelegramBadRequest as exc:
-        logger.warning("Falha ao enviar banner animado (%s); enviando texto", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Falha ao enviar banner/menu (%s); enviando texto", exc)
         await message.answer(text, reply_markup=reply_markup)
 
 
@@ -70,9 +70,18 @@ async def edit_screen(
     except TelegramBadRequest as exc:
         if "message is not modified" in str(exc).lower():
             return
-        # Fallback: apaga e reenvia como texto
+        logger.warning("Falha ao editar tela do Telegram: %s", exc)
         try:
-            await msg.delete()
+            await msg.answer(text, reply_markup=reply_markup)
         except Exception:  # noqa: BLE001
-            pass
-        await msg.answer(text, reply_markup=reply_markup)
+            logger.exception("Falha no fallback de navegação do menu")
+            raise
+    except Exception as exc:  # noqa: BLE001
+        # Alguns callbacks antigos podem apontar para mensagens/mídias que
+        # já não aceitam edição. Não deixa o clique travado por causa disso.
+        logger.exception("Erro inesperado ao editar tela do menu: %s", exc)
+        try:
+            await msg.answer(text, reply_markup=reply_markup)
+        except Exception:  # noqa: BLE001
+            logger.exception("Falha ao reenviar tela após erro de edição")
+            raise
