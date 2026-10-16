@@ -436,24 +436,31 @@ async def shop_reseller(
         products = await resolve_products(config, db)
         p220 = products.get("autolike220")
         p500 = products.get("autolike500")
-        p220_price = (
-            (await _effective_price(db, p220, query.from_user.id))[0]
-            if p220 else Decimal("0")
-        )
-        p500_price = (
-            (await _effective_price(db, p500, query.from_user.id))[0]
-            if p500 else Decimal("0")
-        )
+        ppasse = products.get("passe")
+        prent = products.get("bot_rental")
+
+        async def reseller_price(rp):
+            if not rp:
+                return Decimal("0")
+            return (await _effective_price(db, rp, query.from_user.id))[0]
+
+        p220_price = await reseller_price(p220)
+        p500_price = await reseller_price(p500)
+        passe_price = await reseller_price(ppasse)
+        rent_price = await reseller_price(prent)
+
         await edit_screen(
             query,
             "🤝 <b>ÁREA DO REVENDEDOR</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"✅ Revenda ativa\n"
+            "✅ Revenda ativa\n"
             f"💸 Desconto automático: <b>{discount}%</b>\n\n"
-            "Seus valores atuais:\n"
+            "💰 <b>Sua tabela atual:</b>\n"
             f"❤️ Auto Like 220: <b>R$ {format_price(p220_price)}/dia</b>\n"
-            f"💎 Auto Like 500: <b>R$ {format_price(p500_price)}/dia</b>\n\n"
-            "Escolha um produto abaixo:",
+            f"💎 Auto Like 500: <b>R$ {format_price(p500_price)}/dia</b>\n"
+            f"🎟️ Passe de Elite: <b>R$ {format_price(passe_price)}</b>\n"
+            f"🤖 Aluguel do bot: <b>R$ {format_price(rent_price)}</b>\n\n"
+            "Os valores já entram com desconto automaticamente no checkout.",
             reseller_area_menu(),
         )
         await query.answer()
