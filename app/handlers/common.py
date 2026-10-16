@@ -137,7 +137,7 @@ async def _open_customer_home(
 
 
 @router.callback_query(
-    F.data.regexp(r"^(?:nav:v2:passe|shop:passe|buy:passe|store:passe|passe)$")
+    F.data.regexp(r"^(?:nav:v2:passe|shop:passe)$")
 )
 async def cb_passe_entry(
     query: CallbackQuery,
@@ -219,36 +219,6 @@ async def cb_home_legacy(
 ) -> None:
     # Só para mensagens antigas que ainda estejam no histórico.
     await _open_customer_home(query, state, config, db)
-
-
-@router.callback_query(F.data == "menu:store")
-async def cb_store(query: CallbackQuery, config: Config, db: Database) -> None:
-    try:
-        await query.answer("Menu atualizado.")
-    except Exception:
-        pass
-    await edit_screen(
-        query,
-        await _customer_welcome(db, config, query.from_user.id),
-        main_menu(False),
-    )
-
-
-@router.callback_query(F.data == "menu:autolike")
-async def cb_autolike_store(
-    query: CallbackQuery,
-    config: Config,
-    db: Database,
-) -> None:
-    try:
-        await query.answer("Menu atualizado.")
-    except Exception:
-        pass
-    await edit_screen(
-        query,
-        await _customer_welcome(db, config, query.from_user.id),
-        main_menu(False),
-    )
 
 
 @router.callback_query(F.data == "noop:unavailable")
