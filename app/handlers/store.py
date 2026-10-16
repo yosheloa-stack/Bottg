@@ -400,6 +400,16 @@ async def shop_passe(
     price, is_reseller, discount = await _effective_price(
         db, rp, query.from_user.id
     )
+    if not rp.service_ready:
+        await edit_screen(
+            query,
+            "⚠️ <b>Passe de Elite temporariamente indisponível.</b>\n\n"
+            "A integração de entrega ainda não está configurada.",
+            back_home(),
+        )
+        await query.answer()
+        return
+
     if price <= 0 or rp.stock == 0:
         await edit_screen(query, texts.OUT_OF_STOCK, back_home())
         await query.answer()
