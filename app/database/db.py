@@ -129,6 +129,14 @@ CREATE TABLE IF NOT EXISTS bot_rentals (
 CREATE INDEX IF NOT EXISTS idx_bot_rentals_user
 ON bot_rentals(user_id, status, expires_at);
 
+CREATE TABLE IF NOT EXISTS customer_pending_inputs (
+    user_id     INTEGER PRIMARY KEY,
+    action      TEXT NOT NULL,
+    value       TEXT NOT NULL DEFAULT '',
+    expires_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS owner_settings (
     key         TEXT PRIMARY KEY,
     value       TEXT NOT NULL,
@@ -624,6 +632,66 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
+
+    # ----- Entradas pendentes do cliente -----
+    async def set_customer_pending_input(
+        self,
+        user_id: int,
+        action: str,
+        value: str = "",
+        ttl_seconds: int = 600,
+    ) -> None:
+        now = int(time.time())
+        await self.db.execute(
+            """
+            INSERT INTO customer_pending_inputs
+                (user_id, action, value, expires_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                action = excluded.action,
+                value = excluded.value,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                int(user_id),
+                str(action),
+                str(value or ""),
+                now + max(60, int(ttl_seconds)),
+                now,
+            ),
+        )
+        await self.db.commit()
+
+    async def get_customer_pending_input(
+        self,
+        user_id: int,
+    ) -> Optional[dict[str, Any]]:
+        now = int(time.time())
+        async with self.db.execute(
+            """
+            SELECT * FROM customer_pending_inputs
+            WHERE user_id = ? AND expires_at > ?
+            """,
+            (int(user_id), now),
+        ) as cur:
+            row = await cur.fetchone()
+        if row:
+            return dict(row)
+
+        await self.db.execute(
+            "DELETE FROM customer_pending_inputs WHERE user_id = ?",
+            (int(user_id),),
+        )
+        await self.db.commit()
+        return None
+
+    async def clear_customer_pending_input(self, user_id: int) -> None:
+        await self.db.execute(
+            "DELETE FROM customer_pending_inputs WHERE user_id = ?",
+            (int(user_id),),
+        )
+        await self.db.commit()
 
     # ----- Saldo / carteira -----
     async def get_balance_cents(self, user_id: int) -> int:
