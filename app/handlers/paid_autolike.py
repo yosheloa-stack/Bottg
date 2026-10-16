@@ -68,50 +68,31 @@ async def receive_paid_autolike_uid(
             )
             return
 
-        await db.update_order_status(order["id"], "paid")
-        sending = await message.reply(
-            "❤️ Cadastrando seu Auto Like 220..."
-        )
-        result = await autosystem_likes_api.add_autolike(
-            uid,
-            days=days,
-            quantity=220,
-        )
-
-        if not result.ok:
-            await db.update_order_status(
-                order["id"],
-                "failed",
-                str(result.data or result.error or ""),
-            )
-            await sending.edit_text(
-                "⚠️ <b>Pagamento confirmado, mas não consegui ativar o "
-                "Auto Like 220.</b>\n\n"
-                f"🆔 UID: <code>{uid}</code>\n"
-                f"Motivo: {result.error or 'falha na Auto System'}\n\n"
-                "O pedido ficou registrado para suporte."
+        if not autosystem_likes_api.enabled:
+            await db.update_order_status(order["id"], "failed")
+            await message.reply(
+                "⚠️ A AutoSystem não está configurada no momento. "
+                "Fale com o suporte."
             )
             return
 
-        data = result.data if isinstance(result.data, dict) else {}
-        nick = data.get("nickname") or "Jogador"
-        next_send = data.get("next_send")
-        next_text = "automático"
-        if isinstance(next_send, dict):
-            next_text = next_send.get("texto") or next_send.get("quando") or next_text
-
-        await db.update_order_status(order["id"], "delivered", str(data))
+        await db.create_autosystem_autolike_subscription(
+            order_id=order["id"],
+            user_id=message.from_user.id,
+            game_id=uid,
+            days_total=days,
+        )
+        await db.update_order_status(order["id"], "active")
         await db.decrement_stock(order["product_code"])
 
-        await sending.edit_text(
+        await message.reply(
             "❤️ <b>AUTO LIKE 220 ATIVADO</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 Nick: <b>{nick}</b>\n"
             f"🆔 UID: <code>{uid}</code>\n"
             f"📆 Período: <b>{days} dias</b>\n"
             "❤️ Por envio: <b>220 likes</b>\n"
-            f"⏰ Próximo envio: <b>{next_text}</b>\n\n"
-            "✅ O sistema fará os envios automaticamente.",
+            "⏰ Horário fixo: <b>09:00 da manhã</b>\n\n"
+            "✅ O primeiro envio acontecerá na próxima janela das 09:00.",
             reply_markup=back_home(),
         )
         return
@@ -182,7 +163,8 @@ async def receive_paid_autolike_uid(
         f"🆔 UID: <code>{uid}</code>\n"
         f"📆 Período: <b>{days} dias</b>\n"
         "❤️ Por envio: <b>aprox. 500 a 1.000 likes</b>\n"
-        "🔁 Frequência: <b>1 envio por dia</b>\n\n"
-        "⚡ O primeiro envio já entrou na fila.",
+        "🔁 Frequência: <b>1 envio por dia</b>\n"
+        "⏰ Horário fixo: <b>09:00 da manhã</b>\n\n"
+        "✅ O primeiro envio acontecerá na próxima janela das 09:00.",
         reply_markup=back_home(),
     )
