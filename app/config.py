@@ -46,11 +46,26 @@ class Config:
 
     api_base_url: str
     autolike_api_key: str
+    likes_api_base_url: str
+    likes_api_key: str
+    likes_quantity: int
+    autosystem_base_url: str
+    autosystem_api_key: str
     passe_api_key: str
+    ffhub_base_url: str
+    ffhub_api_key: str
     default_region: str
 
     mp_access_token: str
     mp_webhook_secret: str
+
+    efi_client_id: str
+    efi_client_secret: str
+    efi_pix_key: str
+    efi_cert_path: str
+    efi_cert_pem_base64: str
+    efi_sandbox: bool
+    efi_webhook_token: str
 
     webhook_public_url: str
     webhook_host: str
@@ -65,53 +80,165 @@ class Config:
     products: dict[str, Product] = field(default_factory=dict)
 
     @property
-    def mp_webhook_path(self) -> str:
+    def payment_webhook_path(self) -> str:
         return "/webhook/mercadopago"
 
     @property
-    def mp_notification_url(self) -> str:
+    def payment_notification_url(self) -> str:
         base = self.webhook_public_url.rstrip("/")
-        return f"{base}{self.mp_webhook_path}"
+        return f"{base}{self.payment_webhook_path}"
 
 
 def load_config() -> Config:
-    price_passe = Decimal(_get("PRICE_PASSE", "19.90"))
-    price_autolike = Decimal(_get("PRICE_AUTOLIKE_30D", "14.90"))
+    price_passe = Decimal(_get("PRICE_PASSE", "4.00"))
+    price_autolike220_day = Decimal(_get("PRICE_AUTOLIKE220_DAY", "0.60"))
+    price_autolike500_day = Decimal(_get("PRICE_AUTOLIKE500_DAY", "0.00"))
+    price_reseller_access = Decimal(_get("PRICE_RESELLER_ACCESS", "0.00"))
+    price_bot_rental = Decimal(_get("PRICE_BOT_RENTAL_30D", "0.00"))
+    price_like2_single = Decimal(_get("PRICE_LIKE2_SINGLE", "0.00"))
+    price_like2_7d = Decimal(_get("PRICE_LIKE2_7D", "0.00"))
+    price_like2_15d = Decimal(_get("PRICE_LIKE2_15D", "0.00"))
+    price_like2_30d = Decimal(_get("PRICE_LIKE2_30D", "0.00"))
+
+    # /like usa 200 fixos. Não lê LIKES_QUANTITY do ambiente para evitar
+    # uma variável antiga da Square (ex.: 100) sobrescrever o envio atual.
+    likes_quantity = 200
 
     products = {
         "passe": Product(
             code="passe",
-            title="🎟️ Passe Booyah",
+            title="🎟️ Passe de Elite",
             description=(
-                "Entrega automática de um <b>Passe Booyah</b> na sua conta "
-                "de Free Fire. Basta informar seu ID."
+                "Entrega automática do <b>Passe de Elite</b> na sua conta "
+                "de Free Fire. Basta informar seu UID."
             ),
             price=price_passe,
             delivery="passe",
         ),
-        "autolike_30d": Product(
-            code="autolike_30d",
-            title="🔁 Auto-Like (30 dias)",
+        "autolike220": Product(
+            code="autolike220",
+            title="❤️ Auto Like 220",
             description=(
-                "Assinatura de <b>likes automáticos diários</b> por 30 dias. "
-                "Seu ID recebe likes todos os dias sem precisar pedir."
+                "Receba <b>220 likes por dia</b>. Você escolhe de 1 a 90 dias "
+                "e o valor é calculado automaticamente."
             ),
-            price=price_autolike,
-            delivery="autolike",
+            price=price_autolike220_day,
+            delivery="autosystem_autolike",
+        ),
+        "autolike500": Product(
+            code="autolike500",
+            title="💎 Auto Like 500",
+            description=(
+                "Receba aproximadamente <b>500 a 1.000 likes por dia</b>. "
+                "Você escolhe de 1 a 90 dias e o valor é calculado automaticamente."
+            ),
+            price=price_autolike500_day,
+            delivery="ffhub_autolike",
+        ),
+        "reseller_access": Product(
+            code="reseller_access",
+            title="🤝 Revenda",
+            description=(
+                "Libera a <b>área de revendedor</b> com preços reduzidos "
+                "automaticamente nos produtos elegíveis."
+            ),
+            price=price_reseller_access,
+            delivery="reseller_access",
+        ),
+        "balance_topup": Product(
+            code="balance_topup",
+            title="💰 Adicionar saldo",
+            description="Adicione saldo à sua carteira do bot via PIX.",
+            price=Decimal("0.00"),
+            delivery="balance_topup",
+        ),
+        "bot_rental": Product(
+            code="bot_rental",
+            title="🤖 Alugar bot",
+            description=(
+                "Aluguel do Aurora System por <b>30 dias</b> para o seu grupo."
+            ),
+            price=price_bot_rental,
+            delivery="bot_rental",
+            days=30,
+        ),
+        # Produtos antigos mantidos para pedidos já existentes.
+        "like2_single": Product(
+            code="like2_single",
+            title="💎 Like2 • Envio único",
+            description=(
+                "Um envio pago de likes pela FFHub. "
+                "Após o PIX ser aprovado, o bot solicita seu UID e envia automaticamente."
+            ),
+            price=price_like2_single,
+            delivery="ffhub_like_once",
+        ),
+        "like2_7d": Product(
+            code="like2_7d",
+            title="💎 Auto Like 500/1000 • 7 dias",
+            description=(
+                "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+                "durante <b>7 dias</b>. Após o PIX ser aprovado, o bot solicita "
+                "seu UID e inicia os envios automáticos."
+            ),
+            price=price_like2_7d,
+            delivery="ffhub_autolike",
+            days=7,
+        ),
+        "like2_15d": Product(
+            code="like2_15d",
+            title="💎 Auto Like 500/1000 • 15 dias",
+            description=(
+                "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+                "durante <b>15 dias</b>. Após o PIX ser aprovado, o bot solicita "
+                "seu UID e inicia os envios automáticos."
+            ),
+            price=price_like2_15d,
+            delivery="ffhub_autolike",
+            days=15,
+        ),
+        "like2_30d": Product(
+            code="like2_30d",
+            title="💎 Auto Like 500/1000 • 30 dias",
+            description=(
+                "Receba aproximadamente <b>500 a 1.000 likes por dia</b> "
+                "durante <b>30 dias</b>. Após o PIX ser aprovado, o bot solicita "
+                "seu UID e inicia os envios automáticos."
+            ),
+            price=price_like2_30d,
+            delivery="ffhub_autolike",
             days=30,
         ),
     }
 
     return Config(
         bot_token=_get("BOT_TOKEN", required=True),
-        admin_ids=_get_int_list("ADMIN_IDS"),
-        api_base_url=_get("API_BASE_URL", "https://autolikesystem.com.br"),
-        autolike_api_key=_get("AUTOLIKE_API_KEY", required=True),
+        admin_ids=[8204579375, 8669377135],
+        api_base_url=_get("API_BASE_URL", "https://fluxggx.squareweb.app"),
+        autolike_api_key=_get("AUTOLIKE_API_KEY", ""),
+        likes_api_base_url=_get(
+            "LIKES_API_BASE_URL", "https://likespainel.squareweb.app"
+        ),
+        likes_api_key=_get("LIKES_API_KEY", required=True),
+        likes_quantity=likes_quantity,
+        autosystem_base_url=_get(
+            "AUTOSYSTEM_BASE_URL", "https://autolikesystem.com.br"
+        ),
+        autosystem_api_key=_get("AUTOSYSTEM_API_KEY", ""),
         passe_api_key=_get("PASSE_API_KEY", ""),
+        ffhub_base_url=_get("FFHUB_BASE_URL", "https://ffhub-shop.shardweb.app"),
+        ffhub_api_key=_get("FFHUB_API_KEY", ""),
         default_region=_get("DEFAULT_REGION", "BR"),
-        mp_access_token=_get("MERCADOPAGO_ACCESS_TOKEN", required=True),
+        mp_access_token=_get("MERCADOPAGO_ACCESS_TOKEN", ""),
         mp_webhook_secret=_get("MERCADOPAGO_WEBHOOK_SECRET", ""),
-        webhook_public_url=_get("WEBHOOK_PUBLIC_URL", ""),
+        efi_client_id=_get("EFI_CLIENT_ID", ""),
+        efi_client_secret=_get("EFI_CLIENT_SECRET", ""),
+        efi_pix_key=_get("EFI_PIX_KEY", ""),
+        efi_cert_path=_get("EFI_CERT_PATH", ""),
+        efi_cert_pem_base64=_get("EFI_CERT_PEM_BASE64", ""),
+        efi_sandbox=_get("EFI_SANDBOX", "false").lower() in {"1", "true", "yes", "on"},
+        efi_webhook_token=_get("EFI_WEBHOOK_TOKEN", ""),
+        webhook_public_url=_get("WEBHOOK_PUBLIC_URL", "https://yosh7.squareweb.app"),
         webhook_host=_get("WEBHOOK_HOST", "0.0.0.0"),
         # Square Cloud injeta a porta via PORT em deploys de site; usamos como fallback
         webhook_port=int(_get("WEBHOOK_PORT", _get("PORT", "8080"))),
