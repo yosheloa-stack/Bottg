@@ -91,6 +91,10 @@ class Config:
 
 def load_config() -> Config:
     price_passe = Decimal(_get("PRICE_PASSE", "4.00"))
+    price_autolike220_day = Decimal(_get("PRICE_AUTOLIKE220_DAY", "0.60"))
+    price_autolike500_day = Decimal(_get("PRICE_AUTOLIKE500_DAY", "0.00"))
+    price_reseller_access = Decimal(_get("PRICE_RESELLER_ACCESS", "0.00"))
+    price_bot_rental = Decimal(_get("PRICE_BOT_RENTAL_30D", "0.00"))
     price_like2_single = Decimal(_get("PRICE_LIKE2_SINGLE", "0.00"))
     price_like2_7d = Decimal(_get("PRICE_LIKE2_7D", "0.00"))
     price_like2_15d = Decimal(_get("PRICE_LIKE2_15D", "0.00"))
@@ -103,14 +107,62 @@ def load_config() -> Config:
     products = {
         "passe": Product(
             code="passe",
-            title="🎟️ Passe Booyah",
+            title="🎟️ Passe de Elite",
             description=(
-                "Entrega automática de um <b>Passe Booyah</b> na sua conta "
-                "de Free Fire. Basta informar seu ID."
+                "Entrega automática do <b>Passe de Elite</b> na sua conta "
+                "de Free Fire. Basta informar seu UID."
             ),
             price=price_passe,
             delivery="passe",
         ),
+        "autolike220": Product(
+            code="autolike220",
+            title="❤️ Auto Like 220",
+            description=(
+                "Receba <b>220 likes por dia</b>. Você escolhe de 1 a 90 dias "
+                "e o valor é calculado automaticamente."
+            ),
+            price=price_autolike220_day,
+            delivery="autosystem_autolike",
+        ),
+        "autolike500": Product(
+            code="autolike500",
+            title="💎 Auto Like 500",
+            description=(
+                "Receba aproximadamente <b>500 a 1.000 likes por dia</b>. "
+                "Você escolhe de 1 a 90 dias e o valor é calculado automaticamente."
+            ),
+            price=price_autolike500_day,
+            delivery="ffhub_autolike",
+        ),
+        "reseller_access": Product(
+            code="reseller_access",
+            title="🤝 Revenda",
+            description=(
+                "Libera a <b>área de revendedor</b> com preços reduzidos "
+                "automaticamente nos produtos elegíveis."
+            ),
+            price=price_reseller_access,
+            delivery="reseller_access",
+        ),
+        "balance_topup": Product(
+            code="balance_topup",
+            title="💰 Adicionar saldo",
+            description="Adicione saldo à sua carteira do bot via PIX.",
+            price=Decimal("0.00"),
+            delivery="balance_topup",
+        ),
+        "bot_rental": Product(
+            code="bot_rental",
+            title="🤖 Alugar bot",
+            description=(
+                "Aluguel do Aurora System por <b>30 dias</b> para o seu grupo."
+            ),
+            price=price_bot_rental,
+            delivery="bot_rental",
+            days=30,
+        ),
+        # Produtos antigos mantidos para pedidos já existentes.
         "like2_single": Product(
             code="like2_single",
             title="💎 Like2 • Envio único",
