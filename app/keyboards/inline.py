@@ -22,7 +22,7 @@ def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="💎 Auto Like 500", callback_data="shop:auto500"),
     )
     kb.row(
-        InlineKeyboardButton(text="🎟️ Passe de Elite", callback_data="shop:passe"),
+        InlineKeyboardButton(text="🎟️ Passe de Elite", callback_data="nav:v2:passe"),
         InlineKeyboardButton(text="🤝 Revenda", callback_data="shop:reseller"),
     )
     kb.row(
@@ -97,7 +97,7 @@ def reseller_area_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="💎 Auto Like 500", callback_data="shop:auto500"),
     )
     kb.row(
-        InlineKeyboardButton(text="🎟️ Passe de Elite", callback_data="shop:passe"),
+        InlineKeyboardButton(text="🎟️ Passe de Elite", callback_data="nav:v2:passe"),
         InlineKeyboardButton(text="🤖 Alugar bot", callback_data="shop:rent"),
     )
     kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="nav:v2:home"))
