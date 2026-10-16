@@ -11,6 +11,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from app import texts
+from app.announcements import announce_autolike_send
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import main_menu
@@ -110,6 +111,19 @@ async def _do_send_like(
                 tempo=f"{elapsed:.2f}",
             )
         )
+        if sent_int > 0:
+            try:
+                await announce_autolike_send(
+                    message.bot,
+                    db,
+                    user_id=message.from_user.id,
+                    plan_name="Envio de Likes",
+                    uid=game_id,
+                    nickname=str(nick),
+                    likes_sent=sent_int,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha ao anunciar /like uid=%s", game_id)
         return
 
     if use_cooldown:
@@ -467,6 +481,20 @@ async def cmd_like2(
             ]
         )
         await status_msg.edit_text("\n".join(lines))
+        try:
+            sent_value = int(sent) if sent is not None else 0
+            if sent_value > 0:
+                await announce_autolike_send(
+                    message.bot,
+                    db,
+                    user_id=message.from_user.id,
+                    plan_name="LIKE2",
+                    uid=game_id,
+                    nickname=str(nick or "Jogador"),
+                    likes_sent=sent_value,
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("Falha ao anunciar /like2 uid=%s", game_id)
         return
 
     # Clientes não usam mais o menu antigo do /like2.
