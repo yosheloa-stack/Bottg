@@ -245,6 +245,7 @@ def _telegram_webhook_secret(bot_token: str) -> str:
 
 async def main() -> None:
     config = load_config()
+    logger.info("AURORA_BUILD=MENU_V2_2026_10_16")
 
     # Infraestrutura
     db = Database(config.db_path)
