@@ -258,6 +258,8 @@ async def cb_orders(query: CallbackQuery, db: Database, config: Config) -> None:
         status_emoji = {
             "pending": "⏳",
             "paid": "💳",
+            "awaiting_id": "🆔",
+            "active": "🟢",
             "delivered": "✅",
             "failed": "⚠️",
             "expired": "❌",
@@ -266,10 +268,16 @@ async def cb_orders(query: CallbackQuery, db: Database, config: Config) -> None:
             product = config.products.get(o["product_code"])
             title = product.title if product else o["product_code"]
             emoji = status_emoji.get(o["status"], "•")
+            uid = str(o.get("game_id") or "").strip()
+            uid_text = f"<code>{uid}</code>" if uid else "aguardando"
+            days = int(o.get("plan_days") or 0)
+            days_text = f" · {days} dias" if days > 0 else ""
+            payment_text = "saldo" if o.get("paid_with") == "balance" else "PIX"
             lines.append(
                 f"{emoji} #{o['id']} — {title}\n"
-                f"    ID: <code>{o['game_id']}</code> · "
-                f"R$ {format_price(float(o['amount']))} · {o['status']}"
+                f"    UID: {uid_text}{days_text}\n"
+                f"    R$ {format_price(float(o['amount']))} · "
+                f"{payment_text} · {o['status']}"
             )
         text = "\n".join(lines)
     await edit_screen(query, text, back_home())
