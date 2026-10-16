@@ -103,6 +103,10 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user
 ON wallet_transactions(user_id, created_at);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_credit_order
+ON wallet_transactions(order_id)
+WHERE order_id IS NOT NULL AND kind = 'credit';
+
 CREATE TABLE IF NOT EXISTS resellers (
     user_id      INTEGER PRIMARY KEY,
     order_id     INTEGER,
@@ -642,6 +646,17 @@ class Database:
         now = int(time.time())
         await self.db.execute("BEGIN IMMEDIATE")
         try:
+            if order_id is not None:
+                async with self.db.execute(
+                    "SELECT 1 FROM wallet_transactions "
+                    "WHERE order_id = ? AND kind = 'credit' LIMIT 1",
+                    (int(order_id),),
+                ) as cur:
+                    already = await cur.fetchone()
+                if already:
+                    await self.db.commit()
+                    return await self.get_balance_cents(user_id)
+
             await self.db.execute(
                 """
                 INSERT INTO wallets (user_id, balance_cents, updated_at)
