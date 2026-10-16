@@ -61,7 +61,7 @@ def autolike_days_menu(product_code: str) -> InlineKeyboardMarkup:
             callback_data=f"dayscustom:{product_code}",
         )
     )
-    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
+    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="nav:v2:home"))
     return kb.as_markup()
 
 
@@ -86,7 +86,7 @@ def checkout_menu(
                 callback_data=f"paybal:{product_code}{suffix}",
             )
         )
-    kb.row(InlineKeyboardButton(text="⬅️ Voltar", callback_data="menu:home"))
+    kb.row(InlineKeyboardButton(text="⬅️ Voltar", callback_data="nav:v2:home"))
     return kb.as_markup()
 
 
@@ -100,14 +100,14 @@ def reseller_area_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🎟️ Passe de Elite", callback_data="shop:passe"),
         InlineKeyboardButton(text="🤖 Alugar bot", callback_data="shop:rent"),
     )
-    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
+    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="nav:v2:home"))
     return kb.as_markup()
 
 
 def add_group_button(url: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="➕ Adicionar bot ao grupo", url=url))
-    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
+    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="nav:v2:home"))
     return kb.as_markup()
 
 
@@ -120,13 +120,13 @@ def payment_pending(payment_id: str, ticket_url: str = "") -> InlineKeyboardMark
     )
     if ticket_url:
         kb.row(InlineKeyboardButton(text="🌐 Abrir cobrança", url=ticket_url))
-    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
+    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="nav:v2:home"))
     return kb.as_markup()
 
 
 def back_home() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
+    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="nav:v2:home"))
     return kb.as_markup()
 
 
@@ -155,7 +155,7 @@ def admin_panel() -> InlineKeyboardMarkup:
             callback_data="owner:settings",
         )
     )
-    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="menu:home"))
+    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="nav:v2:home"))
     return kb.as_markup()
 
 
