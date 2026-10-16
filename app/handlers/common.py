@@ -116,8 +116,7 @@ async def cmd_menu(
     )
 
 
-@router.callback_query(F.data == "menu:home")
-async def cb_home(
+async def _open_customer_home(
     query: CallbackQuery,
     state: FSMContext,
     config: Config,
@@ -128,11 +127,33 @@ async def cb_home(
     except Exception:
         pass
     await state.clear()
+    await db.clear_customer_pending_input(query.from_user.id)
     await edit_screen(
         query,
         await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
+
+
+@router.callback_query(F.data == "nav:v2:home")
+async def cb_home_v2(
+    query: CallbackQuery,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+) -> None:
+    await _open_customer_home(query, state, config, db)
+
+
+@router.callback_query(F.data == "menu:home")
+async def cb_home_legacy(
+    query: CallbackQuery,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+) -> None:
+    # Só para mensagens antigas que ainda estejam no histórico.
+    await _open_customer_home(query, state, config, db)
 
 
 @router.callback_query(F.data == "menu:store")
