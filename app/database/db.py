@@ -1075,7 +1075,7 @@ class Database:
 
         async with self.db.execute(
             "SELECT id FROM ffhub_autolike_subscriptions "
-            "WHERE game_id = ? AND status = 'active' "
+            "WHERE game_id = ? AND status = 'active' AND provider = 'ffhub' "
             "ORDER BY id DESC LIMIT 1",
             (str(game_id),),
         ) as cur:
@@ -1142,7 +1142,7 @@ class Database:
         cur = await self.db.execute(
             "UPDATE ffhub_autolike_subscriptions "
             "SET status = 'cancelled', updated_at = ? "
-            "WHERE game_id = ? AND status = 'active'",
+            "WHERE game_id = ? AND status = 'active' AND provider = 'ffhub'",
             (int(time.time()), str(game_id)),
         )
         await self.db.commit()
@@ -1192,7 +1192,7 @@ class Database:
                     LIMIT 1
                 ) AS last_likes_after
             FROM ffhub_autolike_subscriptions s
-            WHERE s.game_id = ?
+            WHERE s.game_id = ? AND s.provider = 'ffhub'
             ORDER BY (s.status = 'active') DESC, s.id DESC
             LIMIT 1
             """,
@@ -1228,7 +1228,7 @@ class Database:
             FROM ffhub_autolike_subscriptions s
             LEFT JOIN ffhub_autolike_history h
               ON h.subscription_id = s.id
-            WHERE s.status = 'active'
+            WHERE s.status = 'active' AND s.provider = 'ffhub'
             GROUP BY s.id
             ORDER BY s.created_at DESC
             LIMIT ?
