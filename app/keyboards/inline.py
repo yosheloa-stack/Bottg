@@ -71,19 +71,30 @@ def autolike_plans_menu(
             continue
 
         days = rp.product.days
-        if rp.available:
-            label = f"📆 {days} dias • R$ {_price(rp.price)}"
-            callback = f"buy:{rp.code}"
-        elif rp.price <= 0:
+        if rp.price <= 0:
             if is_owner:
                 label = f"💰 {days} dias • Definir preço"
                 callback = f"admprod:{rp.code}"
             else:
                 label = f"📆 {days} dias • Indisponível"
                 callback = "noop:unavailable"
+        elif not rp.service_ready:
+            if is_owner:
+                label = f"🔑 {days} dias • Configurar FFHub"
+                callback = "owner:set:FFHUB_API_KEY"
+            else:
+                label = f"📆 {days} dias • Indisponível"
+                callback = "noop:unavailable"
+        elif rp.stock == 0:
+            if is_owner:
+                label = f"📦 {days} dias • Estoque zerado"
+                callback = f"admprod:{rp.code}"
+            else:
+                label = f"📆 {days} dias • Esgotado"
+                callback = "noop:unavailable"
         else:
-            label = f"📆 {days} dias • Esgotado"
-            callback = "noop:unavailable"
+            label = f"📆 {days} dias • R$ {_price(rp.price)}"
+            callback = f"buy:{rp.code}"
 
         kb.row(InlineKeyboardButton(text=label, callback_data=callback))
 
@@ -122,20 +133,31 @@ def premium_like_menu(
                 )
             continue
 
+        if not rp.service_ready:
+            if is_owner:
+                kb.row(
+                    InlineKeyboardButton(
+                        text=f"🔑 {rp.title} • Configurar FFHub",
+                        callback_data="owner:set:FFHUB_API_KEY",
+                    )
+                )
+            continue
+
+        if rp.stock == 0:
+            if is_owner:
+                kb.row(
+                    InlineKeyboardButton(
+                        text=f"📦 {rp.title} • Estoque zerado",
+                        callback_data=f"admprod:{rp.code}",
+                    )
+                )
+            continue
+
         if rp.available:
             kb.row(
                 InlineKeyboardButton(
                     text=f"{rp.title}  •  R$ {_price(rp.price)}",
                     callback_data=f"buy:{rp.code}",
-                )
-            )
-            continue
-
-        if is_owner:
-            kb.row(
-                InlineKeyboardButton(
-                    text=f"⚙️ {rp.title} • Configurar",
-                    callback_data=f"admprod:{rp.code}",
                 )
             )
 
