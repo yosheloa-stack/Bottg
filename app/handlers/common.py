@@ -123,23 +123,29 @@ async def cb_home(
     config: Config,
     db: Database,
 ) -> None:
+    try:
+        await query.answer()
+    except Exception:
+        pass
     await state.clear()
     await edit_screen(
         query,
         await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
-    await query.answer()
 
 
 @router.callback_query(F.data == "menu:store")
 async def cb_store(query: CallbackQuery, config: Config, db: Database) -> None:
+    try:
+        await query.answer("Menu atualizado.")
+    except Exception:
+        pass
     await edit_screen(
         query,
         await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
-    await query.answer("Menu atualizado.")
 
 
 @router.callback_query(F.data == "menu:autolike")
@@ -148,12 +154,15 @@ async def cb_autolike_store(
     config: Config,
     db: Database,
 ) -> None:
+    try:
+        await query.answer("Menu atualizado.")
+    except Exception:
+        pass
     await edit_screen(
         query,
         await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
-    await query.answer("Menu atualizado.")
 
 
 @router.callback_query(F.data == "noop:unavailable")
@@ -232,6 +241,10 @@ async def cmd_my_id(message: Message) -> None:
 
 @router.callback_query(F.data == "menu:support")
 async def cb_support(query: CallbackQuery, config: Config) -> None:
+    try:
+        await query.answer()
+    except Exception:
+        pass
     await edit_screen(
         query,
         "🆘 <b>Suporte</b>\n"
@@ -241,11 +254,14 @@ async def cb_support(query: CallbackQuery, config: Config) -> None:
         "Tenha em mãos o número do seu pedido (#).",
         back_home(),
     )
-    await query.answer()
 
 
 @router.callback_query(F.data == "menu:orders")
 async def cb_orders(query: CallbackQuery, db: Database, config: Config) -> None:
+    try:
+        await query.answer()
+    except Exception:
+        pass
     orders = await db.recent_orders(limit=100)
     mine = [o for o in orders if o["user_id"] == query.from_user.id][:10]
     if not mine:
@@ -278,7 +294,6 @@ async def cb_orders(query: CallbackQuery, db: Database, config: Config) -> None:
             )
         text = "\n".join(lines)
     await edit_screen(query, text, back_home())
-    await query.answer()
 
 
 @router.callback_query(F.data == "cancel")
