@@ -716,6 +716,7 @@ async def cb_unlimited(query: CallbackQuery, config: Config, db: Database) -> No
 async def cmd_reseller_discount(
     message: Message,
     config: Config,
+    db: Database,
 ) -> None:
     if not message.from_user or not _is_admin(message.from_user.id, config):
         return
@@ -734,7 +735,13 @@ async def cmd_reseller_discount(
     if value < 0 or value > 80:
         await message.reply("⚠️ Use um desconto entre 0 e 80%.")
         return
-    db = message.bot.get("db") if False else None
+
+    value = value.quantize(Decimal("0.01"))
+    await db.set_owner_setting("RESELLER_DISCOUNT_PERCENT", str(value))
+    await message.reply(
+        "✅ <b>DESCONTO DE REVENDA ATUALIZADO</b>\n"
+        f"Novo desconto automático: <b>{value}%</b>"
+    )
 
 
 @router.message(Command("setkey"))
