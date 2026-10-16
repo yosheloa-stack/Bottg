@@ -440,7 +440,7 @@ async def cmd_set_price_direct(
     parts = (message.text or "").split(maxsplit=2)
     if len(parts) < 3:
         await message.reply(
-            "Use: <code>/preco 7 25,00</code>\n"
+            "Use: <code>/preco 220 0,60</code>\n"
             "Produtos: <code>220</code>, <code>500</code>, <code>passe</code>, "
             "<code>revenda</code> ou <code>aluguel</code>."
         )
@@ -467,7 +467,7 @@ async def cmd_set_stock_direct(
     parts = (message.text or "").split(maxsplit=2)
     if len(parts) < 3:
         await message.reply(
-            "Use: <code>/estoque 7 -1</code>\n"
+            "Use: <code>/estoque 220 -1</code>\n"
             "Use <code>-1</code> para ilimitado."
         )
         return
@@ -576,6 +576,11 @@ async def cmd_setkey(
     gateway: MercadoPagoGateway,
 ) -> None:
     if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    if message.chat.type != "private":
+        await message.reply(
+            "🔐 Por segurança, envie <code>/setkey</code> somente no privado do bot."
+        )
         return
 
     parts = (message.text or "").split(maxsplit=2)
