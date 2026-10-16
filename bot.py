@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import html
-import hashlib
 import logging
 from decimal import Decimal, InvalidOperation
 
@@ -16,7 +15,6 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from app.config import load_config
 from app.database import Database
@@ -235,39 +233,6 @@ async def watch_ffhub_autolikes(
         await asyncio.sleep(10)
 
 
-def _telegram_webhook_secret(bot_token: str) -> str:
-    return hashlib.sha256(
-        ("aurora-webhook:" + bot_token).encode("utf-8")
-    ).hexdigest()
-
-
-async def watch_telegram_webhook(
-    bot: Bot,
-    webhook_url: str,
-    secret_token: str,
-    allowed_updates: list[str],
-) -> None:
-    """Garante que outra instância antiga não derrube o webhook atual."""
-    while True:
-        try:
-            info = await bot.get_webhook_info()
-            if str(info.url or "") != webhook_url:
-                logger.warning(
-                    "Webhook Telegram saiu do lugar (%s). Restaurando %s",
-                    info.url or "vazio",
-                    webhook_url,
-                )
-                await bot.set_webhook(
-                    url=webhook_url,
-                    secret_token=secret_token,
-                    allowed_updates=allowed_updates,
-                    drop_pending_updates=False,
-                )
-        except Exception:  # noqa: BLE001
-            logger.exception("Falha ao verificar/restaurar webhook do Telegram")
-        await asyncio.sleep(10)
-
-
 async def main() -> None:
     config = load_config()
     logger.info("AURORA_BUILD=MENU_V2_2026_10_16")
@@ -387,10 +352,17 @@ async def main() -> None:
             "no painel do dono. O monitor já está aguardando a configuração."
         )
 
+    # HTTP fica somente para health check e Mercado Pago.
+    # Telegram usa polling. Antes de iniciar, removemos e confirmamos a remoção
+    # de qualquer webhook antigo para evitar TelegramConflictError.
     runner = None
-    telegram_webhook_task = None
-    telegram_webhook_url = ""
-    telegram_webhook_secret = ""
+    if config.webhook_public_url:
+        web_app = build_webhook_app(config, db, gateway, delivery)
+        runner = await start_webhook_server(web_app, config)
+        logger.info(
+            "Webhook Mercado Pago disponível em %s",
+            config.payment_notification_url,
+        )
 
     try:
         await bot.set_my_commands(
@@ -404,75 +376,39 @@ async def main() -> None:
         me = await bot.get_me()
         logger.info("Bot iniciado como @%s", me.username)
 
-        if config.webhook_public_url:
-            # Usa o mesmo servidor HTTP do Mercado Pago também para o Telegram.
-            # Webhook elimina a disputa com qualquer instância velha em getUpdates.
-            web_app = build_webhook_app(config, db, gateway, delivery)
-            telegram_webhook_secret = _telegram_webhook_secret(config.bot_token)
-            telegram_webhook_path = "/telegram/webhook"
-            telegram_webhook_url = (
-                config.webhook_public_url.rstrip("/") + telegram_webhook_path
-            )
-
-            SimpleRequestHandler(
-                dispatcher=dp,
-                bot=bot,
-                secret_token=telegram_webhook_secret,
-            ).register(web_app, path=telegram_webhook_path)
-            setup_application(web_app, dp, bot=bot)
-
-            runner = await start_webhook_server(web_app, config)
-            logger.info(
-                "Webhook Mercado Pago disponível em %s",
-                config.payment_notification_url,
-            )
-
-            allowed_updates = dp.resolve_used_update_types()
-
-            # Limpa qualquer webhook/update preso de deploy antigo antes de
-            # registrar a rota V2. Isso evita callbacks e /start antigos
-            # reaparecendo depois do redeploy.
-            await bot.delete_webhook(drop_pending_updates=True)
-            await bot.set_webhook(
-                url=telegram_webhook_url,
-                secret_token=telegram_webhook_secret,
-                allowed_updates=allowed_updates,
-                drop_pending_updates=True,
-            )
-
-            webhook_info = await bot.get_webhook_info()
-            logger.info(
-                "Telegram em WEBHOOK exclusivo: %s | pending=%s",
-                webhook_info.url or telegram_webhook_url,
-                webhook_info.pending_update_count,
-            )
-
-            telegram_webhook_task = asyncio.create_task(
-                watch_telegram_webhook(
-                    bot,
-                    telegram_webhook_url,
-                    telegram_webhook_secret,
-                    allowed_updates,
-                ),
-                name="telegram-webhook-watchdog",
-            )
-
-            # O aiohttp recebe os updates. Mantém o processo vivo.
-            await asyncio.Event().wait()
-        else:
-            # Só usa polling se não houver URL pública configurada.
-            await bot.delete_webhook(drop_pending_updates=True)
-            logger.warning(
-                "WEBHOOK_PUBLIC_URL ausente; Telegram usando polling de fallback."
-            )
-            await dp.start_polling(bot)
-    finally:
-        if telegram_webhook_task:
-            telegram_webhook_task.cancel()
+        # Limpa webhook do Telegram com tentativas e verifica antes do polling.
+        for attempt in range(1, 6):
             try:
-                await telegram_webhook_task
-            except asyncio.CancelledError:
-                pass
+                await bot.delete_webhook(drop_pending_updates=True)
+                info = await bot.get_webhook_info()
+                if not info.url:
+                    logger.info(
+                        "Webhook Telegram removido. Polling liberado (tentativa %s).",
+                        attempt,
+                    )
+                    break
+                logger.warning(
+                    "Webhook Telegram ainda ativo em %s após tentativa %s.",
+                    info.url,
+                    attempt,
+                )
+            except Exception:
+                logger.exception(
+                    "Falha ao remover webhook Telegram na tentativa %s.",
+                    attempt,
+                )
+            await asyncio.sleep(1)
+        else:
+            raise RuntimeError(
+                "Não foi possível remover o webhook do Telegram; polling abortado."
+            )
+
+        logger.info("Telegram em POLLING exclusivo.")
+        await dp.start_polling(
+            bot,
+            allowed_updates=dp.resolve_used_update_types(),
+        )
+    finally:
         if autolike_task:
             autolike_task.cancel()
             try:
