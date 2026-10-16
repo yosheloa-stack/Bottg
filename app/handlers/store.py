@@ -813,6 +813,33 @@ async def purchase_receive_id(
     else:
         nick_line = f"👤 Nick: <b>{nick}</b>\n" if nick else ""
 
+    if rp.delivery == "passe":
+        price, is_reseller, discount = await _effective_price(
+            db, rp, message.from_user.id
+        )
+        await state.clear()
+        reseller_line = (
+            f"🤝 Desconto revenda: <b>{discount}%</b>\n"
+            if is_reseller and discount > 0
+            else ""
+        )
+        await checking.edit_text(
+            "🧾 <b>CONFIRMAR PEDIDO</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 Produto: <b>{rp.title}</b>\n"
+            f"🎮 UID: <code>{game_id}</code>\n"
+            f"{nick_line}"
+            f"{reseller_line}"
+            f"💰 Valor: <b>R$ {format_price(price)}</b>\n\n"
+            "Escolha como deseja pagar:",
+            reply_markup=checkout_menu(
+                "passe",
+                ref_value=game_id,
+                allow_balance=True,
+            ),
+        )
+        return
+
     await state.update_data(game_id=game_id)
     await state.set_state(PurchaseFlow.confirming)
     await checking.edit_text(
