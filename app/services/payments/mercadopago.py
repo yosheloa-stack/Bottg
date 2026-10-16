@@ -29,6 +29,19 @@ _STATUS_MAP = {
     "charged_back": PaymentStatus.CANCELLED,
 }
 
+_ORDER_STATUS_MAP = {
+    "created": PaymentStatus.PENDING,
+    "processing": PaymentStatus.PENDING,
+    "action_required": PaymentStatus.PENDING,
+    "processed": PaymentStatus.APPROVED,
+    "failed": PaymentStatus.REJECTED,
+    "canceled": PaymentStatus.CANCELLED,
+    "cancelled": PaymentStatus.CANCELLED,
+    "expired": PaymentStatus.EXPIRED,
+    "refunded": PaymentStatus.CANCELLED,
+    "charged_back": PaymentStatus.CANCELLED,
+}
+
 
 class MercadoPagoGateway(PaymentGateway):
     def __init__(self, access_token: str, notification_url: str = "") -> None:
@@ -56,81 +69,154 @@ class MercadoPagoGateway(PaymentGateway):
         payer_email: str,
         payer_name: str,
     ) -> PixCharge:
+        """Cria cobrança PIX pela Orders API do Mercado Pago."""
         if not self.configured:
-            raise RuntimeError("Mercado Pago não configurado. Informe o Access Token.")
+            raise RuntimeError(
+                "Mercado Pago não configurado. Informe o Access Token."
+            )
 
+        amount_text = f"{Decimal(amount).quantize(Decimal('0.01')):.2f}"
         payload = {
-            "transaction_amount": float(amount),
-            "description": description,
-            "payment_method_id": "pix",
-            "external_reference": external_reference,
+            "type": "online",
+            "total_amount": amount_text,
+            "external_reference": str(external_reference),
+            "processing_mode": "automatic",
+            "transactions": {
+                "payments": [
+                    {
+                        "amount": amount_text,
+                        "payment_method": {
+                            "id": "pix",
+                            "type": "bank_transfer",
+                        },
+                    }
+                ]
+            },
             "payer": {
                 "email": payer_email or "cliente@bottg.com",
-                "first_name": payer_name or "Cliente",
             },
         }
-        if self._notification_url:
-            payload["notification_url"] = self._notification_url
 
+        idempotency_key = str(uuid.uuid4())
         async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
             async with session.post(
-                f"{API_URL}/v1/payments",
+                f"{API_URL}/v1/orders",
                 json=payload,
-                headers=self._headers(idempotency_key=str(uuid.uuid4())),
+                headers=self._headers(idempotency_key=idempotency_key),
             ) as resp:
-                data = await resp.json()
+                raw = await resp.text()
+                try:
+                    import json
+                    data = json.loads(raw) if raw else {}
+                except Exception:
+                    data = {"raw": raw}
+
                 if resp.status not in (200, 201):
-                    logger.error("Falha ao criar PIX no MP (%s): %s", resp.status, data)
+                    logger.error(
+                        "Falha ao criar PIX Orders API MP (%s): %s",
+                        resp.status,
+                        data,
+                    )
+                    message = (
+                        data.get("message")
+                        or data.get("error")
+                        or data.get("cause")
+                        or "erro desconhecido"
+                    )
                     raise RuntimeError(
-                        f"Mercado Pago retornou {resp.status}: "
-                        f"{data.get('message', 'erro desconhecido')}"
+                        f"Mercado Pago retornou {resp.status}: {message}"
                     )
 
-        poi = (data.get("point_of_interaction") or {}).get("transaction_data") or {}
+        payments = ((data.get("transactions") or {}).get("payments") or [])
+        payment = payments[0] if payments else {}
+        method = payment.get("payment_method") or {}
+
+        qr_code = method.get("qr_code") or ""
+        qr_code_base64 = (
+            method.get("qr_code_base64")
+            or method.get("qr_code_based64")
+            or ""
+        )
+        ticket_url = method.get("ticket_url") or ""
+
+        if not qr_code and not ticket_url:
+            logger.error("Orders API criou cobrança sem dados PIX: %s", data)
+            raise RuntimeError(
+                "Mercado Pago criou a cobrança, mas não retornou o PIX."
+            )
+
         return PixCharge(
             payment_id=str(data["id"]),
-            status=_STATUS_MAP.get(data.get("status", ""), PaymentStatus.PENDING),
-            qr_code=poi.get("qr_code", ""),
-            qr_code_base64=poi.get("qr_code_base64", ""),
-            ticket_url=poi.get("ticket_url", ""),
-            amount=amount,
+            status=_ORDER_STATUS_MAP.get(
+                str(data.get("status") or ""),
+                PaymentStatus.PENDING,
+            ),
+            qr_code=qr_code,
+            qr_code_base64=qr_code_base64,
+            ticket_url=ticket_url,
+            amount=Decimal(amount_text),
         )
 
     async def get_status(self, payment_id: str) -> PaymentStatus:
         if not self.configured:
             return PaymentStatus.UNKNOWN
 
+        identifier = str(payment_id or "").strip()
+        is_order = identifier.upper().startswith("ORD")
+        endpoint = (
+            f"{API_URL}/v1/orders/{identifier}"
+            if is_order
+            else f"{API_URL}/v1/payments/{identifier}"
+        )
+
         async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
             async with session.get(
-                f"{API_URL}/v1/payments/{payment_id}",
+                endpoint,
                 headers=self._headers(),
             ) as resp:
                 if resp.status != 200:
                     logger.warning(
-                        "get_status MP retornou %s para pagamento %s",
+                        "get_status MP retornou %s para %s",
                         resp.status,
-                        payment_id,
+                        identifier,
                     )
                     return PaymentStatus.UNKNOWN
-                data = await resp.json()
-        return _STATUS_MAP.get(data.get("status", ""), PaymentStatus.UNKNOWN)
+                data = await resp.json(content_type=None)
+
+        if is_order:
+            return _ORDER_STATUS_MAP.get(
+                str(data.get("status") or ""),
+                PaymentStatus.UNKNOWN,
+            )
+        return _STATUS_MAP.get(
+            str(data.get("status") or ""),
+            PaymentStatus.UNKNOWN,
+        )
 
     async def parse_webhook(self, query: dict, body: dict) -> str | None:
-        # O Mercado Pago envia notificações de formas diferentes:
-        # 1) query: ?type=payment&data.id=123  ou  ?topic=payment&id=123
-        # 2) body: {"type": "payment", "data": {"id": "123"}}
+        """Extrai ID de payment legado ou order da notificação do Mercado Pago."""
+        body = body if isinstance(body, dict) else {}
         topic = (
             query.get("type")
             or query.get("topic")
-            or (body.get("type") if isinstance(body, dict) else None)
-            or (body.get("action", "").split(".")[0] if isinstance(body, dict) else None)
+            or body.get("type")
+            or body.get("topic")
+            or str(body.get("action") or "").split(".")[0]
         )
-        if topic and "payment" not in str(topic):
+
+        topic_text = str(topic or "").lower()
+        if topic_text and (
+            "payment" not in topic_text
+            and "order" not in topic_text
+            and "orders_v2" not in topic_text
+        ):
             return None
 
-        payment_id = (
+        data = body.get("data") or {}
+        identifier = (
             query.get("data.id")
             or query.get("id")
-            or (body.get("data", {}) or {}).get("id")
+            or (data.get("id") if isinstance(data, dict) else None)
+            or body.get("id")
         )
-        return str(payment_id) if payment_id else None
+        return str(identifier) if identifier else None
