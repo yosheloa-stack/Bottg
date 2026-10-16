@@ -13,6 +13,8 @@ class ResolvedProduct:
     product: Product
     price: Decimal
     stock: int  # -1 = ilimitado
+    service_ready: bool = True
+    service_issue: str = ""
 
     @property
     def code(self) -> str:
@@ -28,7 +30,7 @@ class ResolvedProduct:
 
     @property
     def available(self) -> bool:
-        return self.stock != 0 and self.price > 0
+        return self.stock != 0 and self.price > 0 and self.service_ready
 
     @property
     def stock_label(self) -> str:
@@ -53,9 +55,18 @@ async def resolve_products(config: Config, db: Database) -> dict[str, ResolvedPr
             except (InvalidOperation, ValueError):
                 price = product.price
         stock = int(s.get("stock", -1)) if s.get("stock") is not None else -1
+        service_ready = True
+        service_issue = ""
         if product.delivery in {"ffhub_autolike", "ffhub_like_once"} and not ffhub_configured:
-            stock = 0
-        resolved[code] = ResolvedProduct(product=product, price=price, stock=stock)
+            service_ready = False
+            service_issue = "FFHub API não configurada"
+        resolved[code] = ResolvedProduct(
+            product=product,
+            price=price,
+            stock=stock,
+            service_ready=service_ready,
+            service_issue=service_issue,
+        )
     return resolved
 
 
