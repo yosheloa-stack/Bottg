@@ -24,11 +24,10 @@ from app.keyboards.inline import (
     back_home,
     cancel_only,
     checkout_menu,
-    confirm_purchase,
+    main_menu,
     payment_pending,
     reseller_area_menu,
 )
-from app.services.autolike import AutoLikeApi
 from app.services.passe import PasseApi
 from app.services.payments.base import PaymentGateway, PaymentStatus
 from app.states import CustomerPlanFlow, PurchaseFlow
@@ -820,55 +819,31 @@ async def checkout_balance(
     await delivery.fulfill_order(order_id)
 
 
-# ---- 1. Usuário escolhe um produto ----
+# ---------- Compatibilidade: botões antigos nunca abrem a loja velha ----------
 @router.callback_query(F.data.startswith("buy:"))
-async def cb_buy(
-    query: CallbackQuery, state: FSMContext, config: Config, db: Database
+async def legacy_buy_redirect(
+    query: CallbackQuery,
+    state: FSMContext,
+    config: Config,
+    db: Database,
 ) -> None:
+    await state.clear()
     code = query.data.split(":", 1)[1]
-    rp = await resolve_product(config, db, code)
-    if not rp:
-        await query.answer("Produto indisponível", show_alert=True)
-        return
-    if not rp.available:
-        await edit_screen(query, texts.OUT_OF_STOCK, back_home())
-        await query.answer()
+
+    if code in {"like2_single", "like2_7d", "like2_15d", "like2_30d"}:
+        await _show_autolike_category(query, db, config, "autolike500")
         return
 
-    await state.update_data(product_code=code)
-
-    if rp.product.delivery in {"ffhub_autolike", "ffhub_like_once"}:
-        await state.set_state(PurchaseFlow.confirming)
-        if rp.product.delivery == "ffhub_like_once":
-            text = texts.LIKE2_SINGLE_CONFIRM.format(
-                price=format_price(rp.price),
-            )
-        else:
-            text = texts.PREMIUM_AUTOLIKE_CONFIRM.format(
-                title=rp.title,
-                days=rp.product.days,
-                price=format_price(rp.price),
-            )
-        await edit_screen(
-            query,
-            text,
-            confirm_purchase(rp.code),
-        )
-        await query.answer()
+    if code == "passe":
+        await shop_passe(query, state, db, config)
         return
 
-    await state.set_state(PurchaseFlow.waiting_id)
     await edit_screen(
         query,
-        texts.PRODUCT_DETAIL.format(
-            title=rp.title,
-            description=rp.description,
-            price=format_price(rp.price),
-            stock=rp.stock_label,
-        ),
-        cancel_only(),
+        texts.WELCOME.format(shop_name=config.shop_name),
+        main_menu(False),
     )
-    await query.answer()
+    await query.answer("Esse botão era do menu antigo. Abrindo o menu novo.")
 
 
 # ---- 2. Usuário informa o ID do jogo ----
@@ -878,7 +853,6 @@ async def purchase_receive_id(
     state: FSMContext,
     config: Config,
     db: Database,
-    autolike: AutoLikeApi,
     passe: PasseApi,
 ) -> None:
     game_id = clean_game_id(message.text or "")
@@ -893,11 +867,16 @@ async def purchase_receive_id(
         await message.answer(texts.GENERIC_ERROR)
         return
 
+    if rp.delivery != "passe":
+        await state.clear()
+        await message.answer(
+            "ℹ️ Esse fluxo antigo foi removido. Use o menu principal.",
+            reply_markup=main_menu(False),
+        )
+        return
+
     checking = await message.answer("⏳ Validando ID...")
-    if rp.delivery == "passe":
-        info = await passe.confirmar(game_id, region=config.default_region)
-    else:
-        info = await autolike.info_player(game_id)
+    info = await passe.confirmar(game_id, region=config.default_region)
 
     if not info.ok:
         data = info.data if isinstance(info.data, dict) else {}
@@ -909,158 +888,55 @@ async def purchase_receive_id(
         return
 
     nick = extract_nick(info.data) if info.ok else None
-    if rp.delivery == "passe":
-        nick = info.data.get("nickname") or info.data.get("nick") or nick
-        level = info.data.get("nivel") or info.data.get("level")
-        account_region = info.data.get("regiao") or config.default_region
-        nick_line = (
-            f"👤 Nick: <b>{nick or 'Não informado'}</b>\n"
-            f"🏅 Nível: <b>{level or '—'}</b>\n"
-            f"🌎 Região: <b>{account_region}</b>\n"
-        )
-    else:
-        nick_line = f"👤 Nick: <b>{nick}</b>\n" if nick else ""
+    nick = info.data.get("nickname") or info.data.get("nick") or nick
+    level = info.data.get("nivel") or info.data.get("level")
+    account_region = info.data.get("regiao") or config.default_region
+    nick_line = (
+        f"👤 Nick: <b>{nick or 'Não informado'}</b>\n"
+        f"🏅 Nível: <b>{level or '—'}</b>\n"
+        f"🌎 Região: <b>{account_region}</b>\n"
+    )
 
-    if rp.delivery == "passe":
-        price, is_reseller, discount = await _effective_price(
-            db, rp, message.from_user.id
-        )
-        await state.clear()
-        reseller_line = (
-            f"🤝 Desconto revenda: <b>{discount}%</b>\n"
-            if is_reseller and discount > 0
-            else ""
-        )
-        await checking.edit_text(
-            "🧾 <b>CONFIRMAR PEDIDO</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"📦 Produto: <b>{rp.title}</b>\n"
-            f"🎮 UID: <code>{game_id}</code>\n"
-            f"{nick_line}"
-            f"{reseller_line}"
-            f"💰 Valor: <b>R$ {format_price(price)}</b>\n\n"
-            "Escolha como deseja pagar:",
-            reply_markup=checkout_menu(
-                "passe",
-                ref_value=game_id,
-                allow_balance=True,
-            ),
-        )
-        return
-
-    await state.update_data(game_id=game_id)
-    await state.set_state(PurchaseFlow.confirming)
+    price, is_reseller, discount = await _effective_price(
+        db, rp, message.from_user.id
+    )
+    await state.clear()
+    reseller_line = (
+        f"🤝 Desconto revenda: <b>{discount}%</b>\n"
+        if is_reseller and discount > 0
+        else ""
+    )
     await checking.edit_text(
-        texts.CONFIRM_PURCHASE.format(
-            title=rp.title,
-            game_id=game_id,
-            nick_line=nick_line,
-            price=format_price(rp.price),
+        "🧾 <b>CONFIRMAR PEDIDO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 Produto: <b>{rp.title}</b>\n"
+        f"🎮 UID: <code>{game_id}</code>\n"
+        f"{nick_line}"
+        f"{reseller_line}"
+        f"💰 Valor: <b>R$ {format_price(price)}</b>\n\n"
+        "Escolha como deseja pagar:",
+        reply_markup=checkout_menu(
+            "passe",
+            ref_value=game_id,
+            allow_balance=True,
         ),
-        reply_markup=confirm_purchase(rp.code),
     )
 
 
-# ---- 3. Usuário confirma → gera PIX ----
-@router.callback_query(F.data.startswith("confirm:"), PurchaseFlow.confirming)
-async def cb_confirm(
+# ---------- Compatibilidade: confirmação do menu antigo ----------
+@router.callback_query(F.data.startswith("confirm:"))
+async def legacy_confirm_redirect(
     query: CallbackQuery,
     state: FSMContext,
     config: Config,
-    db: Database,
-    gateway: PaymentGateway,
 ) -> None:
-    data = await state.get_data()
-    rp = await resolve_product(config, db, data.get("product_code", ""))
-    game_id = data.get("game_id") or ""
-    if not rp or (
-        rp.product.delivery not in {"ffhub_autolike", "ffhub_like_once"}
-        and not game_id
-    ):
-        await state.clear()
-        await edit_screen(query, texts.GENERIC_ERROR, back_home())
-        await query.answer()
-        return
-
-    if not rp.available:
-        await state.clear()
-        await edit_screen(query, texts.OUT_OF_STOCK, back_home())
-        await query.answer()
-        return
-
-    if not getattr(gateway, "configured", True):
-        await query.answer("Pagamento temporariamente indisponível.", show_alert=True)
-        await edit_screen(
-            query,
-            "⚠️ <b>Mercado Pago ainda não está configurado.</b>\n\n"
-            "Avise um administrador.",
-            back_home(),
-        )
-        return
-
-    await query.answer("Gerando PIX...")
-    await query.message.edit_text("⏳ Gerando pagamento PIX...")
-
-    order_id = await db.create_order(
-        user_id=query.from_user.id,
-        product_code=rp.code,
-        game_id=game_id,
-        amount=str(rp.price),
-    )
-
-    try:
-        charge = await gateway.create_pix(
-            amount=rp.price,
-            description=(
-            f"{rp.title} - ID {game_id}"
-            if game_id
-            else f"{rp.title}"
-        ),
-            external_reference=str(order_id),
-            payer_email=f"user{query.from_user.id}@bottg.com",
-            payer_name=query.from_user.first_name or "Cliente",
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("Erro ao gerar PIX para pedido %s", order_id)
-        await db.update_order_status(order_id, "failed")
-        await query.message.edit_text(texts.GENERIC_ERROR, reply_markup=back_home())
-        return
-
-    await db.set_order_payment(order_id, charge.payment_id)
     await state.clear()
-
-    if rp.product.delivery == "ffhub_like_once":
-        caption = texts.LIKE2_SINGLE_PIX.format(
-            price=format_price(rp.price),
-            qr_code=charge.qr_code,
-        )
-    elif rp.product.delivery == "ffhub_autolike":
-        caption = texts.PREMIUM_AUTOLIKE_PIX.format(
-            title=rp.title,
-            days=rp.product.days,
-            price=format_price(rp.price),
-            qr_code=charge.qr_code,
-        )
-    else:
-        caption = texts.PIX_MESSAGE.format(
-            title=rp.title,
-            game_id=game_id,
-            price=format_price(rp.price),
-            qr_code=charge.qr_code,
-        )
-    kb = payment_pending(charge.payment_id, charge.ticket_url)
-
-    if charge.qr_code_base64:
-        try:
-            img_bytes = base64.b64decode(charge.qr_code_base64)
-            photo = BufferedInputFile(img_bytes, filename="pix.png")
-            await query.message.delete()
-            await query.message.answer_photo(photo, caption=caption, reply_markup=kb)
-            return
-        except Exception:  # noqa: BLE001
-            logger.warning("Falha ao decodificar QR base64; enviando só o texto")
-
-    await query.message.edit_text(caption, reply_markup=kb)
+    await edit_screen(
+        query,
+        texts.WELCOME.format(shop_name=config.shop_name),
+        main_menu(False),
+    )
+    await query.answer("A compra antiga foi removida. Use o menu novo.")
 
 
 # ---- 4. Usuário clica "Já paguei / verificar" ----
