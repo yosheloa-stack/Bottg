@@ -259,6 +259,459 @@ async def _create_pix_order(
     await query.message.edit_text(caption, reply_markup=kb)
 
 
+# ---------- Novo menu cliente ----------
+@router.callback_query(F.data == "shop:auto220")
+async def shop_auto220(query: CallbackQuery, db: Database, config: Config) -> None:
+    await _show_autolike_category(query, db, config, "autolike220")
+
+
+@router.callback_query(F.data == "shop:auto500")
+async def shop_auto500(query: CallbackQuery, db: Database, config: Config) -> None:
+    await _show_autolike_category(query, db, config, "autolike500")
+
+
+@router.callback_query(F.data.startswith("days:"))
+async def choose_preset_days(
+    query: CallbackQuery,
+    db: Database,
+    config: Config,
+) -> None:
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        return await query.answer("Opção inválida.", show_alert=True)
+    code = parts[1]
+    try:
+        days = int(parts[2])
+    except ValueError:
+        return await query.answer("Quantidade de dias inválida.", show_alert=True)
+    if code not in AUTOLIKE_CODES or not 1 <= days <= 90:
+        return await query.answer("Escolha entre 1 e 90 dias.", show_alert=True)
+    await _show_dynamic_confirmation(
+        query, db, config, query.from_user.id, code, days
+    )
+
+
+@router.callback_query(F.data.startswith("dayscustom:"))
+async def choose_custom_days(
+    query: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    code = query.data.split(":", 1)[1]
+    if code not in AUTOLIKE_CODES:
+        return await query.answer("Produto inválido.", show_alert=True)
+
+    await state.set_state(CustomerPlanFlow.waiting_days)
+    await state.update_data(custom_plan_code=code)
+    await query.answer()
+    await query.message.answer(
+        "📆 <b>ESCOLHER PERÍODO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Digite quantos dias você quer contratar.\n"
+        "Pode ser qualquer número entre <b>1 e 90</b>, por exemplo: "
+        "<code>33</code> ou <code>46</code>.\n"
+        f"\n🔧 REF: DAYS:{code}",
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder="Ex.: 33",
+        ),
+    )
+
+
+@router.message(
+    F.reply_to_message.text.regexp(r"REF:\s*DAYS:(autolike220|autolike500)")
+)
+async def custom_days_reply(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    config: Config,
+) -> None:
+    import re
+
+    replied = message.reply_to_message.text or ""
+    match = re.search(r"REF:\s*DAYS:(autolike220|autolike500)", replied)
+    if not match:
+        return
+
+    try:
+        days = int((message.text or "").strip())
+    except ValueError:
+        await message.reply("⚠️ Envie somente um número de <b>1 a 90</b>.")
+        return
+    if not 1 <= days <= 90:
+        await message.reply("⚠️ O período permitido é de <b>1 a 90 dias</b>.")
+        return
+
+    await state.clear()
+    await _show_dynamic_confirmation(
+        message, db, config, message.from_user.id, match.group(1), days
+    )
+
+
+@router.message(CustomerPlanFlow.waiting_days)
+async def custom_days_state(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    config: Config,
+) -> None:
+    data = await state.get_data()
+    code = str(data.get("custom_plan_code") or "")
+    if code not in AUTOLIKE_CODES:
+        await state.clear()
+        return
+    try:
+        days = int((message.text or "").strip())
+    except ValueError:
+        await message.reply("⚠️ Envie somente um número de <b>1 a 90</b>.")
+        return
+    if not 1 <= days <= 90:
+        await message.reply("⚠️ O período permitido é de <b>1 a 90 dias</b>.")
+        return
+
+    await state.clear()
+    await _show_dynamic_confirmation(
+        message, db, config, message.from_user.id, code, days
+    )
+
+
+@router.callback_query(F.data == "shop:passe")
+async def shop_passe(
+    query: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    config: Config,
+) -> None:
+    rp = await resolve_product(config, db, "passe")
+    if not rp:
+        return await query.answer("Produto indisponível.", show_alert=True)
+    price, is_reseller, discount = await _effective_price(
+        db, rp, query.from_user.id
+    )
+    if price <= 0 or rp.stock == 0:
+        await edit_screen(query, texts.OUT_OF_STOCK, back_home())
+        await query.answer()
+        return
+
+    await state.set_state(PurchaseFlow.waiting_id)
+    await state.update_data(product_code="passe")
+    reseller_line = (
+        f"\n🤝 Desconto revenda: <b>{discount}%</b>"
+        if is_reseller and discount > 0
+        else ""
+    )
+    await edit_screen(
+        query,
+        "🎟️ <b>PASSE DE ELITE</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Envie o <b>UID</b> da conta que vai receber o passe.\n\n"
+        f"💰 Valor: <b>R$ {format_price(price)}</b>"
+        f"{reseller_line}\n\n"
+        "Depois de validar o UID, você escolhe PIX ou saldo.",
+        cancel_only(),
+    )
+    await query.answer()
+
+
+@router.callback_query(F.data == "shop:reseller")
+async def shop_reseller(
+    query: CallbackQuery,
+    db: Database,
+    config: Config,
+) -> None:
+    if await db.is_reseller(query.from_user.id):
+        discount = await reseller_discount_percent(db)
+        products = await resolve_products(config, db)
+        p220 = products.get("autolike220")
+        p500 = products.get("autolike500")
+        p220_price = (
+            (await _effective_price(db, p220, query.from_user.id))[0]
+            if p220 else Decimal("0")
+        )
+        p500_price = (
+            (await _effective_price(db, p500, query.from_user.id))[0]
+            if p500 else Decimal("0")
+        )
+        await edit_screen(
+            query,
+            "🤝 <b>ÁREA DO REVENDEDOR</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"✅ Revenda ativa\n"
+            f"💸 Desconto automático: <b>{discount}%</b>\n\n"
+            "Seus valores atuais:\n"
+            f"❤️ Auto Like 220: <b>R$ {format_price(p220_price)}/dia</b>\n"
+            f"💎 Auto Like 500: <b>R$ {format_price(p500_price)}/dia</b>\n\n"
+            "Escolha um produto abaixo:",
+            reseller_area_menu(),
+        )
+        await query.answer()
+        return
+
+    rp = await resolve_product(config, db, "reseller_access")
+    if not rp or rp.price <= 0:
+        await edit_screen(
+            query,
+            "🤝 <b>REVENDA</b>\n\n"
+            "O acesso de revendedor ainda não está disponível para compra.",
+            back_home(),
+        )
+        await query.answer()
+        return
+
+    discount = await reseller_discount_percent(db)
+    await edit_screen(
+        query,
+        "🤝 <b>ACESSO REVENDA</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Depois da confirmação, sua conta recebe automaticamente a "
+        "<b>tabela de revendedor</b>.\n\n"
+        f"💸 Desconto atual: <b>{discount}%</b> nos produtos elegíveis\n"
+        f"💰 Acesso: <b>R$ {format_price(rp.price)}</b>\n\n"
+        "O acesso fica vinculado ao seu Telegram.",
+        checkout_menu("reseller_access", allow_balance=True),
+    )
+    await query.answer()
+
+
+@router.callback_query(F.data == "shop:balance")
+async def shop_balance(
+    query: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+) -> None:
+    balance = _from_cents(await db.get_balance_cents(query.from_user.id))
+    await state.set_state(CustomerPlanFlow.waiting_balance_amount)
+    await query.answer()
+    await query.message.answer(
+        "💰 <b>ADICIONAR SALDO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"👛 Saldo atual: <b>R$ {format_price(balance)}</b>\n\n"
+        "Digite o valor que deseja adicionar via PIX.\n"
+        "Mínimo: <b>R$ 1,00</b> · Máximo: <b>R$ 5.000,00</b>\n"
+        "\n🔧 REF: BALANCE",
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder="Ex.: 20,00",
+        ),
+    )
+
+
+async def _balance_amount_response(
+    message: Message,
+    state: FSMContext,
+) -> None:
+    raw = (message.text or "").strip().replace("R$", "").replace(" ", "").replace(",", ".")
+    try:
+        amount = Decimal(raw).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        await message.reply("⚠️ Valor inválido. Exemplo: <code>20,00</code>.")
+        return
+    if amount < Decimal("1.00") or amount > Decimal("5000.00"):
+        await message.reply("⚠️ Escolha um valor entre <b>R$ 1,00 e R$ 5.000,00</b>.")
+        return
+
+    await state.clear()
+    cents = _to_cents(amount)
+    await message.answer(
+        "💰 <b>CONFIRMAR RECARGA</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"Valor: <b>R$ {format_price(amount)}</b>\n\n"
+        "O saldo será creditado automaticamente quando o PIX for aprovado.",
+        reply_markup=checkout_menu(
+            "balance_topup",
+            ref_value=str(cents),
+            allow_balance=False,
+        ),
+    )
+
+
+@router.message(F.reply_to_message.text.regexp(r"REF:\s*BALANCE"))
+async def balance_amount_reply(message: Message, state: FSMContext) -> None:
+    await _balance_amount_response(message, state)
+
+
+@router.message(CustomerPlanFlow.waiting_balance_amount)
+async def balance_amount_state(message: Message, state: FSMContext) -> None:
+    await _balance_amount_response(message, state)
+
+
+@router.callback_query(F.data == "shop:rent")
+async def shop_rent(
+    query: CallbackQuery,
+    db: Database,
+    config: Config,
+) -> None:
+    rp = await resolve_product(config, db, "bot_rental")
+    if not rp:
+        return await query.answer("Produto indisponível.", show_alert=True)
+    price, is_reseller, discount = await _effective_price(
+        db, rp, query.from_user.id
+    )
+    if price <= 0:
+        await edit_screen(
+            query,
+            "🤖 <b>ALUGAR BOT</b>\n\n"
+            "O aluguel ainda não está disponível para compra.",
+            back_home(),
+        )
+        await query.answer()
+        return
+
+    reseller_line = (
+        f"\n🤝 Desconto revenda: <b>{discount}%</b>"
+        if is_reseller and discount > 0
+        else ""
+    )
+    await edit_screen(
+        query,
+        "🤖 <b>ALUGAR AURORA SYSTEM</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "📆 Período: <b>30 dias</b>\n"
+        "👥 Uso: <b>1 grupo</b>\n"
+        "❤️ O bot ficará disponível no grupo para os comandos liberados.\n\n"
+        f"💰 Valor: <b>R$ {format_price(price)}</b>"
+        f"{reseller_line}\n\n"
+        "Após o pagamento, você receberá o botão para adicionar o bot ao grupo.",
+        checkout_menu("bot_rental", allow_balance=True),
+    )
+    await query.answer()
+
+
+def _parse_checkout(data: str, prefix: str) -> tuple[str, str]:
+    raw = data[len(prefix):]
+    parts = raw.split(":", 1)
+    return parts[0], parts[1] if len(parts) > 1 else ""
+
+
+async def _checkout_details(
+    db: Database,
+    config: Config,
+    user_id: int,
+    code: str,
+    ref_value: str,
+) -> tuple[Decimal, str, str, int] | None:
+    rp = await resolve_product(config, db, code)
+    if not rp:
+        return None
+
+    if code == "balance_topup":
+        try:
+            cents = int(ref_value)
+        except ValueError:
+            return None
+        if cents < 100 or cents > 500000:
+            return None
+        amount = _from_cents(cents)
+        return amount, f"Adicionar saldo • R$ {format_price(amount)}", "", 0
+
+    price, _, _ = await _effective_price(db, rp, user_id)
+    if price <= 0:
+        return None
+
+    if code in AUTOLIKE_CODES:
+        try:
+            days = int(ref_value)
+        except ValueError:
+            return None
+        if not 1 <= days <= 90 or not rp.service_ready or rp.stock == 0:
+            return None
+        amount = _money(price * Decimal(days))
+        return amount, f"{rp.title} • {days} dias", "", days
+
+    if code == "passe":
+        uid = clean_game_id(ref_value)
+        if not is_valid_game_id(uid) or rp.stock == 0:
+            return None
+        return price, rp.title, uid, 0
+
+    if code in {"reseller_access", "bot_rental"}:
+        if rp.stock == 0:
+            return None
+        return price, rp.title, "", rp.product.days
+
+    return None
+
+
+@router.callback_query(F.data.startswith("paypix:"))
+async def checkout_pix(
+    query: CallbackQuery,
+    db: Database,
+    config: Config,
+    gateway: PaymentGateway,
+) -> None:
+    code, ref_value = _parse_checkout(query.data, "paypix:")
+    details = await _checkout_details(
+        db, config, query.from_user.id, code, ref_value
+    )
+    if not details:
+        await query.answer("Pedido inválido ou indisponível.", show_alert=True)
+        return
+
+    amount, description, game_id, days = details
+    await _create_pix_order(
+        query,
+        db,
+        gateway,
+        product_code=code,
+        amount=amount,
+        description=description,
+        game_id=game_id,
+        plan_days=days,
+    )
+
+
+@router.callback_query(F.data.startswith("paybal:"))
+async def checkout_balance(
+    query: CallbackQuery,
+    db: Database,
+    config: Config,
+    delivery: DeliveryService,
+) -> None:
+    code, ref_value = _parse_checkout(query.data, "paybal:")
+    if code == "balance_topup":
+        return await query.answer("Use PIX para adicionar saldo.", show_alert=True)
+
+    details = await _checkout_details(
+        db, config, query.from_user.id, code, ref_value
+    )
+    if not details:
+        await query.answer("Pedido inválido ou indisponível.", show_alert=True)
+        return
+
+    amount, description, game_id, days = details
+    cents = _to_cents(amount)
+
+    order_id = await db.create_order(
+        user_id=query.from_user.id,
+        product_code=code,
+        game_id=game_id,
+        amount=str(amount),
+        plan_days=days,
+        paid_with="balance",
+    )
+    ok, remaining = await db.spend_wallet(
+        query.from_user.id,
+        cents,
+        order_id=order_id,
+        description=description,
+    )
+    if not ok:
+        await db.update_order_status(order_id, "failed")
+        await query.answer(
+            f"Saldo insuficiente. Você tem R$ {format_price(_from_cents(remaining))}.",
+            show_alert=True,
+        )
+        return
+
+    await db.update_order_status(order_id, "paid")
+    await query.answer("✅ Pago com saldo!", show_alert=True)
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await delivery.fulfill_order(order_id)
+
+
 # ---- 1. Usuário escolhe um produto ----
 @router.callback_query(F.data.startswith("buy:"))
 async def cb_buy(
