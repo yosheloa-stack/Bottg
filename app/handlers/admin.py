@@ -58,6 +58,18 @@ async def _deny(query: CallbackQuery) -> None:
 
 
 PRODUCT_ALIASES = {
+    "220": "autolike220",
+    "auto220": "autolike220",
+    "autolike220": "autolike220",
+    "500": "autolike500",
+    "auto500": "autolike500",
+    "autolike500": "autolike500",
+    "revenda": "reseller_access",
+    "reseller": "reseller_access",
+    "aluguel": "bot_rental",
+    "bot": "bot_rental",
+    "passe": "passe",
+    # Legado
     "7": "like2_7d",
     "7d": "like2_7d",
     "15": "like2_15d",
@@ -68,7 +80,6 @@ PRODUCT_ALIASES = {
     "único": "like2_single",
     "single": "like2_single",
     "like2": "like2_single",
-    "passe": "passe",
 }
 
 
@@ -181,7 +192,24 @@ async def cmd_admin(message: Message, config: Config, bot: Bot) -> None:
     owner_id = await resolve_owner_id(message, bot, config)
     if owner_id is None:
         return
-    await message.answer("⚙️ <b>Painel Admin</b>", reply_markup=admin_panel())
+    await message.answer(
+        "⚙️ <b>COMANDOS DO DONO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "<code>/produtos</code> — diagnóstico completo\n"
+        "<code>/preco 220 0,60</code> — preço por dia Auto Like 220\n"
+        "<code>/preco 500 2,00</code> — preço por dia Auto Like 500\n"
+        "<code>/preco passe 4,00</code>\n"
+        "<code>/preco revenda 20,00</code>\n"
+        "<code>/preco aluguel 15,00</code>\n"
+        "<code>/estoque 220 -1</code> — -1 = ilimitado\n"
+        "<code>/descontorevenda 20</code> — desconto em %\n"
+        "<code>/setkey ffhub CHAVE</code>\n"
+        "<code>/setkey autosystem CHAVE</code>\n"
+        "<code>/setkey mp ACCESS_TOKEN</code>\n"
+        "<code>/setkey passe CHAVE</code>\n\n"
+        "VIP: <code>/vip</code> · VIP2: <code>/vip2</code>\n"
+        "Auto Like manual: <code>/autolike</code>"
+    )
 
 
 @router.callback_query(F.data == "admin:panel")
@@ -413,8 +441,8 @@ async def cmd_set_price_direct(
     if len(parts) < 3:
         await message.reply(
             "Use: <code>/preco 7 25,00</code>\n"
-            "Planos aceitos: <code>7</code>, <code>15</code>, "
-            "<code>30</code>, <code>unico</code> ou <code>passe</code>."
+            "Produtos: <code>220</code>, <code>500</code>, <code>passe</code>, "
+            "<code>revenda</code> ou <code>aluguel</code>."
         )
         return
     code = _resolve_product_code(parts[1])
@@ -682,6 +710,94 @@ async def cb_unlimited(query: CallbackQuery, config: Config, db: Database) -> No
         admin_product_edit(code),
     )
     await query.answer("Estoque ilimitado ✓")
+
+
+@router.message(Command("descontorevenda"))
+async def cmd_reseller_discount(
+    message: Message,
+    config: Config,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply(
+            "Use: <code>/descontorevenda 20</code>\n"
+            "Aceito de 0 a 80%."
+        )
+        return
+    try:
+        value = Decimal(parts[1].replace(",", "."))
+    except (InvalidOperation, ValueError):
+        await message.reply("⚠️ Percentual inválido.")
+        return
+    if value < 0 or value > 80:
+        await message.reply("⚠️ Use um desconto entre 0 e 80%.")
+        return
+    db = message.bot.get("db") if False else None
+
+
+@router.message(Command("setkey"))
+async def cmd_setkey(
+    message: Message,
+    config: Config,
+    db: Database,
+    likes_api: LikesApi,
+    autosystem_likes_api: AutoSystemLikesApi,
+    ffhub_shop: FFHubShopApi,
+    passe: PasseApi,
+    gateway: MercadoPagoGateway,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.reply(
+            "Use no privado:\n"
+            "<code>/setkey ffhub SUA_CHAVE</code>\n"
+            "<code>/setkey autosystem SUA_CHAVE</code>\n"
+            "<code>/setkey mp ACCESS_TOKEN</code>\n"
+            "<code>/setkey passe SUA_CHAVE</code>"
+        )
+        return
+
+    alias = parts[1].strip().lower()
+    value = parts[2].strip()
+    mapping = {
+        "ffhub": "FFHUB_API_KEY",
+        "autosystem": "AUTOSYSTEM_API_KEY",
+        "mp": "MERCADOPAGO_ACCESS_TOKEN",
+        "mercadopago": "MERCADOPAGO_ACCESS_TOKEN",
+        "passe": "PASSE_API_KEY",
+        "likes": "LIKES_API_KEY",
+    }
+    key = mapping.get(alias)
+    if not key or not value:
+        await message.reply("⚠️ Tipo de chave inválido.")
+        return
+
+    await db.set_owner_setting(key, value)
+    if key == "FFHUB_API_KEY":
+        ffhub_shop._key = value
+    elif key == "AUTOSYSTEM_API_KEY":
+        autosystem_likes_api._key = value
+    elif key == "MERCADOPAGO_ACCESS_TOKEN":
+        gateway._token = value
+    elif key == "PASSE_API_KEY":
+        passe._key = value
+    elif key == "LIKES_API_KEY":
+        likes_api._key = value
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    await message.bot.send_message(
+        message.chat.id,
+        "✅ <b>Chave atualizada e aplicada.</b>\n"
+        "O valor enviado foi removido da conversa quando possível."
+    )
 
 
 # ---------- Estatísticas ----------
