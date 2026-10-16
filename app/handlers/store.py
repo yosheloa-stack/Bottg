@@ -528,40 +528,119 @@ async def shop_balance(
 async def _balance_amount_response(
     message: Message,
     state: FSMContext,
+    db: Database,
+    gateway: PaymentGateway,
 ) -> None:
-    raw = (message.text or "").strip().replace("R$", "").replace(" ", "").replace(",", ".")
+    raw = (
+        (message.text or "")
+        .strip()
+        .replace("R$", "")
+        .replace(" ", "")
+        .replace(",", ".")
+    )
     try:
         amount = Decimal(raw).quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
         await message.reply("⚠️ Valor inválido. Exemplo: <code>20,00</code>.")
         return
+
     if amount < Decimal("1.00") or amount > Decimal("5000.00"):
-        await message.reply("⚠️ Escolha um valor entre <b>R$ 1,00 e R$ 5.000,00</b>.")
+        await message.reply(
+            "⚠️ Escolha um valor entre <b>R$ 1,00 e R$ 5.000,00</b>."
+        )
+        return
+
+    if not getattr(gateway, "configured", True):
+        await message.reply(
+            "⚠️ <b>Pagamento temporariamente indisponível.</b>\n\n"
+            "O Mercado Pago ainda não está configurado."
+        )
         return
 
     await state.clear()
-    cents = _to_cents(amount)
-    await message.answer(
-        "💰 <b>CONFIRMAR RECARGA</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"Valor: <b>R$ {format_price(amount)}</b>\n\n"
-        "O saldo será creditado automaticamente quando o PIX for aprovado.",
-        reply_markup=checkout_menu(
-            "balance_topup",
-            ref_value=str(cents),
-            allow_balance=False,
-        ),
+    status = await message.answer(
+        "⏳ <b>Gerando seu PIX...</b>\n"
+        f"💰 Valor da recarga: <b>R$ {format_price(amount)}</b>"
     )
+
+    order_id = await db.create_order(
+        user_id=message.from_user.id,
+        product_code="balance_topup",
+        game_id="",
+        amount=str(_money(amount)),
+        paid_with="pix",
+    )
+
+    try:
+        charge = await gateway.create_pix(
+            amount=_money(amount),
+            description=f"Adicionar saldo - R$ {format_price(amount)}",
+            external_reference=str(order_id),
+            payer_email=f"user{message.from_user.id}@bottg.com",
+            payer_name=message.from_user.first_name or "Cliente",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Erro ao gerar PIX da recarga pedido=%s", order_id)
+        await db.update_order_status(order_id, "failed")
+        await status.edit_text(
+            "❌ <b>Não consegui gerar o PIX agora.</b>\n\n"
+            "Tente novamente em alguns instantes.",
+            reply_markup=back_home(),
+        )
+        return
+
+    await db.set_order_payment(order_id, charge.payment_id)
+
+    caption = (
+        "💰 <b>RECARGA DE SALDO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📄 Pedido: <code>#{order_id}</code>\n"
+        f"💵 Valor: <b>R$ {format_price(amount)}</b>\n\n"
+        "1️⃣ Copie o código PIX abaixo\n"
+        "2️⃣ Pague no aplicativo do seu banco\n"
+        "3️⃣ O saldo entra automaticamente após a aprovação\n\n"
+        f"<code>{charge.qr_code}</code>\n\n"
+        "⏳ <i>Aguardando pagamento...</i>"
+    )
+    kb = payment_pending(charge.payment_id, charge.ticket_url)
+
+    if charge.qr_code_base64:
+        try:
+            img_bytes = base64.b64decode(charge.qr_code_base64)
+            photo = BufferedInputFile(img_bytes, filename="pix_saldo.png")
+            try:
+                await status.delete()
+            except Exception:
+                pass
+            await message.answer_photo(photo, caption=caption, reply_markup=kb)
+            return
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Falha ao decodificar QR base64 da recarga pedido=%s",
+                order_id,
+            )
+
+    await status.edit_text(caption, reply_markup=kb)
 
 
 @router.message(F.reply_to_message.text.regexp(r"REF:\s*BALANCE"))
-async def balance_amount_reply(message: Message, state: FSMContext) -> None:
-    await _balance_amount_response(message, state)
+async def balance_amount_reply(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    gateway: PaymentGateway,
+) -> None:
+    await _balance_amount_response(message, state, db, gateway)
 
 
 @router.message(CustomerPlanFlow.waiting_balance_amount, F.text.regexp(r"^(?!/).+"))
-async def balance_amount_state(message: Message, state: FSMContext) -> None:
-    await _balance_amount_response(message, state)
+async def balance_amount_state(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    gateway: PaymentGateway,
+) -> None:
+    await _balance_amount_response(message, state, db, gateway)
 
 
 @router.callback_query(F.data == "shop:rent")
