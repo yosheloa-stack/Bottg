@@ -350,6 +350,88 @@ async def cb_product_edit(query: CallbackQuery, config: Config, db: Database) ->
     await query.answer()
 
 
+# ---------- Atalhos diretos de dono (sem FSM) ----------
+@router.message(Command("preco"))
+async def cmd_set_price_direct(
+    message: Message,
+    config: Config,
+    db: Database,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.reply(
+            "Use: <code>/preco 7 25,00</code>\n"
+            "Planos aceitos: <code>7</code>, <code>15</code>, "
+            "<code>30</code>, <code>unico</code> ou <code>passe</code>."
+        )
+        return
+    code = _resolve_product_code(parts[1])
+    if code not in config.products:
+        await message.reply("⚠️ Produto inválido.")
+        return
+    value = _parse_price(parts[2])
+    if value is None:
+        await message.reply("⚠️ Preço inválido.")
+        return
+    await _save_price(message, db, config, code, value)
+
+
+@router.message(Command("estoque"))
+async def cmd_set_stock_direct(
+    message: Message,
+    config: Config,
+    db: Database,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.reply(
+            "Use: <code>/estoque 7 -1</code>\n"
+            "Use <code>-1</code> para ilimitado."
+        )
+        return
+    code = _resolve_product_code(parts[1])
+    if code not in config.products:
+        await message.reply("⚠️ Produto inválido.")
+        return
+    value = _parse_stock(parts[2])
+    if value is None:
+        await message.reply("⚠️ Estoque inválido.")
+        return
+    await _save_stock(message, db, config, code, value)
+
+
+@router.message(Command("produtos"))
+async def cmd_products_status(
+    message: Message,
+    config: Config,
+    db: Database,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    products = await resolve_products(config, db)
+    lines = ["🧪 <b>DIAGNÓSTICO DOS PRODUTOS</b>", "━━━━━━━━━━━━━━━━━━━━"]
+    for code in ("like2_single", "like2_7d", "like2_15d", "like2_30d", "passe"):
+        rp = products.get(code)
+        if not rp:
+            continue
+        lines.extend(
+            [
+                f"📦 <b>{rp.title}</b>",
+                f"• Código: <code>{code}</code>",
+                f"• Preço: <b>R$ {format_price(rp.price)}</b>",
+                f"• Estoque real: <b>{rp.stock_label}</b>",
+                f"• Serviço: <b>{'OK' if rp.service_ready else rp.service_issue}</b>",
+                f"• Venda: <b>{'LIBERADA' if rp.available else 'BLOQUEADA'}</b>",
+                "",
+            ]
+        )
+    await message.reply("\n".join(lines))
+
+
 # ---- Alterar preço ----
 @router.callback_query(F.data.startswith("admprice:"))
 async def cb_price_start(
@@ -538,88 +620,6 @@ async def cb_unlimited(query: CallbackQuery, config: Config, db: Database) -> No
         admin_product_edit(code),
     )
     await query.answer("Estoque ilimitado ✓")
-
-
-# ---------- Atalhos diretos de dono (sem FSM) ----------
-@router.message(Command("preco"))
-async def cmd_set_price_direct(
-    message: Message,
-    config: Config,
-    db: Database,
-) -> None:
-    if not message.from_user or not _is_admin(message.from_user.id, config):
-        return
-    parts = (message.text or "").split(maxsplit=2)
-    if len(parts) < 3:
-        await message.reply(
-            "Use: <code>/preco 7 25,00</code>\n"
-            "Planos aceitos: <code>7</code>, <code>15</code>, "
-            "<code>30</code>, <code>unico</code> ou <code>passe</code>."
-        )
-        return
-    code = _resolve_product_code(parts[1])
-    if code not in config.products:
-        await message.reply("⚠️ Produto inválido.")
-        return
-    value = _parse_price(parts[2])
-    if value is None:
-        await message.reply("⚠️ Preço inválido.")
-        return
-    await _save_price(message, db, config, code, value)
-
-
-@router.message(Command("estoque"))
-async def cmd_set_stock_direct(
-    message: Message,
-    config: Config,
-    db: Database,
-) -> None:
-    if not message.from_user or not _is_admin(message.from_user.id, config):
-        return
-    parts = (message.text or "").split(maxsplit=2)
-    if len(parts) < 3:
-        await message.reply(
-            "Use: <code>/estoque 7 -1</code>\n"
-            "Use <code>-1</code> para ilimitado."
-        )
-        return
-    code = _resolve_product_code(parts[1])
-    if code not in config.products:
-        await message.reply("⚠️ Produto inválido.")
-        return
-    value = _parse_stock(parts[2])
-    if value is None:
-        await message.reply("⚠️ Estoque inválido.")
-        return
-    await _save_stock(message, db, config, code, value)
-
-
-@router.message(Command("produtos"))
-async def cmd_products_status(
-    message: Message,
-    config: Config,
-    db: Database,
-) -> None:
-    if not message.from_user or not _is_admin(message.from_user.id, config):
-        return
-    products = await resolve_products(config, db)
-    lines = ["🧪 <b>DIAGNÓSTICO DOS PRODUTOS</b>", "━━━━━━━━━━━━━━━━━━━━"]
-    for code in ("like2_single", "like2_7d", "like2_15d", "like2_30d", "passe"):
-        rp = products.get(code)
-        if not rp:
-            continue
-        lines.extend(
-            [
-                f"📦 <b>{rp.title}</b>",
-                f"• Código: <code>{code}</code>",
-                f"• Preço: <b>R$ {format_price(rp.price)}</b>",
-                f"• Estoque real: <b>{rp.stock_label}</b>",
-                f"• Serviço: <b>{'OK' if rp.service_ready else rp.service_issue}</b>",
-                f"• Venda: <b>{'LIBERADA' if rp.available else 'BLOQUEADA'}</b>",
-                "",
-            ]
-        )
-    await message.reply("\n".join(lines))
 
 
 # ---------- Estatísticas ----------
