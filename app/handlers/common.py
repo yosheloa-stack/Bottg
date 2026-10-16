@@ -12,7 +12,8 @@ from aiogram.types import CallbackQuery, Message
 from app import texts
 from app.config import Config
 from app.database import Database
-from app.keyboards.inline import back_home, main_menu
+from app.keyboards.inline import back_home, cancel_only, main_menu
+from app.states import PurchaseFlow
 from app.ui import edit_screen, send_menu
 from app.utils import format_price
 
@@ -133,6 +134,70 @@ async def _open_customer_home(
         await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
+
+
+@router.callback_query(
+    F.data.regexp(r"^(?:nav:v2:passe|shop:passe|buy:passe|store:passe|passe)$")
+)
+async def cb_passe_entry(
+    query: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    config: Config,
+) -> None:
+    # Responde o callback primeiro para nunca deixar o botão carregando.
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
+    try:
+        await db.clear_customer_pending_input(query.from_user.id)
+        await state.clear()
+
+        product = config.products.get("passe")
+        if not product:
+            await query.message.answer(
+                "⚠️ Passe de Elite indisponível no momento.",
+                reply_markup=back_home(),
+            )
+            return
+
+        private_key = await db.get_owner_setting("PASSE_API_KEY")
+        if not (private_key or config.passe_api_key):
+            await edit_screen(
+                query,
+                "⚠️ <b>Passe de Elite temporariamente indisponível.</b>\n\n"
+                "A integração de entrega ainda não está configurada.",
+                back_home(),
+            )
+            return
+
+        await state.set_state(PurchaseFlow.waiting_id)
+        await state.update_data(product_code="passe")
+        await edit_screen(
+            query,
+            "🎟️ <b>PASSE DE ELITE</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "Envie agora o <b>UID</b> da conta que vai receber o passe.\n\n"
+            "Depois de validar o UID, o bot mostra o valor e as opções "
+            "de pagamento por PIX ou saldo.",
+            cancel_only(),
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Falha ao abrir Passe de Elite user=%s",
+            query.from_user.id,
+        )
+        try:
+            await query.message.answer(
+                "⚠️ Não consegui abrir o Passe de Elite agora. "
+                "Tente novamente pelo /start.",
+                reply_markup=back_home(),
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data == "nav:v2:home")
