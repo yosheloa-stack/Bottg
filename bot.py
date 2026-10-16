@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -225,6 +226,24 @@ async def main() -> None:
     await db.connect()
     await db.init_product_settings(config.products)
 
+    # Migração suave: se o novo Auto Like 500 ainda não tiver preço/dia,
+    # aproveita o valor do antigo plano de 7 dias dividido por 7.
+    try:
+        new_500 = await db.get_product_setting("autolike500")
+        old_7d = await db.get_product_setting("like2_7d")
+        new_price = Decimal(str((new_500 or {}).get("price") or "0"))
+        old_price = Decimal(str((old_7d or {}).get("price") or "0"))
+        if new_price <= 0 and old_price > 0:
+            daily = (old_price / Decimal("7")).quantize(Decimal("0.01"))
+            if daily > 0:
+                await db.set_price("autolike500", str(daily))
+                logger.info(
+                    "Preço/dia Auto Like 500 migrado do plano antigo: R$ %s",
+                    daily,
+                )
+    except (InvalidOperation, ValueError):
+        logger.warning("Não foi possível migrar preço antigo do Auto Like 500.")
+
     owner_settings = await db.all_owner_settings()
 
     def private_setting(key: str, fallback: str = "") -> str:
@@ -334,12 +353,8 @@ async def main() -> None:
             [
                 BotCommand(command="start", description="Abrir menu principal"),
                 BotCommand(command="menu", description="Abrir menu principal"),
-                BotCommand(command="like", description="Enviar likes grátis por ID"),
-                BotCommand(command="like2", description="Likes pagos: único ou Auto-Like"),
-                BotCommand(command="autolike", description="Auto Like 500/1000 (dono)"),
+                BotCommand(command="like", description="Enviar likes pelo grupo"),
                 BotCommand(command="id", description="Mostrar meu ID do Telegram"),
-                BotCommand(command="vip", description="Consultar ou gerenciar VIP"),
-                BotCommand(command="vip2", description="Consultar ou gerenciar VIP2"),
             ]
         )
         me = await bot.get_me()
