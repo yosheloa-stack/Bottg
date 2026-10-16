@@ -1,7 +1,7 @@
 """Registro central dos routers de handlers."""
 from aiogram import Dispatcher
 
-from app.handlers import admin, common, info, likes, owner_autolike, paid_autolike, store, vip, vip2
+from app.handlers import admin, common, fallback, info, likes, owner_autolike, paid_autolike, store, vip, vip2
 
 
 def register_handlers(dp: Dispatcher) -> None:
@@ -16,3 +16,5 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.include_router(owner_autolike.router)
     # Deve ficar por último: captura apenas UID de pedidos já pagos.
     dp.include_router(paid_autolike.router)
+    # Último: encerra loading de qualquer botão antigo/desconhecido.
+    dp.include_router(fallback.router)
