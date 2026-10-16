@@ -30,7 +30,10 @@ def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🤖 Alugar bot", callback_data="shop:rent"),
     )
     kb.row(
+        InlineKeyboardButton(text="🎁 Resgatar Gift Card", callback_data="shop:giftcard"),
         InlineKeyboardButton(text="📦 Meus pedidos", callback_data="menu:orders"),
+    )
+    kb.row(
         InlineKeyboardButton(text="🆘 Suporte", callback_data="menu:support"),
     )
     return kb.as_markup()
