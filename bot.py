@@ -7,6 +7,7 @@ long polling do Telegram.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import html
 import logging
 from decimal import Decimal, InvalidOperation
@@ -14,7 +15,7 @@ from decimal import Decimal, InvalidOperation
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, Update
 
 from app.config import load_config
 from app.database import Database
@@ -27,6 +28,7 @@ from app.services.likes import LikesApi
 from app.services.passe import PasseApi
 from app.services.payments import MercadoPagoGateway, PaymentStatus
 from app.webhook import build_webhook_app, start_webhook_server
+from aiohttp import web
 
 logging.basicConfig(
     level=logging.INFO,
@@ -233,6 +235,14 @@ async def watch_ffhub_autolikes(
         await asyncio.sleep(10)
 
 
+def _telegram_webhook_secret(bot_token: str) -> str:
+    # Telegram aceita 1-256 caracteres [A-Za-z0-9_-].
+    # Derivamos um segredo estável sem precisar salvar mais uma variável.
+    return hashlib.sha256(
+        ("aurora-telegram-webhook:" + bot_token).encode("utf-8")
+    ).hexdigest()
+
+
 async def main() -> None:
     config = load_config()
 
@@ -351,19 +361,63 @@ async def main() -> None:
             "no painel do dono. O monitor já está aguardando a configuração."
         )
 
-    # O bot continua usando long polling do Telegram. Este servidor HTTP existe
-    # apenas para health check e notificações do Mercado Pago.
     runner = None
+    telegram_webhook_url = ""
+    telegram_webhook_secret = ""
+
     if config.webhook_public_url:
         web_app = build_webhook_app(config, db, gateway, delivery)
+
+        telegram_webhook_secret = _telegram_webhook_secret(config.bot_token)
+        telegram_webhook_path = "/telegram/webhook"
+        telegram_webhook_url = (
+            config.webhook_public_url.rstrip("/") + telegram_webhook_path
+        )
+
+        async def telegram_webhook(request: web.Request) -> web.Response:
+            received_secret = request.headers.get(
+                "X-Telegram-Bot-Api-Secret-Token",
+                "",
+            )
+            if received_secret != telegram_webhook_secret:
+                logger.warning("Webhook Telegram rejeitado por secret inválido.")
+                return web.Response(status=403, text="forbidden")
+
+            try:
+                payload = await request.json()
+                update = Update.model_validate(
+                    payload,
+                    context={"bot": bot},
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Webhook Telegram recebeu update inválido.")
+                return web.Response(status=400, text="bad request")
+
+            try:
+                # Processa sem segurar a resposta HTTP do Telegram.
+                asyncio.create_task(
+                    dp.feed_update(bot, update),
+                    name=f"telegram-update-{update.update_id}",
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha ao despachar update do Telegram.")
+                return web.Response(status=500, text="dispatch failed")
+
+            return web.Response(text="ok")
+
+        web_app.router.add_post(telegram_webhook_path, telegram_webhook)
         runner = await start_webhook_server(web_app, config)
+
         logger.info(
             "Webhook Mercado Pago disponível em %s",
             config.payment_notification_url,
         )
+        logger.info(
+            "Webhook Telegram disponível em %s",
+            telegram_webhook_url,
+        )
 
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
         await bot.set_my_commands(
             [
                 BotCommand(command="start", description="Abrir menu principal"),
@@ -374,7 +428,25 @@ async def main() -> None:
         )
         me = await bot.get_me()
         logger.info("Bot iniciado como @%s", me.username)
-        await dp.start_polling(bot)
+
+        if telegram_webhook_url:
+            await bot.set_webhook(
+                url=telegram_webhook_url,
+                secret_token=telegram_webhook_secret,
+                drop_pending_updates=True,
+                allowed_updates=dp.resolve_used_update_types(),
+            )
+            logger.info(
+                "Telegram configurado em modo webhook; polling desativado."
+            )
+            # Mantém o processo vivo enquanto aiohttp recebe os updates.
+            await asyncio.Event().wait()
+        else:
+            logger.warning(
+                "WEBHOOK_PUBLIC_URL ausente; usando polling como fallback."
+            )
+            await bot.delete_webhook(drop_pending_updates=True)
+            await dp.start_polling(bot)
     finally:
         if autolike_task:
             autolike_task.cancel()
