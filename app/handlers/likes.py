@@ -11,10 +11,9 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from app import texts
-from app.catalog import resolve_products
 from app.config import Config
 from app.database import Database
-from app.keyboards.inline import premium_like_menu
+from app.keyboards.inline import main_menu
 from app.owner_auth import group_has_owner_admin, resolve_owner_id
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
@@ -470,24 +469,17 @@ async def cmd_like2(
         await status_msg.edit_text("\n".join(lines))
         return
 
-    # Clientes usam /like2 apenas para abrir os pacotes pagos.
-    products = await resolve_products(config, db)
-    ffhub_private_key = await db.get_owner_setting("FFHUB_API_KEY")
-    ffhub_configured = bool(ffhub_private_key or config.ffhub_api_key)
-
-    await message.answer(
-        "💎 <b>LIKE2 PREMIUM</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Escolha <b>envio único</b> ou um plano automático.\n\n"
-        "✅ Envio único\n"
-        "✅ Auto-Like de 7, 15 ou 30 dias\n"
-        "✅ Pagamento via PIX\n"
-        "✅ UID solicitado somente após o pagamento\n\n"
-        "👇 Escolha uma opção:",
-        reply_markup=premium_like_menu(
-            products,
-            is_owner=False,
-            ffhub_configured=ffhub_configured,
-        ),
-    )
-
+    # Clientes não usam mais o menu antigo do /like2.
+    # O Auto Like 500 está disponível somente no menu principal novo.
+    if message.chat.type == "private":
+        await message.answer(
+            "💎 <b>Auto Like 500</b>\n\n"
+            "A loja antiga do /like2 foi removida.\n"
+            "Use o menu principal abaixo:",
+            reply_markup=main_menu(False),
+        )
+    else:
+        await message.reply(
+            "ℹ️ O Auto Like 500 agora é comprado pelo menu privado do bot.\n"
+            "Abra o privado e use <code>/start</code>."
+        )
