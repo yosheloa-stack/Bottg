@@ -25,3 +25,28 @@ class AdminPrice(StatesGroup):
 
 class AdminStock(StatesGroup):
     waiting_value = State()
+
+
+class OwnerSetting(StatesGroup):
+    waiting_value = State()
+
+
+class AdminVipAdd(StatesGroup):
+    waiting_value = State()
+
+
+class AdminVipRemove(StatesGroup):
+    waiting_value = State()
+
+
+class AdminVip2Add(StatesGroup):
+    waiting_value = State()
+
+
+class AdminVip2Remove(StatesGroup):
+    waiting_value = State()
+
+
+class CustomerPlanFlow(StatesGroup):
+    waiting_days = State()
+    waiting_balance_amount = State()
