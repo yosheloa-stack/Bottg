@@ -7,26 +7,240 @@ long polling do Telegram.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import html
 import logging
+from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, Update
 
 from app.config import load_config
 from app.database import Database
 from app.delivery import DeliveryService
 from app.handlers import register_handlers
 from app.services.autolike import AutoLikeApi
+from app.services.autosystem_likes import AutoSystemLikesApi
+from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
+from app.services.likes import LikesApi
 from app.services.passe import PasseApi
-from app.services.payments import MercadoPagoGateway
+from app.services.payments import MercadoPagoGateway, PaymentStatus
 from app.webhook import build_webhook_app, start_webhook_server
+from aiohttp import web
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 logger = logging.getLogger("bottg")
+
+
+async def watch_pending_payments(
+    db: Database,
+    gateway: MercadoPagoGateway,
+    delivery: DeliveryService,
+) -> None:
+    """Confirma PIX pendentes automaticamente e entrega pedidos pagos."""
+    while True:
+        try:
+            orders = await db.pending_orders(limit=100)
+            for order in orders:
+                payment_id = order.get("payment_id")
+                if not payment_id:
+                    continue
+                try:
+                    status = await gateway.get_status(str(payment_id))
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Falha ao consultar PIX Mercado Pago do pedido %s", order.get("id")
+                    )
+                    continue
+
+                if status == PaymentStatus.APPROVED:
+                    logger.info(
+                        "PIX Mercado Pago confirmado automaticamente | pedido=%s | txid=%s",
+                        order.get("id"),
+                        payment_id,
+                    )
+                    await delivery.fulfill_order(order["id"])
+        except Exception:  # noqa: BLE001
+            logger.exception("Erro no monitor automático de pagamentos Mercado Pago")
+
+        await asyncio.sleep(8)
+
+
+async def watch_ffhub_autolikes(
+    bot: Bot,
+    db: Database,
+    ffhub_shop: FFHubShopApi,
+) -> None:
+    """Executa os envios diários das assinaturas Auto-Like Premium."""
+    while True:
+        if not ffhub_shop.configured:
+            await asyncio.sleep(10)
+            continue
+
+        try:
+            due = await db.due_ffhub_autolikes(limit=50)
+            for sub in due:
+                sub_id = int(sub["id"])
+                # Reserva antes da chamada remota. Se o processo cair durante o envio,
+                # evita repetir imediatamente e gastar saldo duas vezes.
+                await db.reserve_ffhub_autolike_attempt(sub_id)
+
+                result = await ffhub_shop.send_paid_likes(str(sub["game_id"]))
+                if not result.ok:
+                    logger.warning(
+                        "FFHub Auto-Like falhou | sub=%s uid=%s status=%s error=%s",
+                        sub_id,
+                        sub["game_id"],
+                        result.status,
+                        result.error,
+                    )
+                    if result.status == 0:
+                        # Timeout/erro de rede é ambíguo: a FFHub pode ter
+                        # processado antes de a conexão cair. A reserva já deixou
+                        # o próximo envio para o dia seguinte, então não repetimos
+                        # agora e evitamos mandar 500–1000 likes duas vezes.
+                        logger.warning(
+                            "FFHub Auto-Like com resultado ambíguo; "
+                            "não será repetido no mesmo dia | sub=%s",
+                            sub_id,
+                        )
+                    else:
+                        await db.retry_ffhub_autolike_later(
+                            sub_id,
+                            result_text=str(result.data or result.error or ""),
+                            delay_seconds=900,
+                        )
+                    continue
+
+                data = result.data if isinstance(result.data, dict) else {}
+                parsed_like = parse_like_delivery(data)
+
+                def _to_int(value):
+                    if value is None or isinstance(value, bool):
+                        return None
+                    try:
+                        return int(str(value).strip().replace(".", "").replace(",", ""))
+                    except (TypeError, ValueError):
+                        return None
+
+                sent = _to_int(parsed_like["sent"]) or 0
+                before = _to_int(parsed_like["before"])
+                after = _to_int(parsed_like["after"])
+                nickname = str(parsed_like["nickname"] or "Jogador")
+                safe_nickname = html.escape(nickname)
+
+                updated = await db.complete_ffhub_autolike_send(
+                    sub_id,
+                    result_text=str(data),
+                    nickname=nickname,
+                    likes_before=before,
+                    likes_after=after,
+                    likes_sent=sent,
+                )
+                if not updated:
+                    continue
+
+                stats = await db.get_ffhub_autolike_status(str(updated["game_id"]))
+                total_accumulated = (
+                    int(stats.get("total_likes_sent") or 0) if stats else sent
+                )
+                done = int(updated["sends_done"])
+                total = int(updated["days_total"])
+
+                delivery_text = (
+                    "💚 <b>Auto-Like Premium enviado!</b>\n\n"
+                    f"👤 Nick: <b>{safe_nickname}</b>\n"
+                    f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                    f"❤️ Enviado hoje: <b>+{sent}</b>\n"
+                    f"❤️ Total acumulado: <b>+{total_accumulated}</b>\n"
+                    f"📆 Entrega: <b>{done}/{total}</b>"
+                )
+
+                try:
+                    await bot.send_message(
+                        int(updated["user_id"]),
+                        delivery_text,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Falha ao avisar dono/cliente do Auto Like %s", sub_id
+                    )
+
+                notify_chat_id = updated.get("notify_chat_id")
+                if notify_chat_id is not None:
+                    group_kwargs = {}
+                    notify_thread_id = updated.get("notify_thread_id")
+                    if notify_thread_id is not None:
+                        group_kwargs["message_thread_id"] = int(notify_thread_id)
+                    try:
+                        await bot.send_message(
+                            int(notify_chat_id),
+                            delivery_text,
+                            **group_kwargs,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "Falha ao avisar grupo do Auto Like %s chat=%s",
+                            sub_id,
+                            notify_chat_id,
+                        )
+
+                if updated["status"] == "completed":
+                    # Assinaturas manuais do dono usam order_id negativo e não
+                    # possuem pedido PIX para atualizar.
+                    if int(updated["order_id"]) > 0:
+                        await db.update_order_status(
+                            int(updated["order_id"]), "delivered"
+                        )
+                    completed_text = (
+                        "🏁 <b>Plano Auto-Like Premium concluído!</b>\n\n"
+                        f"👤 Nick: <b>{safe_nickname}</b>\n"
+                        f"🆔 UID: <code>{updated['game_id']}</code>\n"
+                        f"❤️ Total enviado: <b>+{total_accumulated}</b>\n"
+                        f"✅ Foram concluídas <b>{total} entregas diárias</b>."
+                    )
+                    try:
+                        await bot.send_message(
+                            int(updated["user_id"]),
+                            completed_text,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "Falha ao avisar conclusão FFHub da assinatura %s", sub_id
+                        )
+
+                    if notify_chat_id is not None:
+                        group_kwargs = {}
+                        if notify_thread_id is not None:
+                            group_kwargs["message_thread_id"] = int(notify_thread_id)
+                        try:
+                            await bot.send_message(
+                                int(notify_chat_id),
+                                completed_text,
+                                **group_kwargs,
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "Falha ao avisar conclusão no grupo do Auto Like %s",
+                                sub_id,
+                            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Erro no agendador Auto-Like Premium FFHub")
+
+        await asyncio.sleep(10)
+
+
+def _telegram_webhook_secret(bot_token: str) -> str:
+    # Telegram aceita 1-256 caracteres [A-Za-z0-9_-].
+    # Derivamos um segredo estável sem precisar salvar mais uma variável.
+    return hashlib.sha256(
+        ("aurora-telegram-webhook:" + bot_token).encode("utf-8")
+    ).hexdigest()
 
 
 async def main() -> None:
@@ -37,12 +251,67 @@ async def main() -> None:
     await db.connect()
     await db.init_product_settings(config.products)
 
+    # Migração suave: se o novo Auto Like 500 ainda não tiver preço/dia,
+    # aproveita o valor do antigo plano de 7 dias dividido por 7.
+    try:
+        new_500 = await db.get_product_setting("autolike500")
+        old_7d = await db.get_product_setting("like2_7d")
+        new_price = Decimal(str((new_500 or {}).get("price") or "0"))
+        old_price = Decimal(str((old_7d or {}).get("price") or "0"))
+        if new_price <= 0 and old_price > 0:
+            daily = (old_price / Decimal("7")).quantize(Decimal("0.01"))
+            if daily > 0:
+                await db.set_price("autolike500", str(daily))
+                logger.info(
+                    "Preço/dia Auto Like 500 migrado do plano antigo: R$ %s",
+                    daily,
+                )
+    except (InvalidOperation, ValueError):
+        logger.warning("Não foi possível migrar preço antigo do Auto Like 500.")
+
+    owner_settings = await db.all_owner_settings()
+
+    def private_setting(key: str, fallback: str = "") -> str:
+        return (owner_settings.get(key) or fallback or "").strip()
+
+    # Migração do preço antigo do Passe Booyah.
+    # Só troca o valor legado de 19.90; preços personalizados pelo admin são preservados.
+    passe_setting = await db.get_product_setting("passe")
+    if passe_setting and str(passe_setting.get("price")) == "19.90":
+        await db.set_price("passe", "4.00")
+        logger.info("Preço do Passe Booyah migrado de R$ 19,90 para R$ 4,00.")
+
     autolike = AutoLikeApi(
-        config.api_base_url, config.autolike_api_key, config.default_region
+        config.api_base_url,
+        config.autolike_api_key,
+        config.default_region,
     )
-    passe = PasseApi(config.api_base_url, config.passe_api_key)
+    likes_api = LikesApi(
+        config.likes_api_base_url,
+        private_setting("LIKES_API_KEY", config.likes_api_key),
+        config.likes_quantity,
+    )
+    autosystem_likes_api = AutoSystemLikesApi(
+        config.autosystem_base_url,
+        private_setting("AUTOSYSTEM_API_KEY", config.autosystem_api_key),
+        config.likes_quantity,
+        config.default_region,
+    )
+    ffhub_shop = FFHubShopApi(
+        config.ffhub_base_url,
+        private_setting("FFHUB_API_KEY", config.ffhub_api_key),
+    )
+
+    # Likes Painel fica sem chamadas automáticas; /like usa apenas Auto System.
+    passe = PasseApi(
+        config.api_base_url,
+        private_setting("PASSE_API_KEY", config.passe_api_key),
+    )
     gateway = MercadoPagoGateway(
-        config.mp_access_token, notification_url=config.mp_notification_url
+        private_setting("MERCADOPAGO_ACCESS_TOKEN", config.mp_access_token),
+        notification_url=(
+            config.payment_notification_url if config.webhook_public_url else ""
+        ),
     )
 
     bot = Bot(
@@ -56,29 +325,141 @@ async def main() -> None:
     dp["config"] = config
     dp["db"] = db
     dp["autolike"] = autolike
+    dp["likes_api"] = likes_api
+    dp["autosystem_likes_api"] = autosystem_likes_api
+    dp["ffhub_shop"] = ffhub_shop
     dp["passe"] = passe
     dp["gateway"] = gateway
     dp["delivery"] = delivery
 
     register_handlers(dp)
 
-    # Servidor de webhook (Mercado Pago)
-    runner = None
-    if config.webhook_public_url:
-        web_app = build_webhook_app(config, db, gateway, delivery)
-        runner = await start_webhook_server(web_app, config)
+    # Agendador do Auto Like 500 fica ativo mesmo antes da chave
+    # ser configurada, para aceitar /setkey ffhub sem precisar reiniciar.
+    autolike_task = asyncio.create_task(
+        watch_ffhub_autolikes(bot, db, ffhub_shop),
+        name="ffhub-autolike-watcher",
+    )
+    if ffhub_shop.configured:
+        logger.info("Agendador Auto Like 500 FFHub iniciado.")
     else:
         logger.warning(
-            "WEBHOOK_PUBLIC_URL não definido — pagamentos serão confirmados "
-            "apenas via botão 'Já paguei / verificar'."
+            "FFHub ainda não configurada — o agendador está aguardando a chave."
+        )
+
+    # Confirmação automática: o watcher fica ativo mesmo antes do token
+    # ser cadastrado no painel; assim a configuração passa a valer imediatamente.
+    payment_task = asyncio.create_task(
+        watch_pending_payments(db, gateway, delivery),
+        name="mercadopago-payment-watcher",
+    )
+    if gateway.configured:
+        logger.info("Monitor automático de pagamentos Mercado Pago iniciado.")
+    else:
+        logger.warning(
+            "Mercado Pago ainda não configurado — informe o Access Token "
+            "no painel do dono. O monitor já está aguardando a configuração."
+        )
+
+    runner = None
+    telegram_webhook_url = ""
+    telegram_webhook_secret = ""
+
+    if config.webhook_public_url:
+        web_app = build_webhook_app(config, db, gateway, delivery)
+
+        telegram_webhook_secret = _telegram_webhook_secret(config.bot_token)
+        telegram_webhook_path = "/telegram/webhook"
+        telegram_webhook_url = (
+            config.webhook_public_url.rstrip("/") + telegram_webhook_path
+        )
+
+        async def telegram_webhook(request: web.Request) -> web.Response:
+            received_secret = request.headers.get(
+                "X-Telegram-Bot-Api-Secret-Token",
+                "",
+            )
+            if received_secret != telegram_webhook_secret:
+                logger.warning("Webhook Telegram rejeitado por secret inválido.")
+                return web.Response(status=403, text="forbidden")
+
+            try:
+                payload = await request.json()
+                update = Update.model_validate(
+                    payload,
+                    context={"bot": bot},
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Webhook Telegram recebeu update inválido.")
+                return web.Response(status=400, text="bad request")
+
+            try:
+                # Processa sem segurar a resposta HTTP do Telegram.
+                asyncio.create_task(
+                    dp.feed_update(bot, update),
+                    name=f"telegram-update-{update.update_id}",
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha ao despachar update do Telegram.")
+                return web.Response(status=500, text="dispatch failed")
+
+            return web.Response(text="ok")
+
+        web_app.router.add_post(telegram_webhook_path, telegram_webhook)
+        runner = await start_webhook_server(web_app, config)
+
+        logger.info(
+            "Webhook Mercado Pago disponível em %s",
+            config.payment_notification_url,
+        )
+        logger.info(
+            "Webhook Telegram disponível em %s",
+            telegram_webhook_url,
         )
 
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Abrir menu principal"),
+                BotCommand(command="menu", description="Abrir menu principal"),
+                BotCommand(command="like", description="Enviar likes pelo grupo"),
+                BotCommand(command="id", description="Mostrar meu ID do Telegram"),
+            ]
+        )
         me = await bot.get_me()
         logger.info("Bot iniciado como @%s", me.username)
-        await dp.start_polling(bot)
+
+        if telegram_webhook_url:
+            await bot.set_webhook(
+                url=telegram_webhook_url,
+                secret_token=telegram_webhook_secret,
+                drop_pending_updates=True,
+                allowed_updates=dp.resolve_used_update_types(),
+            )
+            logger.info(
+                "Telegram configurado em modo webhook; polling desativado."
+            )
+            # Mantém o processo vivo enquanto aiohttp recebe os updates.
+            await asyncio.Event().wait()
+        else:
+            logger.warning(
+                "WEBHOOK_PUBLIC_URL ausente; usando polling como fallback."
+            )
+            await bot.delete_webhook(drop_pending_updates=True)
+            await dp.start_polling(bot)
     finally:
+        if autolike_task:
+            autolike_task.cancel()
+            try:
+                await autolike_task
+            except asyncio.CancelledError:
+                pass
+        if payment_task:
+            payment_task.cancel()
+            try:
+                await payment_task
+            except asyncio.CancelledError:
+                pass
         if runner:
             await runner.cleanup()
         await db.close()
