@@ -268,13 +268,11 @@ async def _create_pix_order(
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"📦 {description}\n"
         f"💰 Valor: <b>R$ {format_price(amount)}</b>\n\n"
-        "1️⃣ Copie o código PIX abaixo\n"
-        "2️⃣ Pague no aplicativo do seu banco\n"
-        "3️⃣ A confirmação é automática\n\n"
-        f"<code>{charge.qr_code}</code>\n\n"
+        "📋 Toque em <b>Copiar código PIX</b> para copiar o pagamento.\n"
+        "🔄 Depois de pagar, toque em <b>Já paguei / verificar</b>.\n\n"
         "⏳ <i>Aguardando pagamento...</i>"
     )
-    kb = payment_pending(charge.payment_id, charge.ticket_url)
+    kb = payment_pending(charge.payment_id, charge.qr_code)
 
     if charge.qr_code_base64:
         try:
@@ -702,13 +700,11 @@ async def _balance_amount_response(
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"📄 Pedido: <code>#{order_id}</code>\n"
         f"💵 Valor: <b>R$ {format_price(amount)}</b>\n\n"
-        "1️⃣ Copie o código PIX abaixo\n"
-        "2️⃣ Pague no aplicativo do seu banco\n"
-        "3️⃣ O saldo entra automaticamente após a aprovação\n\n"
-        f"<code>{charge.qr_code}</code>\n\n"
+        "📋 Toque em <b>Copiar código PIX</b> para copiar o pagamento.\n"
+        "🔄 Depois de pagar, toque em <b>Já paguei / verificar</b>.\n\n"
         "⏳ <i>Aguardando pagamento...</i>"
     )
-    kb = payment_pending(charge.payment_id, charge.ticket_url)
+    kb = payment_pending(charge.payment_id, charge.qr_code)
 
     if charge.qr_code_base64:
         try:
