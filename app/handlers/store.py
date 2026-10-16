@@ -431,43 +431,47 @@ async def shop_passe(
     config: Config,
 ) -> None:
     await _ack(query)
-    rp = await resolve_product(config, db, "passe")
-    if not rp:
-        await query.message.answer("⚠️ Produto indisponível.")
-        return
-    price, is_reseller, discount = await _effective_price(
-        db, rp, query.from_user.id
-    )
-    if not rp.service_ready:
+    try:
+        rp = await resolve_product(config, db, "passe")
+        if not rp:
+            await query.message.answer("⚠️ Produto indisponível.")
+            return
+
+        price, is_reseller, discount = await _effective_price(
+            db, rp, query.from_user.id
+        )
+        if not rp.service_ready:
+            await edit_screen(
+                query,
+                "⚠️ <b>Passe de Elite temporariamente indisponível.</b>\n\n"
+                "A integração de entrega ainda não está configurada.",
+                back_home(),
+            )
+            return
+
+        if price <= 0 or rp.stock == 0:
+            await edit_screen(query, texts.OUT_OF_STOCK, back_home())
+            return
+
+        await state.set_state(PurchaseFlow.waiting_id)
+        await state.update_data(product_code="passe")
+        reseller_line = (
+            f"\n🤝 Desconto revenda: <b>{discount}%</b>"
+            if is_reseller and discount > 0
+            else ""
+        )
         await edit_screen(
             query,
-            "⚠️ <b>Passe de Elite temporariamente indisponível.</b>\n\n"
-            "A integração de entrega ainda não está configurada.",
-            back_home(),
+            "🎟️ <b>PASSE DE ELITE</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "Envie o <b>UID</b> da conta que vai receber o passe.\n\n"
+            f"💰 Valor: <b>R$ {format_price(price)}</b>"
+            f"{reseller_line}\n\n"
+            "Depois de validar o UID, você escolhe PIX ou saldo.",
+            cancel_only(),
         )
-        return
-
-    if price <= 0 or rp.stock == 0:
-        await edit_screen(query, texts.OUT_OF_STOCK, back_home())
-        return
-
-    await state.set_state(PurchaseFlow.waiting_id)
-    await state.update_data(product_code="passe")
-    reseller_line = (
-        f"\n🤝 Desconto revenda: <b>{discount}%</b>"
-        if is_reseller and discount > 0
-        else ""
-    )
-    await edit_screen(
-        query,
-        "🎟️ <b>PASSE DE ELITE</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Envie o <b>UID</b> da conta que vai receber o passe.\n\n"
-        f"💰 Valor: <b>R$ {format_price(price)}</b>"
-        f"{reseller_line}\n\n"
-        "Depois de validar o UID, você escolhe PIX ou saldo.",
-        cancel_only(),
-    )
+    except Exception as exc:  # noqa: BLE001
+        await _customer_callback_error(query, "passe", exc)
 
 
 @router.callback_query(F.data == "shop:reseller")
@@ -477,62 +481,65 @@ async def shop_reseller(
     config: Config,
 ) -> None:
     await _ack(query)
-    if await db.is_reseller(query.from_user.id):
+    try:
+        if await db.is_reseller(query.from_user.id):
+            discount = await reseller_discount_percent(db)
+            products = await resolve_products(config, db)
+            p220 = products.get("autolike220")
+            p500 = products.get("autolike500")
+            ppasse = products.get("passe")
+            prent = products.get("bot_rental")
+
+            async def reseller_price(rp):
+                if not rp:
+                    return Decimal("0")
+                return (await _effective_price(db, rp, query.from_user.id))[0]
+
+            p220_price = await reseller_price(p220)
+            p500_price = await reseller_price(p500)
+            passe_price = await reseller_price(ppasse)
+            rent_price = await reseller_price(prent)
+
+            await edit_screen(
+                query,
+                "🤝 <b>ÁREA DO REVENDEDOR</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "✅ Revenda ativa\n"
+                f"💸 Desconto automático: <b>{discount}%</b>\n\n"
+                "💰 <b>Sua tabela atual:</b>\n"
+                f"❤️ Auto Like 220: <b>R$ {format_price(p220_price)}/dia</b>\n"
+                f"💎 Auto Like 500: <b>R$ {format_price(p500_price)}/dia</b>\n"
+                f"🎟️ Passe de Elite: <b>R$ {format_price(passe_price)}</b>\n"
+                f"🤖 Aluguel do bot: <b>R$ {format_price(rent_price)}</b>\n\n"
+                "Os valores já entram com desconto automaticamente no checkout.",
+                reseller_area_menu(),
+            )
+            return
+
+        rp = await resolve_product(config, db, "reseller_access")
+        if not rp or rp.price <= 0:
+            await edit_screen(
+                query,
+                "🤝 <b>REVENDA</b>\n\n"
+                "O acesso de revendedor ainda não está disponível para compra.",
+                back_home(),
+            )
+            return
+
         discount = await reseller_discount_percent(db)
-        products = await resolve_products(config, db)
-        p220 = products.get("autolike220")
-        p500 = products.get("autolike500")
-        ppasse = products.get("passe")
-        prent = products.get("bot_rental")
-
-        async def reseller_price(rp):
-            if not rp:
-                return Decimal("0")
-            return (await _effective_price(db, rp, query.from_user.id))[0]
-
-        p220_price = await reseller_price(p220)
-        p500_price = await reseller_price(p500)
-        passe_price = await reseller_price(ppasse)
-        rent_price = await reseller_price(prent)
-
         await edit_screen(
             query,
-            "🤝 <b>ÁREA DO REVENDEDOR</b>\n"
+            "🤝 <b>ACESSO REVENDA</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            "✅ Revenda ativa\n"
-            f"💸 Desconto automático: <b>{discount}%</b>\n\n"
-            "💰 <b>Sua tabela atual:</b>\n"
-            f"❤️ Auto Like 220: <b>R$ {format_price(p220_price)}/dia</b>\n"
-            f"💎 Auto Like 500: <b>R$ {format_price(p500_price)}/dia</b>\n"
-            f"🎟️ Passe de Elite: <b>R$ {format_price(passe_price)}</b>\n"
-            f"🤖 Aluguel do bot: <b>R$ {format_price(rent_price)}</b>\n\n"
-            "Os valores já entram com desconto automaticamente no checkout.",
-            reseller_area_menu(),
+            "Depois da confirmação, sua conta recebe automaticamente a "
+            "<b>tabela de revendedor</b>.\n\n"
+            f"💸 Desconto atual: <b>{discount}%</b> nos produtos elegíveis\n"
+            f"💰 Acesso: <b>R$ {format_price(rp.price)}</b>\n\n"
+            "O acesso fica vinculado ao seu Telegram.",
+            checkout_menu("reseller_access", allow_balance=True),
         )
-        return
-
-    rp = await resolve_product(config, db, "reseller_access")
-    if not rp or rp.price <= 0:
-        await edit_screen(
-            query,
-            "🤝 <b>REVENDA</b>\n\n"
-            "O acesso de revendedor ainda não está disponível para compra.",
-            back_home(),
-        )
-        return
-
-    discount = await reseller_discount_percent(db)
-    await edit_screen(
-        query,
-        "🤝 <b>ACESSO REVENDA</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Depois da confirmação, sua conta recebe automaticamente a "
-        "<b>tabela de revendedor</b>.\n\n"
-        f"💸 Desconto atual: <b>{discount}%</b> nos produtos elegíveis\n"
-        f"💰 Acesso: <b>R$ {format_price(rp.price)}</b>\n\n"
-        "O acesso fica vinculado ao seu Telegram.",
-        checkout_menu("reseller_access", allow_balance=True),
-    )
+    except Exception as exc:  # noqa: BLE001
+        await _customer_callback_error(query, "reseller", exc)
 
 
 @router.callback_query(F.data == "shop:balance")
@@ -542,20 +549,23 @@ async def shop_balance(
     db: Database,
 ) -> None:
     await _ack(query)
-    balance = _from_cents(await db.get_balance_cents(query.from_user.id))
-    await state.set_state(CustomerPlanFlow.waiting_balance_amount)
-    await query.message.answer(
-        "💰 <b>ADICIONAR SALDO</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"👛 Saldo atual: <b>R$ {format_price(balance)}</b>\n\n"
-        "Digite o valor que deseja adicionar via PIX.\n"
-        "Mínimo: <b>R$ 1,00</b> · Máximo: <b>R$ 5.000,00</b>\n"
-        "\n🔧 REF: BALANCE",
-        reply_markup=ForceReply(
-            selective=True,
-            input_field_placeholder="Ex.: 20,00",
-        ),
-    )
+    try:
+        balance = _from_cents(await db.get_balance_cents(query.from_user.id))
+        await state.set_state(CustomerPlanFlow.waiting_balance_amount)
+        await query.message.answer(
+            "💰 <b>ADICIONAR SALDO</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"👛 Saldo atual: <b>R$ {format_price(balance)}</b>\n\n"
+            "Digite o valor que deseja adicionar via PIX.\n"
+            "Mínimo: <b>R$ 1,00</b> · Máximo: <b>R$ 5.000,00</b>\n"
+            "\n🔧 REF: BALANCE",
+            reply_markup=ForceReply(
+                selective=True,
+                input_field_placeholder="Ex.: 20,00",
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        await _customer_callback_error(query, "balance", exc)
 
 
 async def _balance_amount_response(
@@ -683,39 +693,43 @@ async def shop_rent(
     config: Config,
 ) -> None:
     await _ack(query)
-    rp = await resolve_product(config, db, "bot_rental")
-    if not rp:
-        await query.message.answer("⚠️ Produto indisponível.")
-        return
-    price, is_reseller, discount = await _effective_price(
-        db, rp, query.from_user.id
-    )
-    if price <= 0:
+    try:
+        rp = await resolve_product(config, db, "bot_rental")
+        if not rp:
+            await query.message.answer("⚠️ Produto indisponível.")
+            return
+
+        price, is_reseller, discount = await _effective_price(
+            db, rp, query.from_user.id
+        )
+        if price <= 0:
+            await edit_screen(
+                query,
+                "🤖 <b>ALUGAR BOT</b>\n\n"
+                "O aluguel ainda não está disponível para compra.",
+                back_home(),
+            )
+            return
+
+        reseller_line = (
+            f"\n🤝 Desconto revenda: <b>{discount}%</b>"
+            if is_reseller and discount > 0
+            else ""
+        )
         await edit_screen(
             query,
-            "🤖 <b>ALUGAR BOT</b>\n\n"
-            "O aluguel ainda não está disponível para compra.",
-            back_home(),
+            "🤖 <b>ALUGAR AURORA SYSTEM</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "📆 Período: <b>30 dias</b>\n"
+            "👥 Uso: <b>1 grupo</b>\n"
+            "❤️ O bot ficará disponível no grupo para os comandos liberados.\n\n"
+            f"💰 Valor: <b>R$ {format_price(price)}</b>"
+            f"{reseller_line}\n\n"
+            "Após o pagamento, você receberá o botão para adicionar o bot ao grupo.",
+            checkout_menu("bot_rental", allow_balance=True),
         )
-        return
-
-    reseller_line = (
-        f"\n🤝 Desconto revenda: <b>{discount}%</b>"
-        if is_reseller and discount > 0
-        else ""
-    )
-    await edit_screen(
-        query,
-        "🤖 <b>ALUGAR AURORA SYSTEM</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "📆 Período: <b>30 dias</b>\n"
-        "👥 Uso: <b>1 grupo</b>\n"
-        "❤️ O bot ficará disponível no grupo para os comandos liberados.\n\n"
-        f"💰 Valor: <b>R$ {format_price(price)}</b>"
-        f"{reseller_line}\n\n"
-        "Após o pagamento, você receberá o botão para adicionar o bot ao grupo.",
-        checkout_menu("bot_rental", allow_balance=True),
-    )
+    except Exception as exc:  # noqa: BLE001
+        await _customer_callback_error(query, "rent", exc)
 
 
 def _parse_checkout(data: str, prefix: str) -> tuple[str, str]:
