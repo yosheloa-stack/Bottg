@@ -68,7 +68,8 @@ async def cmd_owner_autolike(
             "<code>/autolike status UID</code>\n"
             "<code>/autolike cancel UID</code>\n\n"
             "✅ 1 envio por dia pela FFHub\n"
-            "✅ aproximadamente 500 a 1.000 likes por envio"
+            "✅ aproximadamente 500 a 1.000 likes por envio\n"
+            "✅ horário fixo: 09:00 da manhã"
         )
         return
 
@@ -242,71 +243,21 @@ async def cmd_owner_autolike(
         )
         return
 
-    sending = await message.reply(
-        "🔥 <b>Auto Like cadastrado.</b>\n"
-        "Fazendo o primeiro envio agora..."
-    )
-    result = await ffhub_shop.send_paid_likes(uid)
-
-    if not result.ok:
-        await db.retry_ffhub_autolike_later(
-            sub_id,
-            result_text=str(result.data or result.error or ""),
-            delay_seconds=900,
-        )
-        await sending.edit_text(
-            "⚠️ <b>AUTO LIKE CADASTRADO</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 UID: <code>{uid}</code>\n"
-            f"📆 Duração: <b>{days} dias</b>\n\n"
-            "O primeiro envio não foi confirmado agora.\n"
-            "🔁 O sistema vai tentar novamente em cerca de <b>15 minutos</b>."
-        )
-        return
-
-    data = result.data if isinstance(result.data, dict) else {}
-    parsed = parse_like_delivery(data)
-    sent = _to_int(parsed.get("sent")) or 0
-    before = _to_int(parsed.get("before"))
-    after = _to_int(parsed.get("after"))
-    nick = str(parsed.get("nickname") or "Jogador")
-
-    updated = await db.complete_ffhub_autolike_send(
-        sub_id,
-        result_text=str(data),
-        nickname=nick,
-        likes_before=before,
-        likes_after=after,
-        likes_sent=sent,
-    )
     sub = await db.get_ffhub_autolike_status(uid)
+    next_text = _fmt_time(sub.get("next_send_at")) if sub else "09:00"
 
-    if not updated or not sub:
-        await sending.edit_text(
-            "⚠️ O envio foi feito, mas não consegui carregar o status da assinatura."
-        )
-        return
-
-    next_text = (
-        _fmt_time(sub.get("next_send_at"))
-        if sub.get("status") == "active"
-        else "Plano concluído"
-    )
-    await sending.edit_text(
-        "🔥 <b>AUTO LIKE 500/1000 ATIVADO</b>\n"
+    await message.reply(
+        "🔥 <b>AUTO LIKE 500 ATIVADO</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"👤 Nick: <b>{html.escape(nick)}</b>\n"
         f"🆔 UID: <code>{uid}</code>\n"
         f"📆 Duração: <b>{days} dias</b>\n"
-        f"❤️ Primeiro envio: <b>+{sent}</b>\n"
-        f"📊 Likes antes: <b>{before if before is not None else '—'}</b>\n"
-        f"📊 Likes depois: <b>{after if after is not None else '—'}</b>\n"
-        f"❤️ Total acumulado: <b>+{int(sub.get('total_likes_sent') or 0)}</b>\n"
-        f"⏰ Próximo envio: <b>{next_text}</b>\n\n"
-        "✅ Os próximos envios seguirão o mesmo horário do cadastro.\n"
+        "❤️ Por envio: <b>aprox. 500 a 1.000 likes</b>\n"
+        "⏰ Horário fixo: <b>09:00 da manhã</b>\n"
+        f"📅 Próximo envio: <b>{next_text}</b>\n\n"
+        "✅ O sistema fará os envios diariamente às 09:00."
         + (
-            "📣 As próximas entregas também serão avisadas neste grupo."
+            "\n📣 As entregas também serão avisadas neste grupo."
             if notify_chat_id is not None
-            else "📩 As próximas entregas serão avisadas no privado."
+            else "\n📩 As entregas serão avisadas no privado."
         )
     )
