@@ -83,6 +83,24 @@ async def _customer_callback_error(
         logger.exception("Falha ao avisar erro do menu cliente")
 
 
+async def _remember_payment_message(
+    db: Database,
+    order_id: int,
+    message: Message,
+) -> None:
+    try:
+        await db.set_order_payment_message(
+            order_id,
+            int(message.chat.id),
+            int(message.message_id),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Falha ao salvar referência da mensagem PIX pedido=%s",
+            order_id,
+        )
+
+
 async def _effective_price(
     db: Database,
     rp,
@@ -282,7 +300,12 @@ async def _create_pix_order(
                 await query.message.delete()
             except Exception:
                 pass
-            await query.message.answer_photo(photo, caption=caption, reply_markup=kb)
+            payment_message = await query.message.answer_photo(
+                photo,
+                caption=caption,
+                reply_markup=kb,
+            )
+            await _remember_payment_message(db, order_id, payment_message)
             return
         except Exception:  # noqa: BLE001
             logger.warning("Falha ao decodificar QR base64; enviando somente texto")
@@ -297,9 +320,12 @@ async def _create_pix_order(
             await msg.delete()
         except Exception:
             pass
-        await msg.answer(caption, reply_markup=kb)
+        payment_message = await msg.answer(caption, reply_markup=kb)
+        await _remember_payment_message(db, order_id, payment_message)
     else:
-        await msg.edit_text(caption, reply_markup=kb)
+        edited = await msg.edit_text(caption, reply_markup=kb)
+        payment_message = edited if isinstance(edited, Message) else msg
+        await _remember_payment_message(db, order_id, payment_message)
 
 
 # ---------- Novo menu cliente ----------
@@ -714,7 +740,12 @@ async def _balance_amount_response(
                 await status.delete()
             except Exception:
                 pass
-            await message.answer_photo(photo, caption=caption, reply_markup=kb)
+            payment_message = await message.answer_photo(
+                photo,
+                caption=caption,
+                reply_markup=kb,
+            )
+            await _remember_payment_message(db, order_id, payment_message)
             return
         except Exception:  # noqa: BLE001
             logger.warning(
@@ -722,7 +753,9 @@ async def _balance_amount_response(
                 order_id,
             )
 
-    await status.edit_text(caption, reply_markup=kb)
+    edited = await status.edit_text(caption, reply_markup=kb)
+    payment_message = edited if isinstance(edited, Message) else status
+    await _remember_payment_message(db, order_id, payment_message)
 
 
 @router.message(F.reply_to_message.text.regexp(r"REF:\s*BALANCE"))
