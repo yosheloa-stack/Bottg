@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS orders (
     payment_id    TEXT,
     status        TEXT NOT NULL DEFAULT 'pending',  -- pending | paid | delivered | failed | expired
     delivery_info TEXT,
+    plan_days     INTEGER NOT NULL DEFAULT 0,
+    metadata      TEXT NOT NULL DEFAULT '{}',
+    paid_with     TEXT NOT NULL DEFAULT 'pix',
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -80,6 +83,47 @@ ON ffhub_autolike_history(subscription_id, sent_at);
 
 CREATE INDEX IF NOT EXISTS idx_ffhub_autolike_history_uid
 ON ffhub_autolike_history(game_id, sent_at);
+
+CREATE TABLE IF NOT EXISTS wallets (
+    user_id       INTEGER PRIMARY KEY,
+    balance_cents INTEGER NOT NULL DEFAULT 0,
+    updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    kind         TEXT NOT NULL,
+    order_id     INTEGER,
+    description  TEXT,
+    created_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_tx_user
+ON wallet_transactions(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS resellers (
+    user_id      INTEGER PRIMARY KEY,
+    order_id     INTEGER,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot_rentals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL UNIQUE,
+    user_id     INTEGER NOT NULL,
+    chat_id     INTEGER,
+    status      TEXT NOT NULL DEFAULT 'awaiting_group',
+    starts_at   INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_rentals_user
+ON bot_rentals(user_id, status, expires_at);
 
 CREATE TABLE IF NOT EXISTS owner_settings (
     key         TEXT PRIMARY KEY,
@@ -140,6 +184,21 @@ class Database:
             await self._db.execute(
                 "ALTER TABLE ffhub_autolike_subscriptions "
                 "ADD COLUMN notify_thread_id INTEGER"
+            )
+
+        async with self._db.execute("PRAGMA table_info(orders)") as cur:
+            order_columns = {str(row["name"]) for row in await cur.fetchall()}
+        if "plan_days" not in order_columns:
+            await self._db.execute(
+                "ALTER TABLE orders ADD COLUMN plan_days INTEGER NOT NULL DEFAULT 0"
+            )
+        if "metadata" not in order_columns:
+            await self._db.execute(
+                "ALTER TABLE orders ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'"
+            )
+        if "paid_with" not in order_columns:
+            await self._db.execute(
+                "ALTER TABLE orders ADD COLUMN paid_with TEXT NOT NULL DEFAULT 'pix'"
             )
 
         await self._db.commit()
@@ -448,19 +507,38 @@ class Database:
 
     # ----- Orders -----
     async def create_order(
-        self, user_id: int, product_code: str, game_id: str, amount: str
+        self,
+        user_id: int,
+        product_code: str,
+        game_id: str,
+        amount: str,
+        *,
+        plan_days: int = 0,
+        metadata: str = "{}",
+        paid_with: str = "pix",
     ) -> int:
         now = int(time.time())
         cur = await self.db.execute(
             """
             INSERT INTO orders
-                (user_id, product_code, game_id, amount, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'pending', ?, ?)
+                (user_id, product_code, game_id, amount, status,
+                 plan_days, metadata, paid_with, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
             """,
-            (user_id, product_code, game_id, amount, now, now),
+            (
+                user_id,
+                product_code,
+                game_id,
+                amount,
+                max(0, int(plan_days)),
+                metadata or "{}",
+                paid_with or "pix",
+                now,
+                now,
+            ),
         )
         await self.db.commit()
-        return cur.lastrowid
+        return int(cur.lastrowid)
 
     async def set_order_payment(self, order_id: int, payment_id: str) -> None:
         await self.db.execute(
@@ -542,6 +620,202 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
+
+    # ----- Saldo / carteira -----
+    async def get_balance_cents(self, user_id: int) -> int:
+        async with self.db.execute(
+            "SELECT balance_cents FROM wallets WHERE user_id = ?",
+            (int(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row["balance_cents"]) if row else 0
+
+    async def credit_wallet(
+        self,
+        user_id: int,
+        amount_cents: int,
+        *,
+        order_id: int | None = None,
+        description: str = "",
+    ) -> int:
+        amount_cents = max(0, int(amount_cents))
+        now = int(time.time())
+        await self.db.execute("BEGIN IMMEDIATE")
+        try:
+            await self.db.execute(
+                """
+                INSERT INTO wallets (user_id, balance_cents, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    balance_cents = wallets.balance_cents + excluded.balance_cents,
+                    updated_at = excluded.updated_at
+                """,
+                (int(user_id), amount_cents, now),
+            )
+            await self.db.execute(
+                """
+                INSERT INTO wallet_transactions
+                    (user_id, amount_cents, kind, order_id, description, created_at)
+                VALUES (?, ?, 'credit', ?, ?, ?)
+                """,
+                (int(user_id), amount_cents, order_id, description, now),
+            )
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+        return await self.get_balance_cents(user_id)
+
+    async def spend_wallet(
+        self,
+        user_id: int,
+        amount_cents: int,
+        *,
+        order_id: int | None = None,
+        description: str = "",
+    ) -> tuple[bool, int]:
+        amount_cents = max(0, int(amount_cents))
+        now = int(time.time())
+        await self.db.execute("BEGIN IMMEDIATE")
+        try:
+            async with self.db.execute(
+                "SELECT balance_cents FROM wallets WHERE user_id = ?",
+                (int(user_id),),
+            ) as cur:
+                row = await cur.fetchone()
+            balance = int(row["balance_cents"]) if row else 0
+            if balance < amount_cents:
+                await self.db.commit()
+                return False, balance
+
+            new_balance = balance - amount_cents
+            await self.db.execute(
+                """
+                INSERT INTO wallets (user_id, balance_cents, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    balance_cents = excluded.balance_cents,
+                    updated_at = excluded.updated_at
+                """,
+                (int(user_id), new_balance, now),
+            )
+            await self.db.execute(
+                """
+                INSERT INTO wallet_transactions
+                    (user_id, amount_cents, kind, order_id, description, created_at)
+                VALUES (?, ?, 'debit', ?, ?, ?)
+                """,
+                (int(user_id), -amount_cents, order_id, description, now),
+            )
+            await self.db.commit()
+            return True, new_balance
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    # ----- Revendedores -----
+    async def is_reseller(self, user_id: int) -> bool:
+        async with self.db.execute(
+            "SELECT 1 FROM resellers WHERE user_id = ?",
+            (int(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return row is not None
+
+    async def activate_reseller(self, user_id: int, order_id: int | None = None) -> None:
+        now = int(time.time())
+        await self.db.execute(
+            """
+            INSERT INTO resellers (user_id, order_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                order_id = COALESCE(excluded.order_id, resellers.order_id),
+                updated_at = excluded.updated_at
+            """,
+            (int(user_id), order_id, now, now),
+        )
+        await self.db.commit()
+
+    async def remove_reseller(self, user_id: int) -> bool:
+        cur = await self.db.execute(
+            "DELETE FROM resellers WHERE user_id = ?",
+            (int(user_id),),
+        )
+        await self.db.commit()
+        return bool(cur.rowcount)
+
+    async def reseller_count(self) -> int:
+        async with self.db.execute("SELECT COUNT(*) AS c FROM resellers") as cur:
+            row = await cur.fetchone()
+        return int(row["c"]) if row else 0
+
+    # ----- Aluguel do bot -----
+    async def create_bot_rental(
+        self,
+        order_id: int,
+        user_id: int,
+        days: int = 30,
+    ) -> int:
+        now = int(time.time())
+        expires = now + max(1, int(days)) * 86400
+        cur = await self.db.execute(
+            """
+            INSERT OR IGNORE INTO bot_rentals
+                (order_id, user_id, status, starts_at, expires_at, created_at, updated_at)
+            VALUES (?, ?, 'awaiting_group', ?, ?, ?, ?)
+            """,
+            (int(order_id), int(user_id), now, expires, now, now),
+        )
+        await self.db.commit()
+        if cur.lastrowid:
+            return int(cur.lastrowid)
+        async with self.db.execute(
+            "SELECT id FROM bot_rentals WHERE order_id = ?",
+            (int(order_id),),
+        ) as q:
+            row = await q.fetchone()
+        return int(row["id"]) if row else 0
+
+    async def get_bot_rental(self, rental_id: int) -> Optional[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM bot_rentals WHERE id = ?",
+            (int(rental_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def bind_bot_rental(
+        self,
+        rental_id: int,
+        user_id: int,
+        chat_id: int,
+    ) -> bool:
+        now = int(time.time())
+        cur = await self.db.execute(
+            """
+            UPDATE bot_rentals
+            SET chat_id = ?, status = 'active', updated_at = ?
+            WHERE id = ? AND user_id = ?
+              AND status IN ('awaiting_group', 'active')
+              AND expires_at > ?
+            """,
+            (int(chat_id), now, int(rental_id), int(user_id), now),
+        )
+        await self.db.commit()
+        return bool(cur.rowcount)
+
+    async def active_rental_for_chat(self, chat_id: int) -> Optional[dict[str, Any]]:
+        now = int(time.time())
+        async with self.db.execute(
+            """
+            SELECT * FROM bot_rentals
+            WHERE chat_id = ? AND status = 'active' AND expires_at > ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (int(chat_id), now),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
 
     # ----- Auto-Like Premium FFHub -----
     async def create_ffhub_autolike_subscription(
