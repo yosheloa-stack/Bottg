@@ -1,20 +1,34 @@
 """Textos das mensagens do bot (centralizados para fácil edição)."""
 
 WELCOME = (
-    "✨ <b>{shop_name}</b> ✨\n"
-    "<i>Serviços premium para Free Fire</i>\n"
-    "━━━━━━━━━━━━━━━━━━━━\n\n"
-    "Bem-vindo(a)! Aqui a entrega é <b>automática</b> e o pagamento por <b>PIX</b> 💠\n\n"
-    "🎟️ <b>Passe Booyah</b> — direto no seu ID\n"
-    "🔁 <b>Auto-Like</b> — likes diários por 30 dias\n"
-    "🔎 <b>Consulta</b> — dados do jogador\n\n"
-    "👇 <b>Escolha uma opção no menu abaixo</b>"
+    "💚 <b>{shop_name}</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "<b>Serviços automáticos para Free Fire</b>\n\n"
+    "❤️ Auto Like 220/dia\n"
+    "💎 Auto Like 500+ /dia\n"
+    "🎟️ Passe de Elite\n"
+    "🤝 Área de revenda\n"
+    "💰 Carteira e saldo\n"
+    "🤖 Aluguel do bot para grupos\n\n"
+    "Escolha uma opção abaixo para continuar. 👇"
 )
 
 STORE_HEADER = (
-    "🛒 <b>Loja</b>\n"
+    "🛒 <b>LOJA</b>\n"
     "━━━━━━━━━━━━━━━━━━━━\n"
-    "Selecione um produto para comprar:\n"
+    "Escolha o serviço que deseja comprar:"
+)
+
+AUTOLIKE_STORE = (
+    "💎 <b>AUTO LIKE 500/1000</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "Receba aproximadamente <b>aproximadamente 500 a 1.000 likes por dia</b> "
+    "na sua conta do Free Fire.\n\n"
+    "✅ 1 envio automático por dia\n"
+    "✅ Ativação após o pagamento\n"
+    "✅ UID solicitado depois do PIX\n"
+    "✅ Primeiro envio inicia após ativação\n\n"
+    "📆 <b>Escolha seu plano:</b>"
 )
 
 MENU_HINT = "👇 Selecione uma opção no menu"
@@ -109,17 +123,21 @@ DELIVERY_FAILED = (
 )
 
 LIKE_SUCCESS = (
-    "❤️ <b>Likes enviados com sucesso!</b>\n"
-    "━━━━━━━━━━━━━━━━━━━━\n"
-    "🎮 ID: <code>{game_id}</code>\n"
-    "👤 {nick}\n"
-    "➕ Likes enviados: <b>{enviadas}</b>"
+    "💚 𝙇𝙄𝙆𝙀𝙎 𝙀𝙉𝙑𝙄𝘼𝘿𝙊𝙎\n\n"
+    "👤 𝙅𝙤𝙜𝙖𝙙𝙤𝙧: <b>{nick}</b>\n"
+    "🆔 𝙐𝙄𝘿: <code>{game_id}</code>\n"
+    "🌎 𝙍𝙚𝙜𝙞𝙖̃𝙤: <b>{region}</b>\n\n"
+    "📊 𝙇𝙞𝙠𝙚𝙨 𝙖𝙣𝙩𝙚𝙨: <b>{antes}</b>\n"
+    "📈 𝙇𝙞𝙠𝙚𝙨 𝙖𝙜𝙤𝙧𝙖: <b>{depois}</b>\n"
+    "❤️ 𝙀𝙣𝙫𝙞𝙖𝙙𝙤𝙨 𝙧𝙚𝙖𝙡𝙢𝙚𝙣𝙩𝙚: <b>+{enviadas}</b>\n"
+    "⚡ 𝙏𝙚𝙢𝙥𝙤: <b>{tempo}s</b>\n\n"
+    "✅ 𝙇𝙞𝙠𝙚𝙨 𝙘𝙤𝙣𝙛𝙞𝙧𝙢𝙖𝙙𝙤𝙨 𝙘𝙤𝙢 𝙨𝙪𝙘𝙚𝙨𝙨𝙤!"
 )
 
 LIKE_ALREADY = (
-    "⏳ <b>Este ID já recebeu likes hoje.</b>\n\n"
+    "⏳ <b>Este jogador não pode receber mais likes no momento.</b>\n\n"
     "🎮 ID: <code>{game_id}</code>\n"
-    "Tente novamente após o período de 24h.\n{cooldown}"
+    "O perfil atingiu o limite atual. Tente novamente após o próximo reset.\n{cooldown}"
 )
 
 LIKE_NOT_FOUND = "❌ Jogador não encontrado. Verifique o ID e tente novamente."
@@ -130,3 +148,75 @@ GENERIC_ERROR = (
 )
 
 CANCELLED = "❌ Operação cancelada. Use /start para voltar ao menu."
+
+
+PREMIUM_AUTOLIKE_CONFIRM = (
+    "💎 <b>Auto Like 500</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "❤️ Média diária: <b>aproximadamente 500 a 1.000 likes</b>\n"
+    "📆 Duração: <b>{days} dias</b>\n"
+    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "Após o pagamento:\n"
+    "1️⃣ você envia seu UID\n"
+    "2️⃣ o plano é ativado\n"
+    "3️⃣ os likes começam automaticamente\n\n"
+    "Deseja continuar?"
+)
+
+PREMIUM_AUTOLIKE_PIX = (
+    "💠 <b>PIX gerado com sucesso!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "📦 {title}\n"
+    "⏱ Plano: <b>{days} dias</b>\n"
+    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "1️⃣ Faça o pagamento pelo PIX abaixo\n"
+    "2️⃣ A confirmação é automática\n"
+    "3️⃣ Depois do pagamento eu vou pedir o seu UID\n\n"
+    "<code>{qr_code}</code>\n\n"
+    "⏳ <i>Aguardando confirmação do pagamento...</i>"
+)
+
+PREMIUM_AUTOLIKE_ASK_ID = (
+    "✅ <b>Pagamento confirmado!</b>\n\n"
+    "💎 Seu plano de Auto-Like Premium está liberado.\n"
+    "Agora envie somente o <b>UID</b> da conta que vai receber os likes.\n\n"
+    "Assim que eu receber o UID, o primeiro envio entra na fila automaticamente."
+)
+
+PREMIUM_AUTOLIKE_ACTIVATED = (
+    "💚 <b>Auto-Like Premium ativado!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "🆔 UID: <code>{game_id}</code>\n"
+    "📆 Plano: <b>{days} dias</b>\n"
+    "❤️ Frequência: <b>1 envio por dia</b>\n\n"
+    "⚡ O primeiro envio será processado em instantes."
+)
+
+
+LIKE2_SINGLE_CONFIRM = (
+    "💎 <b>Like2 • Envio único</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "❤️ 1 envio pago pela FFHub\n"
+    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "Após o PIX ser confirmado, eu vou pedir o <b>UID</b> da conta.\n"
+    "Depois disso, o envio é feito automaticamente.\n\n"
+    "Deseja continuar?"
+)
+
+LIKE2_SINGLE_PIX = (
+    "💠 <b>PIX gerado com sucesso!</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "📦 Like2 • Envio único\n"
+    "💰 Valor: <b>R$ {price}</b>\n\n"
+    "1️⃣ Faça o pagamento pelo PIX abaixo\n"
+    "2️⃣ A confirmação é automática\n"
+    "3️⃣ Depois do pagamento eu vou pedir o seu UID\n\n"
+    "<code>{qr_code}</code>\n\n"
+    "⏳ <i>Aguardando confirmação do pagamento...</i>"
+)
+
+LIKE2_SINGLE_ASK_ID = (
+    "✅ <b>Pagamento confirmado!</b>\n\n"
+    "💎 Seu envio Like2 está liberado.\n"
+    "Agora envie somente o <b>UID</b> da conta que vai receber os likes."
+)
