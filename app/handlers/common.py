@@ -10,11 +10,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app import texts
-from app.catalog import resolve_products
 from app.config import Config
 from app.database import Database
-from app.keyboards.inline import autolike_plans_menu, back_home, main_menu, store_menu
-from app.owner_auth import resolve_owner_id
+from app.keyboards.inline import back_home, main_menu
 from app.ui import edit_screen, send_menu
 from app.utils import format_price
 
@@ -118,8 +116,12 @@ async def cb_home(query: CallbackQuery, state: FSMContext, config: Config) -> No
 
 @router.callback_query(F.data == "menu:store")
 async def cb_store(query: CallbackQuery, config: Config, db: Database) -> None:
-    products = await resolve_products(config, db)
-    await edit_screen(query, texts.STORE_HEADER, store_menu(products))
+    # Compatibilidade com mensagens antigas: volta para o menu novo.
+    await edit_screen(
+        query,
+        texts.WELCOME.format(shop_name=config.shop_name),
+        main_menu(False),
+    )
     await query.answer()
 
 
@@ -129,14 +131,12 @@ async def cb_autolike_store(
     config: Config,
     db: Database,
 ) -> None:
-    products = await resolve_products(config, db)
+    # Compatibilidade com o botão antigo do Auto Like 500/1000.
     await edit_screen(
         query,
-        texts.AUTOLIKE_STORE,
-        autolike_plans_menu(
-            products,
-            is_owner=_is_admin(query.from_user.id, config),
-        ),
+        "💎 <b>Auto Like</b>\n\n"
+        "Agora existem duas modalidades. Escolha no menu principal:",
+        main_menu(False),
     )
     await query.answer()
 
