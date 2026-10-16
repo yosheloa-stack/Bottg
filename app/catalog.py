@@ -45,10 +45,12 @@ async def resolve_products(config: Config, db: Database) -> dict[str, ResolvedPr
     settings = await db.all_product_settings()
     ffhub_private_key = await db.get_owner_setting("FFHUB_API_KEY")
     autosystem_private_key = await db.get_owner_setting("AUTOSYSTEM_API_KEY")
+    passe_private_key = await db.get_owner_setting("PASSE_API_KEY")
     ffhub_configured = bool(ffhub_private_key or config.ffhub_api_key)
     autosystem_configured = bool(
         autosystem_private_key or config.autosystem_api_key
     )
+    passe_configured = bool(passe_private_key or config.passe_api_key)
     resolved: dict[str, ResolvedProduct] = {}
     for code, product in config.products.items():
         s = settings.get(code, {})
@@ -67,6 +69,9 @@ async def resolve_products(config: Config, db: Database) -> dict[str, ResolvedPr
         elif product.delivery == "autosystem_autolike" and not autosystem_configured:
             service_ready = False
             service_issue = "AutoSystem API não configurada"
+        elif product.delivery == "passe" and not passe_configured:
+            service_ready = False
+            service_issue = "API do Passe não configurada"
         resolved[code] = ResolvedProduct(
             product=product,
             price=price,
