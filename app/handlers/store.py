@@ -54,6 +54,35 @@ def _from_cents(value: int) -> Decimal:
     return (Decimal(int(value)) / Decimal(100)).quantize(Decimal("0.01"))
 
 
+async def _ack(query: CallbackQuery, text: str | None = None) -> None:
+    try:
+        await query.answer(text)
+    except Exception:  # noqa: BLE001
+        logger.debug("Callback já respondido ou expirado: %s", query.data)
+
+
+async def _customer_callback_error(
+    query: CallbackQuery,
+    action: str,
+    exc: Exception,
+) -> None:
+    logger.exception(
+        "Erro no menu cliente | action=%s user=%s data=%s",
+        action,
+        query.from_user.id,
+        query.data,
+        exc_info=exc,
+    )
+    try:
+        await query.message.answer(
+            "⚠️ <b>Não consegui abrir essa opção agora.</b>\n\n"
+            "Tente novamente pelo <code>/start</code>. "
+            "Se continuar, avise o suporte."
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha ao avisar erro do menu cliente")
+
+
 async def _effective_price(
     db: Database,
     rp,
@@ -71,7 +100,7 @@ async def _show_autolike_category(
 ) -> None:
     rp = await resolve_product(config, db, code)
     if not rp:
-        await query.answer("Produto não encontrado.", show_alert=True)
+        await query.message.answer("⚠️ Produto não encontrado.")
         return
 
     unit_price, is_reseller, discount = await _effective_price(
@@ -268,14 +297,20 @@ async def _create_pix_order(
 # ---------- Novo menu cliente ----------
 @router.callback_query(F.data == "shop:auto220")
 async def shop_auto220(query: CallbackQuery, db: Database, config: Config) -> None:
-    await query.answer()
-    await _show_autolike_category(query, db, config, "autolike220")
+    await _ack(query)
+    try:
+        await _show_autolike_category(query, db, config, "autolike220")
+    except Exception as exc:  # noqa: BLE001
+        await _customer_callback_error(query, "auto220", exc)
 
 
 @router.callback_query(F.data == "shop:auto500")
 async def shop_auto500(query: CallbackQuery, db: Database, config: Config) -> None:
-    await query.answer()
-    await _show_autolike_category(query, db, config, "autolike500")
+    await _ack(query)
+    try:
+        await _show_autolike_category(query, db, config, "autolike500")
+    except Exception as exc:  # noqa: BLE001
+        await _customer_callback_error(query, "auto500", exc)
 
 
 @router.callback_query(F.data.startswith("days:"))
@@ -284,7 +319,7 @@ async def choose_preset_days(
     db: Database,
     config: Config,
 ) -> None:
-    await query.answer()
+    await _ack(query)
     parts = query.data.split(":")
     if len(parts) != 3:
         await query.message.answer("⚠️ Opção inválida.")
@@ -308,7 +343,7 @@ async def choose_custom_days(
     query: CallbackQuery,
     state: FSMContext,
 ) -> None:
-    await query.answer()
+    await _ack(query)
     code = query.data.split(":", 1)[1]
     if code not in AUTOLIKE_CODES:
         await query.message.answer("⚠️ Produto inválido.")
@@ -395,10 +430,11 @@ async def shop_passe(
     db: Database,
     config: Config,
 ) -> None:
-    await query.answer()
+    await _ack(query)
     rp = await resolve_product(config, db, "passe")
     if not rp:
-        return await query.answer("Produto indisponível.", show_alert=True)
+        await query.message.answer("⚠️ Produto indisponível.")
+        return
     price, is_reseller, discount = await _effective_price(
         db, rp, query.from_user.id
     )
@@ -440,7 +476,7 @@ async def shop_reseller(
     db: Database,
     config: Config,
 ) -> None:
-    await query.answer()
+    await _ack(query)
     if await db.is_reseller(query.from_user.id):
         discount = await reseller_discount_percent(db)
         products = await resolve_products(config, db)
@@ -505,10 +541,9 @@ async def shop_balance(
     state: FSMContext,
     db: Database,
 ) -> None:
-    await query.answer()
+    await _ack(query)
     balance = _from_cents(await db.get_balance_cents(query.from_user.id))
     await state.set_state(CustomerPlanFlow.waiting_balance_amount)
-    await query.answer()
     await query.message.answer(
         "💰 <b>ADICIONAR SALDO</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
@@ -647,10 +682,11 @@ async def shop_rent(
     db: Database,
     config: Config,
 ) -> None:
-    await query.answer()
+    await _ack(query)
     rp = await resolve_product(config, db, "bot_rental")
     if not rp:
-        return await query.answer("Produto indisponível.", show_alert=True)
+        await query.message.answer("⚠️ Produto indisponível.")
+        return
     price, is_reseller, discount = await _effective_price(
         db, rp, query.from_user.id
     )
@@ -680,7 +716,6 @@ async def shop_rent(
         "Após o pagamento, você receberá o botão para adicionar o bot ao grupo.",
         checkout_menu("bot_rental", allow_balance=True),
     )
-    await query.answer()
 
 
 def _parse_checkout(data: str, prefix: str) -> tuple[str, str]:
@@ -936,6 +971,18 @@ async def legacy_confirm_redirect(
         main_menu(False),
     )
     await query.answer("A compra antiga foi removida. Use o menu novo.")
+
+
+@router.callback_query(F.data.startswith("shop:"))
+async def unknown_shop_button(
+    query: CallbackQuery,
+    config: Config,
+) -> None:
+    await _ack(query)
+    await query.message.answer(
+        "ℹ️ Esse botão não está mais disponível. Abra o menu atualizado:",
+        reply_markup=main_menu(False),
+    )
 
 
 # ---- 4. Usuário clica "Já paguei / verificar" ----
