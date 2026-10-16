@@ -12,6 +12,7 @@ from decimal import Decimal
 from aiogram import Bot
 
 from app import texts
+from app.announcements import announce_purchase
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import add_group_button, back_home
@@ -83,6 +84,16 @@ class DeliveryService:
             logger.error("Produto desconhecido no pedido %s", order_id)
             await self._notify_failure(order)
             return False
+
+        try:
+            await announce_purchase(
+                self.bot,
+                self.db,
+                order,
+                product.title,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Falha ao anunciar compra do pedido %s", order_id)
 
         # Auto Likes pagos: o pagamento libera a etapa de informar o UID.
         if product.delivery in {
