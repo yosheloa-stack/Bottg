@@ -31,17 +31,47 @@ async def cmd_start(
     bot: Bot,
 ) -> None:
     await state.clear()
+
+    # Deep link de aluguel: https://t.me/BOT?startgroup=rent_ID
+    parts = (message.text or "").split(maxsplit=1)
+    payload = parts[1].strip() if len(parts) > 1 else ""
+    if message.chat.type in {"group", "supergroup"}:
+        if payload.startswith("rent_") and message.from_user:
+            try:
+                rental_id = int(payload.split("_", 1)[1])
+            except (ValueError, IndexError):
+                rental_id = 0
+
+            if rental_id and await db.bind_bot_rental(
+                rental_id,
+                message.from_user.id,
+                message.chat.id,
+            ):
+                rental = await db.get_bot_rental(rental_id)
+                await message.answer(
+                    "🤖 <b>AURORA SYSTEM ATIVADO NESTE GRUPO</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📄 Licença: <code>#{rental_id}</code>\n"
+                    f"📆 Válida até: <code>{rental['expires_at'] if rental else '—'}</code>\n\n"
+                    "✅ O aluguel foi vinculado a este grupo."
+                )
+            else:
+                await message.answer(
+                    "⚠️ Não consegui vincular essa licença a este grupo.\n"
+                    "Confirme que você está usando a conta que comprou o aluguel."
+                )
+        return
+
     await db.upsert_user(
         message.from_user.id,
         message.from_user.username,
         message.from_user.first_name,
     )
-    owner_id = await resolve_owner_id(message, bot, config)
     await send_menu(
         message,
         config.menu_banner,
         texts.WELCOME.format(shop_name=config.shop_name),
-        main_menu(owner_id is not None),
+        main_menu(False),
     )
 
 
@@ -53,12 +83,16 @@ async def cmd_menu(
     bot: Bot,
 ) -> None:
     await state.clear()
-    owner_id = await resolve_owner_id(message, bot, config)
+    if message.chat.type != "private":
+        await message.reply(
+            "ℹ️ O menu de compras funciona no privado do bot."
+        )
+        return
     await send_menu(
         message,
         config.menu_banner,
         texts.WELCOME.format(shop_name=config.shop_name),
-        main_menu(owner_id is not None),
+        main_menu(False),
     )
 
 
@@ -68,7 +102,7 @@ async def cb_home(query: CallbackQuery, state: FSMContext, config: Config) -> No
     await edit_screen(
         query,
         texts.WELCOME.format(shop_name=config.shop_name),
-        main_menu(_is_admin(query.from_user.id, config)),
+        main_menu(False),
     )
     await query.answer()
 
@@ -122,6 +156,46 @@ async def cb_my_id(query: CallbackQuery) -> None:
         back_home(),
     )
     await query.answer()
+
+
+@router.message(Command("ativarbot"))
+async def cmd_activate_rental(
+    message: Message,
+    db: Database,
+) -> None:
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
+        await message.reply(
+            "Use este comando dentro do grupo que vai receber o bot."
+        )
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply(
+            "Use: <code>/ativarbot ID_DA_LICENÇA</code>"
+        )
+        return
+    try:
+        rental_id = int(parts[1].strip().lstrip("#"))
+    except ValueError:
+        await message.reply("⚠️ ID de licença inválido.")
+        return
+
+    ok = await db.bind_bot_rental(
+        rental_id,
+        message.from_user.id,
+        message.chat.id,
+    )
+    if not ok:
+        await message.reply(
+            "⚠️ Essa licença não está disponível para sua conta ou já expirou."
+        )
+        return
+
+    await message.reply(
+        "✅ <b>ALUGUEL ATIVADO NESTE GRUPO</b>\n"
+        f"📄 Licença: <code>#{rental_id}</code>"
+    )
 
 
 @router.message(Command("id", "meuid"))
@@ -181,7 +255,7 @@ async def cb_cancel(query: CallbackQuery, state: FSMContext, config: Config) -> 
     await edit_screen(
         query,
         texts.WELCOME.format(shop_name=config.shop_name),
-        main_menu(_is_admin(query.from_user.id, config)),
+        main_menu(False),
     )
     await query.answer("Cancelado")
 
