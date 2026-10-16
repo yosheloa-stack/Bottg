@@ -245,10 +245,20 @@ async def _create_pix_order(
             payer_email=f"user{query.from_user.id}@bottg.com",
             payer_name=query.from_user.first_name or "Cliente",
         )
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         logger.exception("Erro ao gerar PIX para pedido %s", order_id)
-        await db.update_order_status(order_id, "failed")
-        await query.message.edit_text(texts.GENERIC_ERROR, reply_markup=back_home())
+        await db.update_order_status(order_id, "failed", str(exc))
+        error_text = (
+            "❌ <b>Não consegui gerar o PIX.</b>\n\n"
+            "O Mercado Pago recusou a criação da cobrança ou a integração "
+            "ainda não está pronta.\n\n"
+            f"📄 Pedido: <code>#{order_id}</code>\n"
+            "Tente novamente em alguns instantes. Se continuar, avise o suporte."
+        )
+        try:
+            await edit_screen(query, error_text, back_home())
+        except Exception:
+            await query.message.answer(error_text, reply_markup=back_home())
         return
 
     await db.set_order_payment(order_id, charge.payment_id)
@@ -622,12 +632,15 @@ async def _balance_amount_response(
             payer_email=f"user{message.from_user.id}@bottg.com",
             payer_name=message.from_user.first_name or "Cliente",
         )
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         logger.exception("Erro ao gerar PIX da recarga pedido=%s", order_id)
-        await db.update_order_status(order_id, "failed")
+        await db.update_order_status(order_id, "failed", str(exc))
         await status.edit_text(
-            "❌ <b>Não consegui gerar o PIX agora.</b>\n\n"
-            "Tente novamente em alguns instantes.",
+            "❌ <b>Não consegui gerar o PIX.</b>\n\n"
+            "O Mercado Pago recusou a criação da cobrança ou a integração "
+            "ainda não está pronta.\n\n"
+            f"📄 Pedido: <code>#{order_id}</code>\n"
+            "Tente novamente. Se continuar, avise o suporte.",
             reply_markup=back_home(),
         )
         return
