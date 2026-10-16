@@ -909,13 +909,23 @@ class Database:
 
     async def set_price(self, code: str, price: str) -> None:
         await self.db.execute(
-            "UPDATE product_settings SET price = ? WHERE code = ?", (price, code)
+            """
+            INSERT INTO product_settings (code, price, stock)
+            VALUES (?, ?, -1)
+            ON CONFLICT(code) DO UPDATE SET price = excluded.price
+            """,
+            (code, price),
         )
         await self.db.commit()
 
     async def set_stock(self, code: str, stock: int) -> None:
         await self.db.execute(
-            "UPDATE product_settings SET stock = ? WHERE code = ?", (stock, code)
+            """
+            INSERT INTO product_settings (code, price, stock)
+            VALUES (?, NULL, ?)
+            ON CONFLICT(code) DO UPDATE SET stock = excluded.stock
+            """,
+            (code, stock),
         )
         await self.db.commit()
 
