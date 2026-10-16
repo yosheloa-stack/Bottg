@@ -231,7 +231,6 @@ async def _create_pix_order(
     plan_days: int = 0,
 ) -> None:
     if not getattr(gateway, "configured", True):
-        await query.answer("Pagamento temporariamente indisponível.", show_alert=True)
         await edit_screen(
             query,
             "⚠️ <b>Mercado Pago ainda não está configurado.</b>\n\n"
@@ -240,7 +239,6 @@ async def _create_pix_order(
         )
         return
 
-    await query.answer("Gerando PIX...")
     try:
         await query.message.edit_text("⏳ Gerando pagamento PIX...")
     except Exception:
@@ -886,12 +884,13 @@ async def checkout_pix(
     config: Config,
     gateway: PaymentGateway,
 ) -> None:
+    await _ack(query, "Gerando PIX...")
     code, ref_value = _parse_checkout(query.data, "paypix:")
     details = await _checkout_details(
         db, config, query.from_user.id, code, ref_value
     )
     if not details:
-        await query.answer("Pedido inválido ou indisponível.", show_alert=True)
+        await query.message.answer("⚠️ Pedido inválido ou indisponível.")
         return
 
     amount, description, game_id, days = details
@@ -914,15 +913,17 @@ async def checkout_balance(
     config: Config,
     delivery: DeliveryService,
 ) -> None:
+    await _ack(query)
     code, ref_value = _parse_checkout(query.data, "paybal:")
     if code == "balance_topup":
-        return await query.answer("Use PIX para adicionar saldo.", show_alert=True)
+        await query.message.answer("⚠️ Use PIX para adicionar saldo.")
+        return
 
     details = await _checkout_details(
         db, config, query.from_user.id, code, ref_value
     )
     if not details:
-        await query.answer("Pedido inválido ou indisponível.", show_alert=True)
+        await query.message.answer("⚠️ Pedido inválido ou indisponível.")
         return
 
     amount, description, game_id, days = details
@@ -944,14 +945,13 @@ async def checkout_balance(
     )
     if not ok:
         await db.update_order_status(order_id, "failed")
-        await query.answer(
-            f"Saldo insuficiente. Você tem R$ {format_price(_from_cents(remaining))}.",
-            show_alert=True,
+        await query.message.answer(
+            f"⚠️ Saldo insuficiente. Você tem R$ {format_price(_from_cents(remaining))}."
         )
         return
 
     await db.update_order_status(order_id, "paid")
-    await query.answer("✅ Pago com saldo!", show_alert=True)
+    await query.message.answer("✅ Pago com saldo!")
     try:
         await query.message.edit_reply_markup(reply_markup=None)
     except Exception:
@@ -1044,27 +1044,25 @@ async def cb_check(
     gateway: PaymentGateway,
     delivery: DeliveryService,
 ) -> None:
+    await _ack(query, "Verificando pagamento...")
     payment_id = query.data.split(":", 1)[1]
     order = await db.get_order_by_payment(payment_id)
     if not order:
-        await query.answer("Pedido não encontrado.", show_alert=True)
+        await query.message.answer("⚠️ Pedido não encontrado.")
         return
 
     if order["status"] == "delivered":
-        await query.answer("✅ Este pedido já foi entregue!", show_alert=True)
+        await query.message.answer("✅ Este pedido já foi entregue!")
         return
 
     status = await gateway.get_status(payment_id)
     if status == PaymentStatus.APPROVED:
-        await query.answer("✅ Pagamento aprovado! Entregando...", show_alert=True)
         await delivery.fulfill_order(order["id"])
     elif status in (PaymentStatus.PENDING, PaymentStatus.UNKNOWN):
-        await query.answer(
-            "⏳ Pagamento ainda não identificado. Aguarde alguns segundos e tente de novo.",
-            show_alert=True,
+        await query.message.answer(
+            "⏳ Pagamento ainda não identificado. Aguarde alguns segundos e tente de novo."
         )
     else:
-        await query.answer(
-            f"❌ Pagamento {status.value}. Gere um novo pedido se necessário.",
-            show_alert=True,
+        await query.message.answer(
+            f"❌ Pagamento {status.value}. Gere um novo pedido se necessário."
         )
