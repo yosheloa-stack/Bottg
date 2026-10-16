@@ -337,7 +337,7 @@ async def owner_setting_reply_fallback(
     )
 
 
-@router.message(OwnerSetting.waiting_value)
+@router.message(OwnerSetting.waiting_value, F.text.regexp(r"^(?!/).+"))
 async def owner_setting_receive(
     message: Message,
     state: FSMContext,
@@ -713,7 +713,7 @@ async def admin_product_reply_fallback(
     await _save_stock(message, db, config, code, value)
 
 
-@router.message(AdminPrice.waiting_value)
+@router.message(AdminPrice.waiting_value, F.text.regexp(r"^(?!/).+"))
 async def price_receive(
     message: Message, state: FSMContext, config: Config, db: Database
 ) -> None:
@@ -777,7 +777,7 @@ async def cb_stock_start(
     )
 
 
-@router.message(AdminStock.waiting_value)
+@router.message(AdminStock.waiting_value, F.text.regexp(r"^(?!/).+"))
 async def stock_receive(
     message: Message, state: FSMContext, config: Config, db: Database
 ) -> None:
@@ -891,7 +891,7 @@ async def cb_broadcast_start(
     await query.answer()
 
 
-@router.message(AdminBroadcast.waiting_message)
+@router.message(AdminBroadcast.waiting_message, F.text.regexp(r"^(?!/).+"))
 async def broadcast_send(
     message: Message, state: FSMContext, config: Config, db: Database, bot: Bot
 ) -> None:
