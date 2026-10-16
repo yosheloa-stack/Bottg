@@ -1,7 +1,7 @@
 """Teclados inline (botões) do bot — estilo profissional."""
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.catalog import ResolvedProduct
@@ -111,16 +111,20 @@ def add_group_button(url: str) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def payment_pending(payment_id: str, ticket_url: str = "") -> InlineKeyboardMarkup:
+def payment_pending(payment_id: str, pix_code: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(
         InlineKeyboardButton(
-            text="🔄 Já paguei / verificar", callback_data=f"check:{payment_id}"
+            text="📋 Copiar código PIX",
+            copy_text=CopyTextButton(text=pix_code),
         )
     )
-    if ticket_url:
-        kb.row(InlineKeyboardButton(text="🌐 Abrir cobrança", url=ticket_url))
-    kb.row(InlineKeyboardButton(text="⬅️ Menu", callback_data="nav:v2:home"))
+    kb.row(
+        InlineKeyboardButton(
+            text="🔄 Já paguei / verificar",
+            callback_data=f"check:{payment_id}",
+        )
+    )
     return kb.as_markup()
 
 
