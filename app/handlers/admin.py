@@ -413,7 +413,19 @@ async def cmd_products_status(
     if not message.from_user or not _is_admin(message.from_user.id, config):
         return
     products = await resolve_products(config, db)
-    lines = ["🧪 <b>DIAGNÓSTICO DOS PRODUTOS</b>", "━━━━━━━━━━━━━━━━━━━━"]
+    saved = await db.all_owner_settings()
+    ffhub_ok = bool((saved.get("FFHUB_API_KEY") or config.ffhub_api_key or "").strip())
+    mp_ok = bool(
+        (saved.get("MERCADOPAGO_ACCESS_TOKEN") or config.mp_access_token or "").strip()
+    )
+    lines = [
+        "🧪 <b>DIAGNÓSTICO DOS PRODUTOS</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"🌐 Instância: <code>{config.webhook_public_url or 'sem URL pública'}</code>",
+        f"💎 FFHub: <b>{'✅ Configurada' if ffhub_ok else '❌ Não configurada'}</b>",
+        f"💳 Mercado Pago: <b>{'✅ Configurado' if mp_ok else '❌ Não configurado'}</b>",
+        "",
+    ]
     for code in ("like2_single", "like2_7d", "like2_15d", "like2_30d", "passe"):
         rp = products.get(code)
         if not rp:
