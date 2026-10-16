@@ -20,8 +20,9 @@ from aiogram.types import (
 
 logger = logging.getLogger(__name__)
 
-# Cache do file_id do banner (evita reupload a cada /start)
+# Cache do file_id do banner padrão (evita reupload a cada /start)
 _banner_file_id: str | None = None
+_banner_cache_source: str | None = None
 
 
 def _banner_input(path: str):
@@ -33,20 +34,54 @@ def _banner_input(path: str):
 async def send_menu(
     message: Message, banner: str, text: str, reply_markup: InlineKeyboardMarkup
 ) -> None:
-    """Envia o menu como animação (GIF) com legenda + botões. Faz fallback para texto."""
-    global _banner_file_id
+    """Envia foto/GIF/vídeo configurado pelo dono ou o banner padrão."""
+    global _banner_file_id, _banner_cache_source
+
+    # Mídia Telegram salva pelo /setmenu.
+    if banner.startswith("tg:"):
+        try:
+            _, media_type, file_id = banner.split(":", 2)
+            if media_type == "photo":
+                await message.answer_photo(
+                    photo=file_id,
+                    caption=text,
+                    reply_markup=reply_markup,
+                )
+            elif media_type == "video":
+                await message.answer_video(
+                    video=file_id,
+                    caption=text,
+                    reply_markup=reply_markup,
+                )
+            else:
+                await message.answer_animation(
+                    animation=file_id,
+                    caption=text,
+                    reply_markup=reply_markup,
+                )
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Falha ao usar mídia personalizada do menu (%s); usando padrão",
+                exc,
+            )
 
     is_url = banner.startswith("http")
+    if _banner_cache_source != banner:
+        _banner_file_id = None
+        _banner_cache_source = banner
+
     available = bool(_banner_file_id) or is_url or os.path.exists(banner)
     if not available:
-        # Sem banner disponível: envia só texto
         await message.answer(text, reply_markup=reply_markup)
         return
 
     try:
         source = _banner_file_id or _banner_input(banner)
         sent = await message.answer_animation(
-            animation=source, caption=text, reply_markup=reply_markup
+            animation=source,
+            caption=text,
+            reply_markup=reply_markup,
         )
         if sent.animation:
             _banner_file_id = sent.animation.file_id
