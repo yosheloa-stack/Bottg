@@ -7,6 +7,7 @@ não é entregue novamente.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 from aiogram import Bot
 
@@ -16,6 +17,7 @@ from app.database import Database
 from app.keyboards.inline import add_group_button, back_home
 from app.services.autolike import AutoLikeApi
 from app.services.passe import PasseApi
+from app.utils import format_price
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +98,8 @@ class DeliveryService:
 
         if product.delivery == "balance_topup":
             try:
-                amount_cents = int(
-                    (float(order["amount"]) * 100) + 0.5
-                )
+                amount = Decimal(str(order["amount"])).quantize(Decimal("0.01"))
+                amount_cents = int((amount * 100).to_integral_value())
                 new_balance = await self.db.credit_wallet(
                     int(order["user_id"]),
                     amount_cents,
@@ -110,8 +111,8 @@ class DeliveryService:
                     int(order["user_id"]),
                     "✅ <b>SALDO ADICIONADO</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
-                    f"💰 Crédito: <b>R$ {amount_cents / 100:.2f}</b>\n"
-                    f"👛 Saldo atual: <b>R$ {new_balance / 100:.2f}</b>",
+                    f"💰 Crédito: <b>R$ {format_price(amount)}</b>\n"
+                    f"👛 Saldo atual: <b>R$ {format_price(Decimal(new_balance) / Decimal(100))}</b>",
                     reply_markup=back_home(),
                 )
                 return True
@@ -160,9 +161,12 @@ class DeliveryService:
                     "🤖 <b>ALUGUEL CONFIRMADO!</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
                     f"📆 Período: <b>{days} dias</b>\n"
-                    "👥 Licença: <b>1 grupo</b>\n\n"
+                    "👥 Licença: <b>1 grupo</b>\n"
+                    f"📄 Código da licença: <code>#{rental_id}</code>\n\n"
                     "Agora toque no botão abaixo, escolha o seu grupo e adicione "
-                    "o Aurora System. A licença será vinculada ao grupo.",
+                    "o Aurora System. A licença será vinculada automaticamente.\n\n"
+                    "Se o Telegram não enviar a ativação sozinho, use no grupo:\n"
+                    f"<code>/ativarbot {rental_id}</code>",
                     reply_markup=add_group_button(add_url),
                 )
                 return True
