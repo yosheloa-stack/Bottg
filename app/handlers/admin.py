@@ -135,7 +135,7 @@ async def _save_price(
         await message.answer("⚠️ Preço salvo, mas o produto não foi localizado.")
         return
     service_line = (
-        "\n⚠️ Serviço: <b>FFHub não configurada nesta instância.</b>"
+        f"\n⚠️ Serviço: <b>{rp.service_issue or 'integração não configurada'}</b>"
         if not rp.service_ready
         else ""
     )
@@ -170,7 +170,7 @@ async def _save_stock(
         await message.answer("⚠️ Estoque salvo, mas o produto não foi localizado.")
         return
     service_line = (
-        "\n⚠️ Serviço: <b>FFHub não configurada nesta instância.</b>"
+        f"\n⚠️ Serviço: <b>{rp.service_issue or 'integração não configurada'}</b>"
         if not rp.service_ready
         else ""
     )
@@ -411,9 +411,9 @@ async def cb_product_edit(query: CallbackQuery, config: Config, db: Database) ->
     if not rp:
         return await query.answer("Produto não encontrado.", show_alert=True)
     service_line = (
-        "✅ Serviço FFHub: <b>Configurado</b>\n"
+        "✅ Serviço: <b>Configurado</b>\n"
         if rp.service_ready
-        else "⚠️ Serviço FFHub: <b>Não configurado nesta instância</b>\n"
+        else f"⚠️ Serviço: <b>{rp.service_issue or 'Não configurado'}</b>\n"
     )
     await edit_screen(
         query,
@@ -504,7 +504,17 @@ async def cmd_products_status(
         f"💳 Mercado Pago: <b>{'✅ Configurado' if mp_ok else '❌ Não configurado'}</b>",
         "",
     ]
-    for code in ("like2_single", "like2_7d", "like2_15d", "like2_30d", "passe"):
+    discount = await db.get_owner_setting("RESELLER_DISCOUNT_PERCENT") or "20"
+    lines.append(f"🤝 Desconto revenda: <b>{discount}%</b>")
+    lines.append("")
+    for code in (
+        "autolike220",
+        "autolike500",
+        "passe",
+        "reseller_access",
+        "bot_rental",
+        "like2_single",
+    ):
         rp = products.get(code)
         if not rp:
             continue
@@ -520,6 +530,101 @@ async def cmd_products_status(
             ]
         )
     await message.reply("\n".join(lines))
+
+
+@router.message(Command("descontorevenda"))
+async def cmd_reseller_discount(
+    message: Message,
+    config: Config,
+    db: Database,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply(
+            "Use: <code>/descontorevenda 20</code>\n"
+            "Aceito de 0 a 80%."
+        )
+        return
+    try:
+        value = Decimal(parts[1].replace(",", "."))
+    except (InvalidOperation, ValueError):
+        await message.reply("⚠️ Percentual inválido.")
+        return
+    if value < 0 or value > 80:
+        await message.reply("⚠️ Use um desconto entre 0 e 80%.")
+        return
+
+    value = value.quantize(Decimal("0.01"))
+    await db.set_owner_setting("RESELLER_DISCOUNT_PERCENT", str(value))
+    await message.reply(
+        "✅ <b>DESCONTO DE REVENDA ATUALIZADO</b>\n"
+        f"Novo desconto automático: <b>{value}%</b>"
+    )
+
+
+@router.message(Command("setkey"))
+async def cmd_setkey(
+    message: Message,
+    config: Config,
+    db: Database,
+    likes_api: LikesApi,
+    autosystem_likes_api: AutoSystemLikesApi,
+    ffhub_shop: FFHubShopApi,
+    passe: PasseApi,
+    gateway: MercadoPagoGateway,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.reply(
+            "Use no privado:\n"
+            "<code>/setkey ffhub SUA_CHAVE</code>\n"
+            "<code>/setkey autosystem SUA_CHAVE</code>\n"
+            "<code>/setkey mp ACCESS_TOKEN</code>\n"
+            "<code>/setkey passe SUA_CHAVE</code>"
+        )
+        return
+
+    alias = parts[1].strip().lower()
+    value = parts[2].strip()
+    mapping = {
+        "ffhub": "FFHUB_API_KEY",
+        "autosystem": "AUTOSYSTEM_API_KEY",
+        "mp": "MERCADOPAGO_ACCESS_TOKEN",
+        "mercadopago": "MERCADOPAGO_ACCESS_TOKEN",
+        "passe": "PASSE_API_KEY",
+        "likes": "LIKES_API_KEY",
+    }
+    key = mapping.get(alias)
+    if not key or not value:
+        await message.reply("⚠️ Tipo de chave inválido.")
+        return
+
+    await db.set_owner_setting(key, value)
+    if key == "FFHUB_API_KEY":
+        ffhub_shop._key = value
+    elif key == "AUTOSYSTEM_API_KEY":
+        autosystem_likes_api._key = value
+    elif key == "MERCADOPAGO_ACCESS_TOKEN":
+        gateway._token = value
+    elif key == "PASSE_API_KEY":
+        passe._key = value
+    elif key == "LIKES_API_KEY":
+        likes_api._key = value
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    await message.bot.send_message(
+        message.chat.id,
+        "✅ <b>Chave atualizada e aplicada.</b>\n"
+        "O valor enviado foi removido da conversa quando possível."
+    )
 
 
 # ---- Alterar preço ----
@@ -710,101 +815,6 @@ async def cb_unlimited(query: CallbackQuery, config: Config, db: Database) -> No
         admin_product_edit(code),
     )
     await query.answer("Estoque ilimitado ✓")
-
-
-@router.message(Command("descontorevenda"))
-async def cmd_reseller_discount(
-    message: Message,
-    config: Config,
-    db: Database,
-) -> None:
-    if not message.from_user or not _is_admin(message.from_user.id, config):
-        return
-    parts = (message.text or "").split(maxsplit=1)
-    if len(parts) < 2:
-        await message.reply(
-            "Use: <code>/descontorevenda 20</code>\n"
-            "Aceito de 0 a 80%."
-        )
-        return
-    try:
-        value = Decimal(parts[1].replace(",", "."))
-    except (InvalidOperation, ValueError):
-        await message.reply("⚠️ Percentual inválido.")
-        return
-    if value < 0 or value > 80:
-        await message.reply("⚠️ Use um desconto entre 0 e 80%.")
-        return
-
-    value = value.quantize(Decimal("0.01"))
-    await db.set_owner_setting("RESELLER_DISCOUNT_PERCENT", str(value))
-    await message.reply(
-        "✅ <b>DESCONTO DE REVENDA ATUALIZADO</b>\n"
-        f"Novo desconto automático: <b>{value}%</b>"
-    )
-
-
-@router.message(Command("setkey"))
-async def cmd_setkey(
-    message: Message,
-    config: Config,
-    db: Database,
-    likes_api: LikesApi,
-    autosystem_likes_api: AutoSystemLikesApi,
-    ffhub_shop: FFHubShopApi,
-    passe: PasseApi,
-    gateway: MercadoPagoGateway,
-) -> None:
-    if not message.from_user or not _is_admin(message.from_user.id, config):
-        return
-
-    parts = (message.text or "").split(maxsplit=2)
-    if len(parts) < 3:
-        await message.reply(
-            "Use no privado:\n"
-            "<code>/setkey ffhub SUA_CHAVE</code>\n"
-            "<code>/setkey autosystem SUA_CHAVE</code>\n"
-            "<code>/setkey mp ACCESS_TOKEN</code>\n"
-            "<code>/setkey passe SUA_CHAVE</code>"
-        )
-        return
-
-    alias = parts[1].strip().lower()
-    value = parts[2].strip()
-    mapping = {
-        "ffhub": "FFHUB_API_KEY",
-        "autosystem": "AUTOSYSTEM_API_KEY",
-        "mp": "MERCADOPAGO_ACCESS_TOKEN",
-        "mercadopago": "MERCADOPAGO_ACCESS_TOKEN",
-        "passe": "PASSE_API_KEY",
-        "likes": "LIKES_API_KEY",
-    }
-    key = mapping.get(alias)
-    if not key or not value:
-        await message.reply("⚠️ Tipo de chave inválido.")
-        return
-
-    await db.set_owner_setting(key, value)
-    if key == "FFHUB_API_KEY":
-        ffhub_shop._key = value
-    elif key == "AUTOSYSTEM_API_KEY":
-        autosystem_likes_api._key = value
-    elif key == "MERCADOPAGO_ACCESS_TOKEN":
-        gateway._token = value
-    elif key == "PASSE_API_KEY":
-        passe._key = value
-    elif key == "LIKES_API_KEY":
-        likes_api._key = value
-
-    try:
-        await message.delete()
-    except Exception:
-        pass
-    await message.bot.send_message(
-        message.chat.id,
-        "✅ <b>Chave atualizada e aplicada.</b>\n"
-        "O valor enviado foi removido da conversa quando possível."
-    )
 
 
 # ---------- Estatísticas ----------
