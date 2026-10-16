@@ -19,6 +19,18 @@ from app.utils import format_price
 router = Router(name="common")
 
 
+async def _customer_welcome(db: Database, config: Config, user_id: int) -> str:
+    balance_cents = await db.get_balance_cents(user_id)
+    reseller = await db.is_reseller(user_id)
+    balance = balance_cents / 100
+    return (
+        texts.WELCOME.format(shop_name=config.shop_name)
+        + "\n\n"
+        + f"👛 Saldo: <b>R$ {format_price(balance)}</b>\n"
+        + f"🤝 Revenda: <b>{'Ativa ✅' if reseller else 'Não ativa'}</b>"
+    )
+
+
 def _is_admin(user_id: int, config: Config) -> bool:
     return user_id in config.admin_ids
 
@@ -77,7 +89,7 @@ async def cmd_start(
     await send_menu(
         message,
         config.menu_banner,
-        texts.WELCOME.format(shop_name=config.shop_name),
+        await _customer_welcome(db, config, message.from_user.id),
         main_menu(False),
     )
 
@@ -88,6 +100,7 @@ async def cmd_menu(
     state: FSMContext,
     config: Config,
     bot: Bot,
+    db: Database,
 ) -> None:
     await state.clear()
     if message.chat.type != "private":
@@ -98,17 +111,22 @@ async def cmd_menu(
     await send_menu(
         message,
         config.menu_banner,
-        texts.WELCOME.format(shop_name=config.shop_name),
+        await _customer_welcome(db, config, message.from_user.id),
         main_menu(False),
     )
 
 
 @router.callback_query(F.data == "menu:home")
-async def cb_home(query: CallbackQuery, state: FSMContext, config: Config) -> None:
+async def cb_home(
+    query: CallbackQuery,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+) -> None:
     await state.clear()
     await edit_screen(
         query,
-        texts.WELCOME.format(shop_name=config.shop_name),
+        await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
     await query.answer()
@@ -119,7 +137,7 @@ async def cb_store(query: CallbackQuery, config: Config, db: Database) -> None:
     # Compatibilidade com mensagens antigas: volta para o menu novo.
     await edit_screen(
         query,
-        texts.WELCOME.format(shop_name=config.shop_name),
+        await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
     await query.answer()
@@ -259,11 +277,16 @@ async def cb_orders(query: CallbackQuery, db: Database, config: Config) -> None:
 
 
 @router.callback_query(F.data == "cancel")
-async def cb_cancel(query: CallbackQuery, state: FSMContext, config: Config) -> None:
+async def cb_cancel(
+    query: CallbackQuery,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+) -> None:
     await state.clear()
     await edit_screen(
         query,
-        texts.WELCOME.format(shop_name=config.shop_name),
+        await _customer_welcome(db, config, query.from_user.id),
         main_menu(False),
     )
     await query.answer("Cancelado")
