@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS orders (
     plan_days     INTEGER NOT NULL DEFAULT 0,
     metadata      TEXT NOT NULL DEFAULT '{}',
     paid_with     TEXT NOT NULL DEFAULT 'pix',
+    payment_chat_id INTEGER,
+    payment_message_id INTEGER,
     created_at    INTEGER NOT NULL,
     updated_at    INTEGER NOT NULL
 );
@@ -211,6 +213,14 @@ class Database:
         if "paid_with" not in order_columns:
             await self._db.execute(
                 "ALTER TABLE orders ADD COLUMN paid_with TEXT NOT NULL DEFAULT 'pix'"
+            )
+        if "payment_chat_id" not in order_columns:
+            await self._db.execute(
+                "ALTER TABLE orders ADD COLUMN payment_chat_id INTEGER"
+            )
+        if "payment_message_id" not in order_columns:
+            await self._db.execute(
+                "ALTER TABLE orders ADD COLUMN payment_message_id INTEGER"
             )
 
         await self._db.commit()
@@ -556,6 +566,35 @@ class Database:
         await self.db.execute(
             "UPDATE orders SET payment_id = ?, updated_at = ? WHERE id = ?",
             (payment_id, int(time.time()), order_id),
+        )
+        await self.db.commit()
+
+    async def set_order_payment_message(
+        self,
+        order_id: int,
+        chat_id: int,
+        message_id: int,
+    ) -> None:
+        await self.db.execute(
+            """
+            UPDATE orders
+            SET payment_chat_id = ?, payment_message_id = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (int(chat_id), int(message_id), int(time.time()), int(order_id)),
+        )
+        await self.db.commit()
+
+    async def clear_order_payment_message(self, order_id: int) -> None:
+        await self.db.execute(
+            """
+            UPDATE orders
+            SET payment_chat_id = NULL,
+                payment_message_id = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (int(time.time()), int(order_id)),
         )
         await self.db.commit()
 
