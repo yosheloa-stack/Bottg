@@ -1,7 +1,7 @@
-"""Servidor HTTP que recebe notificações de pagamento do Mercado Pago.
+"""Servidor HTTP para notificações do gateway de pagamento.
 
-Roda no mesmo event loop do bot (aiohttp). Ao receber uma notificação de
-pagamento aprovado, dispara a entrega automática do pedido correspondente.
+Ao receber uma notificação válida, confirma o status diretamente no gateway
+antes de disparar a entrega automática do pedido.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def build_webhook_app(
     async def health(_: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
 
-    async def mp_webhook(request: web.Request) -> web.Response:
+    async def payment_webhook(request: web.Request) -> web.Response:
         query = dict(request.query)
         try:
             body = await request.json()
@@ -40,7 +40,7 @@ def build_webhook_app(
             # Notificação irrelevante (ex: merchant_order) — responde 200 mesmo assim
             return web.json_response({"received": True})
 
-        logger.info("Webhook MP recebido para pagamento %s", payment_id)
+        logger.info("Webhook de pagamento recebido para %s", payment_id)
 
         order = await db.get_order_by_payment(payment_id)
         if not order:
@@ -61,9 +61,8 @@ def build_webhook_app(
         return web.json_response({"received": True})
 
     app.router.add_get("/health", health)
-    app.router.add_post(config.mp_webhook_path, mp_webhook)
-    # Aceita GET também (o MP às vezes valida a URL com GET)
-    app.router.add_get(config.mp_webhook_path, mp_webhook)
+    app.router.add_post(config.payment_webhook_path, payment_webhook)
+    app.router.add_get(config.payment_webhook_path, payment_webhook)
     return app
 
 
@@ -76,6 +75,6 @@ async def start_webhook_server(app: web.Application, config: Config) -> web.AppR
         "Webhook server ouvindo em %s:%s%s",
         config.webhook_host,
         config.webhook_port,
-        config.mp_webhook_path,
+        config.payment_webhook_path,
     )
     return runner
