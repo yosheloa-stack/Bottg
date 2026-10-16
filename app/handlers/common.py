@@ -1,6 +1,9 @@
 """Handlers comuns: /start, menu, navegação, cancelar, suporte, pedidos."""
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -48,11 +51,17 @@ async def cmd_start(
                 message.chat.id,
             ):
                 rental = await db.get_bot_rental(rental_id)
+                expires_text = "—"
+                if rental:
+                    expires_text = datetime.fromtimestamp(
+                        int(rental["expires_at"]),
+                        ZoneInfo("America/Sao_Paulo"),
+                    ).strftime("%d/%m/%Y às %H:%M")
                 await message.answer(
                     "🤖 <b>AURORA SYSTEM ATIVADO NESTE GRUPO</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
                     f"📄 Licença: <code>#{rental_id}</code>\n"
-                    f"📆 Válida até: <code>{rental['expires_at'] if rental else '—'}</code>\n\n"
+                    f"📆 Válida até: <b>{expires_text}</b>\n\n"
                     "✅ O aluguel foi vinculado a este grupo."
                 )
             else:
