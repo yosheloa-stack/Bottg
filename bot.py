@@ -76,6 +76,10 @@ async def watch_ffhub_autolikes(
 ) -> None:
     """Executa os envios diários das assinaturas Auto-Like Premium."""
     while True:
+        if not ffhub_shop.configured:
+            await asyncio.sleep(10)
+            continue
+
         try:
             due = await db.due_ffhub_autolikes(limit=50)
             for sub in due:
@@ -93,11 +97,22 @@ async def watch_ffhub_autolikes(
                         result.status,
                         result.error,
                     )
-                    await db.retry_ffhub_autolike_later(
-                        sub_id,
-                        result_text=str(result.data or result.error or ""),
-                        delay_seconds=900,
-                    )
+                    if result.status == 0:
+                        # Timeout/erro de rede é ambíguo: a FFHub pode ter
+                        # processado antes de a conexão cair. A reserva já deixou
+                        # o próximo envio para o dia seguinte, então não repetimos
+                        # agora e evitamos mandar 500–1000 likes duas vezes.
+                        logger.warning(
+                            "FFHub Auto-Like com resultado ambíguo; "
+                            "não será repetido no mesmo dia | sub=%s",
+                            sub_id,
+                        )
+                    else:
+                        await db.retry_ffhub_autolike_later(
+                            sub_id,
+                            result_text=str(result.data or result.error or ""),
+                            delay_seconds=900,
+                        )
                     continue
 
                 data = result.data if isinstance(result.data, dict) else {}
@@ -309,17 +324,17 @@ async def main() -> None:
 
     register_handlers(dp)
 
-    # Agendador do Auto-Like Premium FFHub.
-    autolike_task = None
+    # Agendador do Auto Like 500 fica ativo mesmo antes da chave
+    # ser configurada, para aceitar /setkey ffhub sem precisar reiniciar.
+    autolike_task = asyncio.create_task(
+        watch_ffhub_autolikes(bot, db, ffhub_shop),
+        name="ffhub-autolike-watcher",
+    )
     if ffhub_shop.configured:
-        autolike_task = asyncio.create_task(
-            watch_ffhub_autolikes(bot, db, ffhub_shop),
-            name="ffhub-autolike-watcher",
-        )
-        logger.info("Agendador Auto-Like Premium FFHub iniciado.")
+        logger.info("Agendador Auto Like 500 FFHub iniciado.")
     else:
         logger.warning(
-            "FFHub Shop ainda não configurada — preencha FFHUB_API_KEY."
+            "FFHub ainda não configurada — o agendador está aguardando a chave."
         )
 
     # Confirmação automática: o watcher fica ativo mesmo antes do token
