@@ -428,15 +428,23 @@ async def main() -> None:
             )
 
             allowed_updates = dp.resolve_used_update_types()
+
+            # Limpa qualquer webhook/update preso de deploy antigo antes de
+            # registrar a rota V2. Isso evita callbacks e /start antigos
+            # reaparecendo depois do redeploy.
+            await bot.delete_webhook(drop_pending_updates=True)
             await bot.set_webhook(
                 url=telegram_webhook_url,
                 secret_token=telegram_webhook_secret,
                 allowed_updates=allowed_updates,
-                drop_pending_updates=False,
+                drop_pending_updates=True,
             )
+
+            webhook_info = await bot.get_webhook_info()
             logger.info(
-                "Telegram em WEBHOOK exclusivo: %s",
-                telegram_webhook_url,
+                "Telegram em WEBHOOK exclusivo: %s | pending=%s",
+                webhook_info.url or telegram_webhook_url,
+                webhook_info.pending_update_count,
             )
 
             telegram_webhook_task = asyncio.create_task(
