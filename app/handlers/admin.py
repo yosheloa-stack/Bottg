@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, F, Router
@@ -54,6 +55,124 @@ def _is_admin(user_id: int, config: Config) -> bool:
 
 async def _deny(query: CallbackQuery) -> None:
     await query.answer("Sem permissão.", show_alert=True)
+
+
+PRODUCT_ALIASES = {
+    "7": "like2_7d",
+    "7d": "like2_7d",
+    "15": "like2_15d",
+    "15d": "like2_15d",
+    "30": "like2_30d",
+    "30d": "like2_30d",
+    "unico": "like2_single",
+    "único": "like2_single",
+    "single": "like2_single",
+    "like2": "like2_single",
+    "passe": "passe",
+}
+
+
+def _parse_price(raw: str) -> Decimal | None:
+    normalized = (
+        (raw or "")
+        .strip()
+        .upper()
+        .replace("R$", "")
+        .replace(" ", "")
+        .replace(",", ".")
+    )
+    try:
+        value = Decimal(normalized)
+        if value <= 0:
+            return None
+        return value.quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _parse_stock(raw: str) -> int | None:
+    try:
+        value = int((raw or "").strip().replace(" ", ""))
+    except ValueError:
+        return None
+    if value < -1:
+        return None
+    return value
+
+
+def _resolve_product_code(raw: str) -> str:
+    key = (raw or "").strip().lower()
+    return PRODUCT_ALIASES.get(key, key)
+
+
+async def _save_price(
+    message: Message,
+    db: Database,
+    config: Config,
+    code: str,
+    value: Decimal,
+) -> None:
+    await db.set_price(code, f"{value:.2f}")
+    rp = await resolve_product(config, db, code)
+    logger.info(
+        "ADMIN preço salvo | user=%s produto=%s valor=%s",
+        message.from_user.id if message.from_user else None,
+        code,
+        value,
+    )
+    if not rp:
+        await message.answer("⚠️ Preço salvo, mas o produto não foi localizado.")
+        return
+    service_line = (
+        "\n⚠️ Serviço: <b>FFHub não configurada nesta instância.</b>"
+        if not rp.service_ready
+        else ""
+    )
+    await message.answer(
+        "✅ <b>PREÇO SALVO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 Produto: <b>{rp.title}</b>\n"
+        f"💰 Novo preço: <b>R$ {format_price(rp.price)}</b>\n"
+        f"📦 Estoque real: <b>{rp.stock_label}</b>"
+        f"{service_line}\n\n"
+        "A alteração já está salva no banco desta aplicação.",
+        reply_markup=admin_product_edit(code),
+    )
+
+
+async def _save_stock(
+    message: Message,
+    db: Database,
+    config: Config,
+    code: str,
+    value: int,
+) -> None:
+    await db.set_stock(code, value)
+    rp = await resolve_product(config, db, code)
+    logger.info(
+        "ADMIN estoque salvo | user=%s produto=%s estoque=%s",
+        message.from_user.id if message.from_user else None,
+        code,
+        value,
+    )
+    if not rp:
+        await message.answer("⚠️ Estoque salvo, mas o produto não foi localizado.")
+        return
+    service_line = (
+        "\n⚠️ Serviço: <b>FFHub não configurada nesta instância.</b>"
+        if not rp.service_ready
+        else ""
+    )
+    await message.answer(
+        "✅ <b>ESTOQUE SALVO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 Produto: <b>{rp.title}</b>\n"
+        f"🔢 Novo estoque: <b>{rp.stock_label}</b>\n"
+        f"💰 Preço atual: <b>R$ {format_price(rp.price)}</b>"
+        f"{service_line}\n\n"
+        "A alteração já está salva no banco desta aplicação.",
+        reply_markup=admin_product_edit(code),
+    )
 
 
 # ---------- Entrada ----------
@@ -213,12 +332,18 @@ async def cb_product_edit(query: CallbackQuery, config: Config, db: Database) ->
     rp = await resolve_product(config, db, code)
     if not rp:
         return await query.answer("Produto não encontrado.", show_alert=True)
+    service_line = (
+        "✅ Serviço FFHub: <b>Configurado</b>\n"
+        if rp.service_ready
+        else "⚠️ Serviço FFHub: <b>Não configurado nesta instância</b>\n"
+    )
     await edit_screen(
         query,
         f"🛠️ <b>{rp.title}</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 Preço atual: <b>R$ {format_price(rp.price)}</b>\n"
-        f"📦 Estoque atual: <b>{rp.stock_label}</b>\n\n"
+        f"📦 Estoque real: <b>{rp.stock_label}</b>\n"
+        f"{service_line}\n"
         "O que deseja alterar?",
         admin_product_edit(code),
     )
@@ -252,12 +377,58 @@ async def cb_price_start(
         "Responda esta mensagem com o novo preço.\n"
         "Aceito: <code>25</code>, <code>25,00</code>, "
         "<code>25.00</code> ou <code>R$ 25,00</code>.\n\n"
-        "Use /cancel para cancelar.",
+        f"\n🔧 REF: PRECO:{code}",
         reply_markup=ForceReply(
             selective=True,
             input_field_placeholder="Ex.: 25,00",
         ),
     )
+
+
+@router.message(F.reply_to_message.text.regexp(r"REF:\\s*(PRECO|ESTOQUE):[A-Za-z0-9_-]+"))
+async def admin_product_reply_fallback(
+    message: Message,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+) -> None:
+    """Processa edição pelo próprio reply, sem depender do FSM em memória."""
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+
+    replied_text = message.reply_to_message.text or ""
+    match = re.search(
+        r"REF:\s*(PRECO|ESTOQUE):([A-Za-z0-9_-]+)",
+        replied_text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return
+
+    action = match.group(1).upper()
+    code = match.group(2)
+    await state.clear()
+
+    if action == "PRECO":
+        value = _parse_price(message.text or "")
+        if value is None:
+            await message.answer(
+                "⚠️ <b>Preço inválido.</b>\n"
+                "Use algo como <code>25</code>, <code>25,00</code> "
+                "ou <code>25.00</code>."
+            )
+            return
+        await _save_price(message, db, config, code, value)
+        return
+
+    value = _parse_stock(message.text or "")
+    if value is None:
+        await message.answer(
+            "⚠️ <b>Estoque inválido.</b>\n"
+            "Use um inteiro como <code>50</code> ou <code>-1</code>."
+        )
+        return
+    await _save_stock(message, db, config, code, value)
 
 
 @router.message(AdminPrice.waiting_value)
@@ -267,20 +438,8 @@ async def price_receive(
     if not message.from_user or not _is_admin(message.from_user.id, config):
         return
 
-    raw = (message.text or "").strip()
-    normalized = (
-        raw.upper()
-        .replace("R$", "")
-        .replace(" ", "")
-        .replace(",", ".")
-        .strip()
-    )
-    try:
-        value = Decimal(normalized)
-        if value <= 0:
-            raise InvalidOperation
-        value = value.quantize(Decimal("0.01"))
-    except (InvalidOperation, ValueError):
+    value = _parse_price(message.text or "")
+    if value is None:
         await message.answer(
             "⚠️ <b>Preço inválido.</b>\n"
             "Envie, por exemplo: <code>25</code>, <code>25,00</code> "
@@ -293,27 +452,12 @@ async def price_receive(
     if not code:
         await state.clear()
         await message.answer(
-            "⚠️ A edição de preço expirou. Abra o produto novamente no painel."
+            "⚠️ A edição de preço expirou. Toque novamente em Alterar preço."
         )
         return
 
-    await db.set_price(code, f"{value:.2f}")
     await state.clear()
-
-    rp = await resolve_product(config, db, code)
-    if not rp:
-        await message.answer("⚠️ Preço salvo, mas o produto não foi localizado.")
-        return
-
-    await message.answer(
-        "✅ <b>PREÇO SALVO</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 Produto: <b>{rp.title}</b>\n"
-        f"💰 Novo preço: <b>R$ {format_price(rp.price)}</b>\n"
-        f"📦 Estoque: <b>{rp.stock_label}</b>\n\n"
-        "A alteração já está valendo na loja.",
-        reply_markup=admin_product_edit(code),
-    )
+    await _save_price(message, db, config, code, value)
 
 
 # ---- Alterar estoque ----
@@ -342,7 +486,8 @@ async def cb_stock_start(
         f"🔢 Estoque atual: <b>{rp.stock_label}</b>\n\n"
         "Responda esta mensagem com uma quantidade inteira.\n"
         "Use <code>-1</code> para estoque ilimitado.\n\n"
-        "Use /cancel para cancelar.",
+        "Use /cancel para cancelar."
+        f"\n🔧 REF: ESTOQUE:{code}",
         reply_markup=ForceReply(
             selective=True,
             input_field_placeholder="Ex.: 50 ou -1",
@@ -357,21 +502,12 @@ async def stock_receive(
     if not message.from_user or not _is_admin(message.from_user.id, config):
         return
 
-    raw = (message.text or "").strip().replace(" ", "")
-    try:
-        value = int(raw)
-    except ValueError:
+    value = _parse_stock(message.text or "")
+    if value is None:
         await message.answer(
             "⚠️ <b>Estoque inválido.</b>\n"
             "Envie somente um número inteiro, como <code>50</code>, "
             "ou <code>-1</code> para ilimitado."
-        )
-        return
-
-    if value < -1:
-        await message.answer(
-            "⚠️ Use <code>-1</code> para ilimitado ou um número a partir de "
-            "<code>0</code>."
         )
         return
 
@@ -380,27 +516,12 @@ async def stock_receive(
     if not code:
         await state.clear()
         await message.answer(
-            "⚠️ A edição de estoque expirou. Abra o produto novamente no painel."
+            "⚠️ A edição de estoque expirou. Toque novamente em Alterar estoque."
         )
         return
 
-    await db.set_stock(code, value)
     await state.clear()
-
-    rp = await resolve_product(config, db, code)
-    if not rp:
-        await message.answer("⚠️ Estoque salvo, mas o produto não foi localizado.")
-        return
-
-    await message.answer(
-        "✅ <b>ESTOQUE SALVO</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 Produto: <b>{rp.title}</b>\n"
-        f"🔢 Novo estoque: <b>{rp.stock_label}</b>\n"
-        f"💰 Preço atual: <b>R$ {format_price(rp.price)}</b>\n\n"
-        "A alteração já está valendo na loja.",
-        reply_markup=admin_product_edit(code),
-    )
+    await _save_stock(message, db, config, code, value)
 
 
 @router.callback_query(F.data.startswith("admunlim:"))
@@ -417,6 +538,88 @@ async def cb_unlimited(query: CallbackQuery, config: Config, db: Database) -> No
         admin_product_edit(code),
     )
     await query.answer("Estoque ilimitado ✓")
+
+
+# ---------- Atalhos diretos de dono (sem FSM) ----------
+@router.message(Command("preco"))
+async def cmd_set_price_direct(
+    message: Message,
+    config: Config,
+    db: Database,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.reply(
+            "Use: <code>/preco 7 25,00</code>\n"
+            "Planos aceitos: <code>7</code>, <code>15</code>, "
+            "<code>30</code>, <code>unico</code> ou <code>passe</code>."
+        )
+        return
+    code = _resolve_product_code(parts[1])
+    if code not in config.products:
+        await message.reply("⚠️ Produto inválido.")
+        return
+    value = _parse_price(parts[2])
+    if value is None:
+        await message.reply("⚠️ Preço inválido.")
+        return
+    await _save_price(message, db, config, code, value)
+
+
+@router.message(Command("estoque"))
+async def cmd_set_stock_direct(
+    message: Message,
+    config: Config,
+    db: Database,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3:
+        await message.reply(
+            "Use: <code>/estoque 7 -1</code>\n"
+            "Use <code>-1</code> para ilimitado."
+        )
+        return
+    code = _resolve_product_code(parts[1])
+    if code not in config.products:
+        await message.reply("⚠️ Produto inválido.")
+        return
+    value = _parse_stock(parts[2])
+    if value is None:
+        await message.reply("⚠️ Estoque inválido.")
+        return
+    await _save_stock(message, db, config, code, value)
+
+
+@router.message(Command("produtos"))
+async def cmd_products_status(
+    message: Message,
+    config: Config,
+    db: Database,
+) -> None:
+    if not message.from_user or not _is_admin(message.from_user.id, config):
+        return
+    products = await resolve_products(config, db)
+    lines = ["🧪 <b>DIAGNÓSTICO DOS PRODUTOS</b>", "━━━━━━━━━━━━━━━━━━━━"]
+    for code in ("like2_single", "like2_7d", "like2_15d", "like2_30d", "passe"):
+        rp = products.get(code)
+        if not rp:
+            continue
+        lines.extend(
+            [
+                f"📦 <b>{rp.title}</b>",
+                f"• Código: <code>{code}</code>",
+                f"• Preço: <b>R$ {format_price(rp.price)}</b>",
+                f"• Estoque real: <b>{rp.stock_label}</b>",
+                f"• Serviço: <b>{'OK' if rp.service_ready else rp.service_issue}</b>",
+                f"• Venda: <b>{'LIBERADA' if rp.available else 'BLOQUEADA'}</b>",
+                "",
+            ]
+        )
+    await message.reply("\n".join(lines))
 
 
 # ---------- Estatísticas ----------
