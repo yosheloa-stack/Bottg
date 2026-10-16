@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, ForceReply, Message
 
 from app.catalog import resolve_product, resolve_products
 from app.config import Config
@@ -227,89 +227,178 @@ async def cb_product_edit(query: CallbackQuery, config: Config, db: Database) ->
 
 # ---- Alterar preço ----
 @router.callback_query(F.data.startswith("admprice:"))
-async def cb_price_start(query: CallbackQuery, state: FSMContext, config: Config) -> None:
+async def cb_price_start(
+    query: CallbackQuery,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+) -> None:
     if not _is_admin(query.from_user.id, config):
         return await _deny(query)
+
     code = query.data.split(":", 1)[1]
+    rp = await resolve_product(config, db, code)
+    if not rp:
+        return await query.answer("Produto não encontrado.", show_alert=True)
+
     await state.set_state(AdminPrice.waiting_value)
     await state.update_data(code=code)
-    await edit_screen(
-        query,
-        "💰 <b>Novo preço</b>\n\n"
-        "Envie o novo valor em reais (ex.: <code>24.90</code>).\n"
-        "Use /cancel para abortar.",
-        back_home(),
-    )
     await query.answer()
+    await query.message.answer(
+        "💰 <b>ALTERAR PREÇO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 Produto: <b>{rp.title}</b>\n"
+        f"💵 Preço atual: <b>R$ {format_price(rp.price)}</b>\n\n"
+        "Responda esta mensagem com o novo preço.\n"
+        "Aceito: <code>25</code>, <code>25,00</code>, "
+        "<code>25.00</code> ou <code>R$ 25,00</code>.\n\n"
+        "Use /cancel para cancelar.",
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder="Ex.: 25,00",
+        ),
+    )
 
 
 @router.message(AdminPrice.waiting_value)
 async def price_receive(
     message: Message, state: FSMContext, config: Config, db: Database
 ) -> None:
-    if not _is_admin(message.from_user.id, config):
+    if not message.from_user or not _is_admin(message.from_user.id, config):
         return
-    raw = (message.text or "").strip().replace(",", ".").replace("R$", "").strip()
+
+    raw = (message.text or "").strip()
+    normalized = (
+        raw.upper()
+        .replace("R$", "")
+        .replace(" ", "")
+        .replace(",", ".")
+        .strip()
+    )
     try:
-        value = Decimal(raw)
+        value = Decimal(normalized)
         if value <= 0:
             raise InvalidOperation
+        value = value.quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
-        await message.answer("⚠️ Valor inválido. Envie algo como <code>24.90</code>.")
+        await message.answer(
+            "⚠️ <b>Preço inválido.</b>\n"
+            "Envie, por exemplo: <code>25</code>, <code>25,00</code> "
+            "ou <code>25.00</code>."
+        )
         return
+
     data = await state.get_data()
-    code = data.get("code", "")
+    code = str(data.get("code") or "")
+    if not code:
+        await state.clear()
+        await message.answer(
+            "⚠️ A edição de preço expirou. Abra o produto novamente no painel."
+        )
+        return
+
     await db.set_price(code, f"{value:.2f}")
     await state.clear()
+
     rp = await resolve_product(config, db, code)
+    if not rp:
+        await message.answer("⚠️ Preço salvo, mas o produto não foi localizado.")
+        return
+
     await message.answer(
-        f"✅ Preço de <b>{rp.title if rp else code}</b> atualizado para "
-        f"<b>R$ {format_price(value)}</b>.",
+        "✅ <b>PREÇO SALVO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 Produto: <b>{rp.title}</b>\n"
+        f"💰 Novo preço: <b>R$ {format_price(rp.price)}</b>\n"
+        f"📦 Estoque: <b>{rp.stock_label}</b>\n\n"
+        "A alteração já está valendo na loja.",
         reply_markup=admin_product_edit(code),
     )
 
 
 # ---- Alterar estoque ----
 @router.callback_query(F.data.startswith("admstock:"))
-async def cb_stock_start(query: CallbackQuery, state: FSMContext, config: Config) -> None:
+async def cb_stock_start(
+    query: CallbackQuery,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+) -> None:
     if not _is_admin(query.from_user.id, config):
         return await _deny(query)
+
     code = query.data.split(":", 1)[1]
+    rp = await resolve_product(config, db, code)
+    if not rp:
+        return await query.answer("Produto não encontrado.", show_alert=True)
+
     await state.set_state(AdminStock.waiting_value)
     await state.update_data(code=code)
-    await edit_screen(
-        query,
-        "📦 <b>Novo estoque</b>\n\n"
-        "Envie a quantidade em número inteiro (ex.: <code>50</code>).\n"
-        "Use <code>-1</code> para estoque ilimitado.\n"
-        "Use /cancel para abortar.",
-        back_home(),
-    )
     await query.answer()
+    await query.message.answer(
+        "📦 <b>ALTERAR ESTOQUE</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 Produto: <b>{rp.title}</b>\n"
+        f"🔢 Estoque atual: <b>{rp.stock_label}</b>\n\n"
+        "Responda esta mensagem com uma quantidade inteira.\n"
+        "Use <code>-1</code> para estoque ilimitado.\n\n"
+        "Use /cancel para cancelar.",
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder="Ex.: 50 ou -1",
+        ),
+    )
 
 
 @router.message(AdminStock.waiting_value)
 async def stock_receive(
     message: Message, state: FSMContext, config: Config, db: Database
 ) -> None:
-    if not _is_admin(message.from_user.id, config):
+    if not message.from_user or not _is_admin(message.from_user.id, config):
         return
-    raw = (message.text or "").strip()
+
+    raw = (message.text or "").strip().replace(" ", "")
     try:
         value = int(raw)
     except ValueError:
-        await message.answer("⚠️ Valor inválido. Envie um número inteiro (ex.: <code>50</code>).")
+        await message.answer(
+            "⚠️ <b>Estoque inválido.</b>\n"
+            "Envie somente um número inteiro, como <code>50</code>, "
+            "ou <code>-1</code> para ilimitado."
+        )
         return
+
     if value < -1:
-        value = -1
+        await message.answer(
+            "⚠️ Use <code>-1</code> para ilimitado ou um número a partir de "
+            "<code>0</code>."
+        )
+        return
+
     data = await state.get_data()
-    code = data.get("code", "")
+    code = str(data.get("code") or "")
+    if not code:
+        await state.clear()
+        await message.answer(
+            "⚠️ A edição de estoque expirou. Abra o produto novamente no painel."
+        )
+        return
+
     await db.set_stock(code, value)
     await state.clear()
+
     rp = await resolve_product(config, db, code)
+    if not rp:
+        await message.answer("⚠️ Estoque salvo, mas o produto não foi localizado.")
+        return
+
     await message.answer(
-        f"✅ Estoque de <b>{rp.title if rp else code}</b> atualizado para "
-        f"<b>{'Ilimitado' if value < 0 else value}</b>.",
+        "✅ <b>ESTOQUE SALVO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 Produto: <b>{rp.title}</b>\n"
+        f"🔢 Novo estoque: <b>{rp.stock_label}</b>\n"
+        f"💰 Preço atual: <b>R$ {format_price(rp.price)}</b>\n\n"
+        "A alteração já está valendo na loja.",
         reply_markup=admin_product_edit(code),
     )
 
