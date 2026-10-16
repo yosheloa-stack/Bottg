@@ -256,7 +256,19 @@ async def _create_pix_order(
         except Exception:  # noqa: BLE001
             logger.warning("Falha ao decodificar QR base64; enviando somente texto")
 
-    await query.message.edit_text(caption, reply_markup=kb)
+    # Fallback quando o Mercado Pago não devolver imagem base64.
+    # O menu principal normalmente é uma animação, então não dá para usar
+    # edit_text diretamente nela.
+    msg = query.message
+    if getattr(msg, "animation", None) or getattr(msg, "photo", None) \
+            or getattr(msg, "document", None) or getattr(msg, "video", None):
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+        await msg.answer(caption, reply_markup=kb)
+    else:
+        await msg.edit_text(caption, reply_markup=kb)
 
 
 # ---------- Novo menu cliente ----------
