@@ -959,33 +959,6 @@ async def checkout_balance(
     await delivery.fulfill_order(order_id)
 
 
-# ---------- Compatibilidade: botões antigos nunca abrem a loja velha ----------
-@router.callback_query(F.data.startswith("buy:"))
-async def legacy_buy_redirect(
-    query: CallbackQuery,
-    state: FSMContext,
-    config: Config,
-    db: Database,
-) -> None:
-    await state.clear()
-    code = query.data.split(":", 1)[1]
-
-    if code in {"like2_single", "like2_7d", "like2_15d", "like2_30d"}:
-        await _show_autolike_category(query, db, config, "autolike500")
-        return
-
-    if code == "passe":
-        await shop_passe(query, state, db, config)
-        return
-
-    await edit_screen(
-        query,
-        texts.WELCOME.format(shop_name=config.shop_name),
-        main_menu(False),
-    )
-    await query.answer("Esse botão era do menu antigo. Abrindo o menu novo.")
-
-
 # ---- 2. Usuário informa o ID do jogo ----
 @router.message(PurchaseFlow.waiting_id, F.text.regexp(r"^(?!/).+"))
 async def purchase_receive_id(
@@ -1060,34 +1033,6 @@ async def purchase_receive_id(
             ref_value=game_id,
             allow_balance=True,
         ),
-    )
-
-
-# ---------- Compatibilidade: confirmação do menu antigo ----------
-@router.callback_query(F.data.startswith("confirm:"))
-async def legacy_confirm_redirect(
-    query: CallbackQuery,
-    state: FSMContext,
-    config: Config,
-) -> None:
-    await state.clear()
-    await edit_screen(
-        query,
-        texts.WELCOME.format(shop_name=config.shop_name),
-        main_menu(False),
-    )
-    await query.answer("A compra antiga foi removida. Use o menu novo.")
-
-
-@router.callback_query(F.data.startswith("shop:"))
-async def unknown_shop_button(
-    query: CallbackQuery,
-    config: Config,
-) -> None:
-    await _ack(query)
-    await query.message.answer(
-        "ℹ️ Esse botão não está mais disponível. Abra o menu atualizado:",
-        reply_markup=main_menu(False),
     )
 
 
