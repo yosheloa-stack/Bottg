@@ -37,6 +37,30 @@ class DeliveryService:
         self.autolike = autolike
         self.passe = passe
 
+    async def _remove_payment_message(self, order: dict) -> None:
+        chat_id = order.get("payment_chat_id")
+        message_id = order.get("payment_message_id")
+        if chat_id is None or message_id is None:
+            return
+
+        try:
+            await self.bot.delete_message(
+                chat_id=int(chat_id),
+                message_id=int(message_id),
+            )
+            logger.info(
+                "Mensagem PIX removida após aprovação | pedido=%s",
+                order.get("id"),
+            )
+            await self.db.clear_order_payment_message(int(order["id"]))
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Não foi possível remover mensagem PIX | pedido=%s chat=%s msg=%s",
+                order.get("id"),
+                chat_id,
+                message_id,
+            )
+
     async def fulfill_order(self, order_id: int) -> bool:
         """Entrega o pedido. Retorna True se entregue com sucesso.
 
@@ -46,6 +70,10 @@ class DeliveryService:
         if not order:
             logger.warning("fulfill_order: pedido %s não encontrado", order_id)
             return False
+
+        # fulfill_order só é chamado após pagamento aprovado (ou saldo interno).
+        # Portanto, se houver QR Code salvo, remove a mensagem antes da entrega.
+        await self._remove_payment_message(order)
 
         if order["status"] == "delivered":
             return True
