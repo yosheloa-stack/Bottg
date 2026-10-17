@@ -207,6 +207,20 @@ async def giftcard_reply(
     await _redeem_gift(message, db, code)
 
 
+@router.message(
+    F.chat.type == "private",
+    F.text.regexp(r"(?i)^\s*AURORA-[A-Z0-9]{4}-[A-Z0-9]{4}\s*$"),
+)
+async def giftcard_plain_code(
+    message: Message,
+    db: Database,
+) -> None:
+    # Cliente mandou o código sem usar "Responder" na mensagem do bot.
+    if not message.from_user:
+        return
+    await _redeem_gift(message, db, (message.text or "").strip())
+
+
 @router.message(Command("resgatar"))
 async def cmd_redeem_giftcard(
     message: Message,
