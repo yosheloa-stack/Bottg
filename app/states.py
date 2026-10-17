@@ -50,3 +50,7 @@ class AdminVip2Remove(StatesGroup):
 class CustomerPlanFlow(StatesGroup):
     waiting_days = State()
     waiting_balance_amount = State()
+
+
+class SupportChat(StatesGroup):
+    chatting = State()
