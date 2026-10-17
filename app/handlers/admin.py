@@ -209,7 +209,9 @@ async def cmd_admin(message: Message, config: Config, bot: Bot) -> None:
         "<code>/anuncios</code> — usar dentro do grupo de avisos\n"
         "<code>/anuncios off</code> — desliga os avisos\n"
         "<code>/setmenu</code> — responder uma foto/GIF/vídeo\n"
-        "<code>/setmenu reset</code> — volta ao banner padrão\n\n"
+        "<code>/setmenu reset</code> — volta ao banner padrão\n"
+        "<code>/backup</code> — backup do banco agora\n"
+        "<code>/restaurar</code> — responder um arquivo .db de backup\n\n"
         "VIP: <code>/vip</code> · VIP2: <code>/vip2</code>\n"
         "Auto Like manual: <code>/autolike</code>"
     )

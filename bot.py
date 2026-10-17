@@ -18,6 +18,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
 from app.announcements import announce_autolike_send
+from app.backup import restore_if_needed, watch_backups
 from app.config import load_config
 from app.database import Database
 from app.delivery import DeliveryService
@@ -387,6 +388,18 @@ async def main() -> None:
     config = load_config()
     logger.info("AURORA_BUILD=MENU_V2_2026_10_16")
 
+    bot = Bot(
+        token=config.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+    # O deploy da Square Cloud apaga o data/bot.db; recupera o último backup
+    # fixado no privado do dono antes de abrir o banco.
+    try:
+        await restore_if_needed(bot, config.db_path, config.admin_ids)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha ao verificar/restaurar backup do banco")
+
     # Infraestrutura
     db = Database(config.db_path)
     await db.connect()
@@ -455,10 +468,6 @@ async def main() -> None:
         ),
     )
 
-    bot = Bot(
-        token=config.bot_token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
     delivery = DeliveryService(bot, db, config, autolike, passe)
     support_ai = SquareCloudAI(
         private_setting("SQUARECLOUD_AI_KEY", os.getenv("SQUARECLOUD_AI_KEY", ""))
@@ -507,6 +516,11 @@ async def main() -> None:
 
     # Confirmação automática: o watcher fica ativo mesmo antes do token
     # ser cadastrado no painel; assim a configuração passa a valer imediatamente.
+    backup_task = asyncio.create_task(
+        watch_backups(bot, db, config),
+        name="db-backup-watcher",
+    )
+
     payment_task = asyncio.create_task(
         watch_pending_payments(db, gateway, delivery),
         name="mercadopago-payment-watcher",
@@ -587,6 +601,12 @@ async def main() -> None:
             autosystem_task.cancel()
             try:
                 await autosystem_task
+            except asyncio.CancelledError:
+                pass
+        if backup_task:
+            backup_task.cancel()
+            try:
+                await backup_task
             except asyncio.CancelledError:
                 pass
         if payment_task:
