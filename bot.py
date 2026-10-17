@@ -470,7 +470,10 @@ async def main() -> None:
 
     delivery = DeliveryService(bot, db, config, autolike, passe)
     support_ai = SquareCloudAI(
-        private_setting("SQUARECLOUD_AI_KEY", os.getenv("SQUARECLOUD_AI_KEY", ""))
+        private_setting(
+            "SQUARECLOUD_AI_KEY",
+            os.getenv("SQUARECLOUD_AI_KEY") or os.getenv("SQUARECLOUD_API_KEY", ""),
+        )
     )
     support_agent = SupportAgent(support_ai, bot, db, config, gateway, delivery)
 
