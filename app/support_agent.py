@@ -70,6 +70,9 @@ Produtos vendidos: Auto Like 220 e Auto Like 500 (likes diários por X dias), LI
 Passe Booyah/Elite, acesso de Revenda, Aluguel do bot para grupos e Saldo na carteira.
 Pagamento é por PIX (Mercado Pago) ou saldo. Depois que o PIX é aprovado, a entrega é automática.
 Nos Auto Likes, depois do pagamento o cliente precisa enviar o UID do Free Fire no privado do bot.
+Os envios dos Auto Likes (220 e 500) acontecem 1 vez por dia em horário fixo: 09:00 da manhã (horário de Brasília).
+O primeiro envio é na próxima janela das 09:00 depois da ativação; se um envio falhar, o bot tenta de novo na janela seguinte das 09:00.
+Para o horário do próximo envio de uma assinatura específica, consulte o campo proximo_envio das ferramentas.
 
 Significado dos status de pedido:
 {status_info}
