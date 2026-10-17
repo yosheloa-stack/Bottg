@@ -382,23 +382,6 @@ async def cmd_my_id(message: Message) -> None:
     )
 
 
-@router.callback_query(F.data == "menu:support")
-async def cb_support(query: CallbackQuery, config: Config) -> None:
-    try:
-        await query.answer()
-    except Exception:
-        pass
-    await edit_screen(
-        query,
-        "🆘 <b>Suporte</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Precisa de ajuda com um pedido ou pagamento?\n"
-        f"Fale com nossa equipe: {config.support_username}\n\n"
-        "Tenha em mãos o número do seu pedido (#).",
-        back_home(),
-    )
-
-
 @router.callback_query(F.data == "menu:orders")
 async def cb_orders(query: CallbackQuery, db: Database, config: Config) -> None:
     try:

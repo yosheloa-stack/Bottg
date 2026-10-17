@@ -15,6 +15,7 @@ e pagamento automático via **PIX (Mercado Pago)**.
 | 🔁 **Loja — Auto-Like (30 dias)** | Assinatura de likes automáticos diários. |
 | 💠 **Pagamento PIX** | QR Code + copia-e-cola via Mercado Pago; confirmação por **webhook** e botão "Já paguei". |
 | 📦 **Meus pedidos** | Histórico de pedidos do usuário. |
+| 🤖 **Suporte com IA** | Botão 🆘 Suporte / `/suporte`: atendente virtual (Square Cloud AI) que consulta pedidos, PIX, entregas, Auto Likes e saldo do cliente e dispara a entrega se o PIX já foi aprovado. Para o dono, consulta qualquer pedido, usuário, UID e falhas. Chave: `/setkey ia CHAVE`. |
 | ⚙️ **Painel Admin** | **Gerenciar produtos (alterar preço e estoque em tempo real)**, estatísticas, consulta de estoque da API e broadcast. |
 
 ### 🖼️ Banner do menu

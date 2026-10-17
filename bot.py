@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import os
 from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, Dispatcher
@@ -26,6 +27,8 @@ from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
+from app.services.support_ai import SquareCloudAI
+from app.support_agent import SupportAgent
 from app.services.payments import MercadoPagoGateway, PaymentStatus
 from app.webhook import build_webhook_app, start_webhook_server
 
@@ -457,6 +460,10 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     delivery = DeliveryService(bot, db, config, autolike, passe)
+    support_ai = SquareCloudAI(
+        private_setting("SQUARECLOUD_AI_KEY", os.getenv("SQUARECLOUD_AI_KEY", ""))
+    )
+    support_agent = SupportAgent(support_ai, bot, db, config, gateway, delivery)
 
     dp = Dispatcher()
     # Injeção de dependências nos handlers
@@ -469,6 +476,8 @@ async def main() -> None:
     dp["passe"] = passe
     dp["gateway"] = gateway
     dp["delivery"] = delivery
+    dp["support_ai"] = support_ai
+    dp["support_agent"] = support_agent
 
     register_handlers(dp)
 
@@ -529,6 +538,7 @@ async def main() -> None:
                 BotCommand(command="menu", description="Abrir menu principal"),
                 BotCommand(command="like", description="Enviar likes pelo grupo"),
                 BotCommand(command="id", description="Mostrar meu ID do Telegram"),
+                BotCommand(command="suporte", description="Falar com o suporte"),
             ]
         )
         me = await bot.get_me()
