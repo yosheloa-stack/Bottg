@@ -111,7 +111,8 @@ async def _do_send_like(
                 tempo=f"{elapsed:.2f}",
             )
         )
-        if sent_int > 0:
+        # Aviso no grupo só para envios feitos no privado do bot.
+        if sent_int > 0 and message.chat.type == "private":
             try:
                 await announce_autolike_send(
                     message.bot,
@@ -483,7 +484,8 @@ async def cmd_like2(
         await status_msg.edit_text("\n".join(lines))
         try:
             sent_value = int(sent) if sent is not None else 0
-            if sent_value > 0:
+            # Aviso no grupo só para envios feitos no privado do bot.
+            if sent_value > 0 and message.chat.type == "private":
                 await announce_autolike_send(
                     message.bot,
                     db,

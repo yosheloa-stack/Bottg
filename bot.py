@@ -189,21 +189,23 @@ async def watch_ffhub_autolikes(
                             notify_chat_id,
                         )
 
-                try:
-                    await announce_autolike_send(
-                        bot,
-                        db,
-                        user_id=int(updated["user_id"]),
-                        plan_name="Auto Like 500",
-                        uid=str(updated["game_id"]),
-                        nickname=nickname,
-                        likes_sent=sent,
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "Falha ao anunciar envio Auto Like 500 sub=%s",
-                        sub_id,
-                    )
+                # Auto Like ativado dentro de um grupo não vai para o grupo de anúncios.
+                if notify_chat_id is None:
+                    try:
+                        await announce_autolike_send(
+                            bot,
+                            db,
+                            user_id=int(updated["user_id"]),
+                            plan_name="Auto Like 500",
+                            uid=str(updated["game_id"]),
+                            nickname=nickname,
+                            likes_sent=sent,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "Falha ao anunciar envio Auto Like 500 sub=%s",
+                            sub_id,
+                        )
 
                 if updated["status"] == "completed":
                     # Assinaturas manuais do dono usam order_id negativo e não
