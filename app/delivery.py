@@ -91,6 +91,7 @@ class DeliveryService:
                 self.db,
                 order,
                 product.title,
+                product.delivery,
             )
         except Exception:  # noqa: BLE001
             logger.exception("Falha ao anunciar compra do pedido %s", order_id)
