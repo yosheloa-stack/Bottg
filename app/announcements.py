@@ -88,11 +88,32 @@ async def send_announcement(
         return False
 
 
+def _purchase_quantity(order: dict, delivery: str) -> str:
+    """O que o cliente escolheu: likes por dia e dias, passe, revenda, aluguel."""
+    days = int(order.get("plan_days") or 0)
+    days_text = f"{days} dia{'s' if days != 1 else ''}"
+    if delivery == "autosystem_autolike":
+        return f"220 likes por dia • {days_text}" if days else "220 likes por dia"
+    if delivery == "ffhub_autolike":
+        base = "500 a 1.000 likes por dia"
+        return f"{base} • {days_text}" if days else base
+    if delivery == "ffhub_like_once":
+        return "1 envio de likes"
+    if delivery == "passe":
+        return "1 Passe de Elite"
+    if delivery == "reseller_access":
+        return f"Acesso de revenda • {days_text}" if days else "Acesso de revenda"
+    if delivery == "bot_rental":
+        return f"Aluguel por {days_text}" if days else "Aluguel do bot"
+    return ""
+
+
 async def announce_purchase(
     bot: Bot,
     db: Database,
     order: dict,
     product_title: str,
+    delivery: str = "",
 ) -> None:
     if str(order.get("product_code") or "") == "balance_topup":
         return
@@ -105,6 +126,9 @@ async def announce_purchase(
 
     user = await _user_label(db, int(order["user_id"]))
     amount = Decimal(str(order.get("amount") or "0"))
+    quantity = _purchase_quantity(order, delivery)
+    quantity_line = f"🔢 Quantidade: <b>{quantity}</b>\n" if quantity else ""
+    paid_with = "Saldo" if order.get("paid_with") == "balance" else "PIX"
     await send_announcement(
         bot,
         db,
@@ -112,7 +136,8 @@ async def announce_purchase(
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"👤 Cliente: <b>{user}</b>\n"
         f"📦 Produto: <b>{product_title}</b>\n"
-        f"💰 Valor: <b>R$ {format_price(amount)}</b>\n\n"
+        f"{quantity_line}"
+        f"💰 Valor: <b>R$ {format_price(amount)}</b> ({paid_with})\n\n"
         "✅ Pagamento confirmado.",
     )
 
