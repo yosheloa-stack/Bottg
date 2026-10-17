@@ -754,6 +754,93 @@ class Database:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
+    # ----- Consultas do suporte (IA) -----
+    async def orders_by_user(self, user_id: int, limit: int = 15) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (int(user_id), int(limit)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def orders_by_game_id(self, game_id: str, limit: int = 15) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM orders WHERE game_id = ? ORDER BY id DESC LIMIT ?",
+            (str(game_id), int(limit)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def failed_orders(self, limit: int = 15) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM orders WHERE status = 'failed' ORDER BY updated_at DESC LIMIT ?",
+            (int(limit),),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def autolike_subscriptions_for(
+        self,
+        *,
+        user_id: int | None = None,
+        game_id: str | None = None,
+        order_id: int | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        where, params = [], []
+        if user_id is not None:
+            where.append("user_id = ?")
+            params.append(int(user_id))
+        if game_id is not None:
+            where.append("game_id = ?")
+            params.append(str(game_id))
+        if order_id is not None:
+            where.append("order_id = ?")
+            params.append(int(order_id))
+        if not where:
+            return []
+        params.append(int(limit))
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_subscriptions WHERE "
+            + " AND ".join(where)
+            + " ORDER BY id DESC LIMIT ?",
+            tuple(params),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def autolike_history(
+        self, subscription_id: int, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_history WHERE subscription_id = ? "
+            "ORDER BY sent_at DESC, id DESC LIMIT ?",
+            (int(subscription_id), int(limit)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def failed_autolike_subscriptions(self, limit: int = 15) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_subscriptions "
+            "WHERE last_result IS NOT NULL AND last_result != '' "
+            "AND (last_result LIKE '%erro%' OR last_result LIKE '%error%' "
+            "OR last_result LIKE '%fail%' OR last_result LIKE '%falha%') "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (int(limit),),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def wallet_transactions(self, user_id: int, limit: int = 10) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM wallet_transactions WHERE user_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT ?",
+            (int(user_id), int(limit)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
     # ----- Entradas pendentes do cliente -----
     async def set_customer_pending_input(
         self,

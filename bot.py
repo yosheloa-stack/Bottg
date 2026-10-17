@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import os
 from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, Dispatcher
@@ -17,6 +18,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
 from app.announcements import announce_autolike_send
+from app.backup import restore_if_needed, watch_backups
 from app.config import load_config
 from app.database import Database
 from app.delivery import DeliveryService
@@ -26,6 +28,8 @@ from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
+from app.services.support_ai import SquareCloudAI
+from app.support_agent import SupportAgent
 from app.services.payments import MercadoPagoGateway, PaymentStatus
 from app.webhook import build_webhook_app, start_webhook_server
 
@@ -189,21 +193,23 @@ async def watch_ffhub_autolikes(
                             notify_chat_id,
                         )
 
-                try:
-                    await announce_autolike_send(
-                        bot,
-                        db,
-                        user_id=int(updated["user_id"]),
-                        plan_name="Auto Like 500",
-                        uid=str(updated["game_id"]),
-                        nickname=nickname,
-                        likes_sent=sent,
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "Falha ao anunciar envio Auto Like 500 sub=%s",
-                        sub_id,
-                    )
+                # Auto Like ativado dentro de um grupo não vai para o grupo de anúncios.
+                if notify_chat_id is None:
+                    try:
+                        await announce_autolike_send(
+                            bot,
+                            db,
+                            user_id=int(updated["user_id"]),
+                            plan_name="Auto Like 500",
+                            uid=str(updated["game_id"]),
+                            nickname=nickname,
+                            likes_sent=sent,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "Falha ao anunciar envio Auto Like 500 sub=%s",
+                            sub_id,
+                        )
 
                 if updated["status"] == "completed":
                     # Assinaturas manuais do dono usam order_id negativo e não
@@ -382,6 +388,18 @@ async def main() -> None:
     config = load_config()
     logger.info("AURORA_BUILD=MENU_V2_2026_10_16")
 
+    bot = Bot(
+        token=config.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+    # O deploy da Square Cloud apaga o data/bot.db; recupera o último backup
+    # fixado no privado do dono antes de abrir o banco.
+    try:
+        await restore_if_needed(bot, config.db_path, config.admin_ids)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha ao verificar/restaurar backup do banco")
+
     # Infraestrutura
     db = Database(config.db_path)
     await db.connect()
@@ -450,11 +468,14 @@ async def main() -> None:
         ),
     )
 
-    bot = Bot(
-        token=config.bot_token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
     delivery = DeliveryService(bot, db, config, autolike, passe)
+    support_ai = SquareCloudAI(
+        private_setting(
+            "SQUARECLOUD_AI_KEY",
+            os.getenv("SQUARECLOUD_AI_KEY") or os.getenv("SQUARECLOUD_API_KEY", ""),
+        )
+    )
+    support_agent = SupportAgent(support_ai, bot, db, config, gateway, delivery)
 
     dp = Dispatcher()
     # Injeção de dependências nos handlers
@@ -467,6 +488,8 @@ async def main() -> None:
     dp["passe"] = passe
     dp["gateway"] = gateway
     dp["delivery"] = delivery
+    dp["support_ai"] = support_ai
+    dp["support_agent"] = support_agent
 
     register_handlers(dp)
 
@@ -496,6 +519,11 @@ async def main() -> None:
 
     # Confirmação automática: o watcher fica ativo mesmo antes do token
     # ser cadastrado no painel; assim a configuração passa a valer imediatamente.
+    backup_task = asyncio.create_task(
+        watch_backups(bot, db, config),
+        name="db-backup-watcher",
+    )
+
     payment_task = asyncio.create_task(
         watch_pending_payments(db, gateway, delivery),
         name="mercadopago-payment-watcher",
@@ -527,6 +555,7 @@ async def main() -> None:
                 BotCommand(command="menu", description="Abrir menu principal"),
                 BotCommand(command="like", description="Enviar likes pelo grupo"),
                 BotCommand(command="id", description="Mostrar meu ID do Telegram"),
+                BotCommand(command="suporte", description="Falar com o suporte"),
             ]
         )
         me = await bot.get_me()
@@ -575,6 +604,12 @@ async def main() -> None:
             autosystem_task.cancel()
             try:
                 await autosystem_task
+            except asyncio.CancelledError:
+                pass
+        if backup_task:
+            backup_task.cancel()
+            try:
+                await backup_task
             except asyncio.CancelledError:
                 pass
         if payment_task:

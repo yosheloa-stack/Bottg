@@ -96,6 +96,10 @@ async def announce_purchase(
 ) -> None:
     if str(order.get("product_code") or "") == "balance_topup":
         return
+    # Só anuncia compras feitas no privado do bot (chats de grupo têm ID negativo).
+    payment_chat_id = order.get("payment_chat_id")
+    if payment_chat_id is not None and int(payment_chat_id) < 0:
+        return
     if not await db.mark_purchase_announced(int(order["id"])):
         return
 
