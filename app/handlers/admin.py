@@ -426,6 +426,22 @@ async def cmd_setkey(
         "O valor enviado foi removido da conversa quando possível."
     )
 
+    if key == "SQUARECLOUD_AI_KEY":
+        # Testa a chave na hora para o dono saber se a IA vai funcionar.
+        masked = f"{value[:6]}…{value[-4:]}" if len(value) > 12 else "curta demais"
+        result = await support_ai.chat(
+            [{"role": "user", "content": "Responda apenas: ok"}], max_tokens=10
+        )
+        if result.ok:
+            text = f"🤖 IA testada e funcionando (chave {masked})."
+        else:
+            text = (
+                f"⚠️ A Square Cloud recusou a chave {masked}: <code>{result.error}</code>\n"
+                "Use uma API key com o escopo <code>ai:chat</code> e sem nenhuma "
+                "aplicação marcada em Recursos."
+            )
+        await message.bot.send_message(message.chat.id, text)
+
 
 @router.message(Command("giftcard"))
 async def cmd_giftcard(
