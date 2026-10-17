@@ -240,7 +240,12 @@ class SupportAgent:
                 )
                 if admin:
                     hint = AI_ERROR_HINTS.get(result.error, "")
-                    reply += f"\n\n(dono) Erro da IA: {result.error}" + (f"\n{hint}" if hint else "")
+                    key = self.ai._key
+                    masked = f"{key[:6]}…{key[-4:]}" if len(key) > 12 else "?"
+                    reply += (
+                        f"\n\n(dono) Erro da IA: {result.error} · chave em uso {masked}"
+                        + (f"\n{hint}" if hint else "")
+                    )
                 break
 
             message = result.message
