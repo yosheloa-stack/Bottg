@@ -50,6 +50,18 @@ STATUS_INFO = {
     "expired": "PIX expirou sem pagamento",
 }
 
+AI_ERROR_HINTS = {
+    "access_denied": "A chave é inválida, foi revogada ou expirou. Use a API key da conta Square Cloud (não a chave S3 que começa com SQ2_) com /setkey ia.",
+    "missing_scope": "A API key não tem o escopo ai:chat. Gere uma chave com esse escopo no painel da Square Cloud.",
+    "upgrade_required": "O plano da conta não inclui o AI Gateway (Hobby/sem plano não tem acesso).",
+    "daily_limit_exceeded": "Limite diário de tokens da IA atingido; volta às 21h (00:00 UTC).",
+    "weekly_limit_exceeded": "Limite semanal de tokens da IA atingido; volta domingo às 21h (segunda 00:00 UTC).",
+    "daily_capacity_reached": "A Square Cloud atingiu a capacidade diária da IA; tente mais tarde.",
+    "HTTP 401": "A chave foi recusada. Use a API key da conta Square Cloud (não a chave S3 que começa com SQ2_) com /setkey ia.",
+    "rate_limit_exceeded": "Muitas mensagens seguidas; aguarde alguns segundos.",
+    "concurrent_limit_reached": "Outra conversa está usando a IA agora; tente de novo em instantes.",
+}
+
 SYSTEM_PROMPT = """Você é a atendente de suporte do bot de vendas de Free Fire "{bot_name}" no Telegram.
 Responda sempre em português do Brasil, de forma curta, simpática e objetiva (no máximo uns 8 linhas).
 Não use HTML nem Markdown; escreva texto simples, pode usar emojis com moderação.
@@ -226,6 +238,9 @@ class SupportAgent:
                     "⚠️ O atendimento automático está indisponível agora. "
                     f"Fale com a equipe: {self.config.support_username}"
                 )
+                if admin:
+                    hint = AI_ERROR_HINTS.get(result.error, "")
+                    reply += f"\n\n(dono) Erro da IA: {result.error}" + (f"\n{hint}" if hint else "")
                 break
 
             message = result.message
