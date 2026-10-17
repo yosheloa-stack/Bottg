@@ -27,6 +27,7 @@ from app.services.ffhub_shop import FFHubShopApi
 from app.services.likes import LikesApi
 from app.services.passe import PasseApi
 from app.services.payments import MercadoPagoGateway
+from app.services.support_ai import SquareCloudAI
 from app.states import AdminBroadcast, AdminPrice, AdminStock, OwnerSetting
 from app.ui import edit_screen
 from app.utils import format_price
@@ -42,6 +43,7 @@ OWNER_SETTING_LABELS = {
     "AUTOSYSTEM_API_KEY": "AutoSystem API Key",
     "PASSE_API_KEY": "Passe API Key",
     "MERCADOPAGO_ACCESS_TOKEN": "Mercado Pago Access Token",
+    "SQUARECLOUD_AI_KEY": "Square Cloud AI Key (suporte)",
 }
 
 
@@ -201,12 +203,15 @@ async def cmd_admin(message: Message, config: Config, bot: Bot) -> None:
         "<code>/setkey autosystem CHAVE</code>\n"
         "<code>/setkey mp ACCESS_TOKEN</code>\n"
         "<code>/setkey passe CHAVE</code>\n"
+        "<code>/setkey ia CHAVE</code> — IA do suporte (Square Cloud)\n"
         "<code>/giftcard 20</code> — gera Gift Card de R$ 20\n"
         "<code>/giftcard 20 5</code> — gera com 5 usos\n"
         "<code>/anuncios</code> — usar dentro do grupo de avisos\n"
         "<code>/anuncios off</code> — desliga os avisos\n"
         "<code>/setmenu</code> — responder uma foto/GIF/vídeo\n"
-        "<code>/setmenu reset</code> — volta ao banner padrão\n\n"
+        "<code>/setmenu reset</code> — volta ao banner padrão\n"
+        "<code>/backup</code> — backup do banco agora\n"
+        "<code>/restaurar</code> — responder um arquivo .db de backup\n\n"
         "VIP: <code>/vip</code> · VIP2: <code>/vip2</code>\n"
         "Auto Like manual: <code>/autolike</code>"
     )
@@ -358,6 +363,7 @@ async def cmd_setkey(
     ffhub_shop: FFHubShopApi,
     passe: PasseApi,
     gateway: MercadoPagoGateway,
+    support_ai: SquareCloudAI,
 ) -> None:
     if not message.from_user or not _is_admin(message.from_user.id, config):
         return
@@ -374,7 +380,8 @@ async def cmd_setkey(
             "<code>/setkey ffhub SUA_CHAVE</code>\n"
             "<code>/setkey autosystem SUA_CHAVE</code>\n"
             "<code>/setkey mp ACCESS_TOKEN</code>\n"
-            "<code>/setkey passe SUA_CHAVE</code>"
+            "<code>/setkey passe SUA_CHAVE</code>\n"
+            "<code>/setkey ia SUA_CHAVE</code>"
         )
         return
 
@@ -387,6 +394,8 @@ async def cmd_setkey(
         "mercadopago": "MERCADOPAGO_ACCESS_TOKEN",
         "passe": "PASSE_API_KEY",
         "likes": "LIKES_API_KEY",
+        "ia": "SQUARECLOUD_AI_KEY",
+        "ai": "SQUARECLOUD_AI_KEY",
     }
     key = mapping.get(alias)
     if not key or not value:
@@ -404,6 +413,8 @@ async def cmd_setkey(
         passe._key = value
     elif key == "LIKES_API_KEY":
         likes_api._key = value
+    elif key == "SQUARECLOUD_AI_KEY":
+        support_ai._key = value
 
     try:
         await message.delete()
