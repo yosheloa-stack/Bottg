@@ -321,6 +321,14 @@ class Database:
             row = await cur.fetchone()
         return dict(row) if row else None
 
+    async def find_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1",
+            (username.lstrip("@"),),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
     async def count_users(self) -> int:
         async with self.db.execute("SELECT COUNT(*) AS c FROM users") as cur:
             row = await cur.fetchone()
@@ -338,6 +346,37 @@ class Database:
         days = max(0, int(days))
         expires_at = 0 if days == 0 else now + days * 86400
 
+        await self.db.execute(
+            """
+            INSERT INTO vip_users (user_id, expires_at, added_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                expires_at = excluded.expires_at,
+                added_by = excluded.added_by,
+                updated_at = excluded.updated_at
+            """,
+            (int(user_id), expires_at, int(added_by), now, now),
+        )
+        await self.db.commit()
+        return {
+            "user_id": int(user_id),
+            "expires_at": expires_at,
+            "added_by": int(added_by),
+        }
+
+    async def extend_vip(self, user_id: int, days: int, added_by: int) -> dict[str, Any]:
+        """Soma dias ao VIP atual (ou ativa um novo). days=0 deixa permanente."""
+        days = max(0, int(days))
+        current = await self.get_vip(user_id)
+        if current is not None and int(current.get("expires_at") or 0) == 0:
+            # Já é permanente: continua permanente.
+            return await self.set_vip(user_id, 0, added_by)
+        if days == 0:
+            return await self.set_vip(user_id, 0, added_by)
+
+        now = int(time.time())
+        base = max(now, int(current["expires_at"])) if current else now
+        expires_at = base + days * 86400
         await self.db.execute(
             """
             INSERT INTO vip_users (user_id, expires_at, added_by, created_at, updated_at)

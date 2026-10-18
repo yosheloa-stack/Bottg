@@ -7,8 +7,9 @@ from zoneinfo import ZoneInfo
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandObject
+from aiogram.enums import MessageEntityType
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, User
 
 from app.config import Config
 from app.database import Database
@@ -88,7 +89,8 @@ async def _panel_text(db: Database) -> str:
         "<code>/vip add ID 0</code> — permanente\n"
         "<code>/vip remove ID</code>\n"
         "<code>/vip status ID</code>\n"
-        "<code>/vip list</code>"
+        "<code>/vip list</code>\n"
+        "<code>/addvip @usuario 30</code> — no grupo, soma dias"
     )
 
 
@@ -116,7 +118,7 @@ async def cmd_vip(
 
     # Dono sem argumentos abre o gerenciador.
     if not args:
-        await message.answer(await _panel_text(db), reply_markup=vip_admin_panel())
+        await message.answer(await _panel_text(db))
         return
 
     action = args[0].lower()
@@ -188,11 +190,100 @@ async def cmd_vip(
             lines.append(f"• <code>{uid}</code> — {_fmt_expiry(exp)}")
         if len(vips) > 50:
             lines.append(f"\n… e mais {len(vips) - 50}.")
-        await message.answer("\n".join(lines), reply_markup=vip_admin_panel())
+        await message.answer("\n".join(lines))
         return
 
     await message.answer(
         "⚠️ Ação inválida. Use <code>/vip</code> para abrir o gerenciamento."
+    )
+
+
+async def _resolve_target(message: Message, db: Database) -> tuple[int | None, str]:
+    """Descobre o alvo do /addvip: menção (@username ou sem @) ou resposta à mensagem."""
+    text = message.text or message.caption or ""
+    for entity in message.entities or message.caption_entities or []:
+        if entity.type == MessageEntityType.TEXT_MENTION and entity.user:
+            user = entity.user
+            await db.upsert_user(user.id, user.username, user.first_name)
+            return int(user.id), _user_label(user)
+        if entity.type == MessageEntityType.MENTION:
+            username = entity.extract_from(text).lstrip("@")
+            found = await db.find_user_by_username(username)
+            if found:
+                return int(found["user_id"]), f"@{username}"
+            return None, f"@{username}"
+
+    reply = message.reply_to_message
+    # Em grupos com tópicos, toda mensagem "responde" à criação do tópico; isso não conta.
+    if (
+        reply
+        and reply.from_user
+        and not reply.from_user.is_bot
+        and reply.forum_topic_created is None
+    ):
+        user = reply.from_user
+        await db.upsert_user(user.id, user.username, user.first_name)
+        return int(user.id), _user_label(user)
+    return None, ""
+
+
+def _user_label(user: User) -> str:
+    if user.username:
+        return f"@{user.username}"
+    return user.full_name or str(user.id)
+
+
+@router.message(Command("addvip"))
+async def cmd_addvip(
+    message: Message,
+    command: CommandObject,
+    config: Config,
+    db: Database,
+    bot: Bot,
+) -> None:
+    """Dono adiciona VIP marcando ou respondendo alguém: /addvip @usuario 30."""
+    if not message.from_user:
+        return
+    owner_id = await resolve_owner_id(message, bot, config)
+    if owner_id is None:
+        return
+
+    numbers = [a for a in (command.args or "").split() if a.isdigit()]
+    days = int(numbers[-1]) if numbers else 30
+    if days > 3650:
+        await message.answer("⚠️ Use de 0 a 3650 dias. 0 = permanente.")
+        return
+
+    target, label = await _resolve_target(message, db)
+    if target is None:
+        if label:
+            await message.answer(
+                f"⚠️ Não encontrei {label}. Peça para a pessoa dar /start no bot "
+                "ou responda a uma mensagem dela com <code>/addvip DIAS</code>."
+            )
+        else:
+            await message.answer(
+                "Use: <code>/addvip @usuario 30</code>\n"
+                "Ou responda a uma mensagem da pessoa com <code>/addvip 30</code>.\n"
+                "Os dias somam ao VIP atual. <code>0</code> = permanente."
+            )
+        return
+
+    vip = await db.extend_vip(target, days, owner_id)
+    expires_at = int(vip["expires_at"])
+    await message.answer(
+        "✅ <b>VIP adicionado</b>\n\n"
+        f"👤 {label} (<code>{target}</code>)\n"
+        f"➕ {'Permanente' if days == 0 else f'{days} dias'}\n"
+        f"📅 Validade: <b>{_fmt_expiry(expires_at)}</b>\n"
+        f"⏳ Restante: <b>{_remaining(expires_at)}</b>"
+    )
+    await _notify(
+        bot,
+        target,
+        "💎 <b>Seu VIP foi ativado!</b>\n\n"
+        "Agora você pode usar <code>/like</code> sem o limite de 24 horas.\n"
+        f"📅 Validade: <b>{_fmt_expiry(expires_at)}</b>",
     )
 
 

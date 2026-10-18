@@ -120,7 +120,7 @@ async def cmd_vip2(
         return
 
     if not args:
-        await message.answer(await _panel_text(db), reply_markup=vip2_admin_panel())
+        await message.answer(await _panel_text(db))
         return
 
     action = args[0].lower()
@@ -196,7 +196,7 @@ async def cmd_vip2(
             lines.append(f"• <code>{uid}</code> — {_fmt_expiry(exp)}")
         if len(vips) > 50:
             lines.append(f"\n… e mais {len(vips) - 50}.")
-        await message.answer("\n".join(lines), reply_markup=vip2_admin_panel())
+        await message.answer("\n".join(lines))
         return
 
     await message.answer("⚠️ Ação inválida. Use <code>/vip2</code>.")
