@@ -288,16 +288,18 @@ async def watch_autosystem_autolikes(
                     )
                     # A Auto System recusa o mesmo UID antes de 24h desde o último
                     # envio ("aguardando"). Como cada envio termina alguns segundos
-                    # depois das 09:00, a tentativa do dia seguinte caía nesse
-                    # bloqueio e o dia era pulado sem envio nem confirmação.
+                    # depois das 09:00 (ou o UID recebeu likes por outro lugar), a
+                    # tentativa do dia caía nesse bloqueio e o dia era pulado sem
+                    # envio nem confirmação.
                     # Agora tenta de novo quando liberar (ou em 15 min).
+                    # O bloqueio pode vir como HTTP 409 ou 503 (code ID_COOLDOWN),
+                    # então vale o libera_em_segundos sempre que vier.
                     retry_in = 900
-                    if result.status == 409:
-                        fail_data = result.data if isinstance(result.data, dict) else {}
-                        try:
-                            retry_in = int(fail_data.get("libera_em_segundos")) + 60
-                        except (TypeError, ValueError):
-                            retry_in = 900
+                    fail_data = result.data if isinstance(result.data, dict) else {}
+                    try:
+                        retry_in = int(fail_data.get("libera_em_segundos")) + 60
+                    except (TypeError, ValueError):
+                        retry_in = 900
                     await db.retry_autosystem_autolike_at(
                         sub_id,
                         int(time.time()) + max(60, retry_in),
