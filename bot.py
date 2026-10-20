@@ -10,6 +10,7 @@ import asyncio
 import html
 import logging
 import os
+import time
 from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, Dispatcher
@@ -285,12 +286,23 @@ async def watch_autosystem_autolikes(
                         result.status,
                         result.error,
                     )
-                    if result.status != 0:
-                        await db.retry_ffhub_autolike_later(
-                            sub_id,
-                            result_text=str(result.data or result.error or ""),
-                            delay_seconds=900,
-                        )
+                    # A Auto System recusa o mesmo UID antes de 24h desde o último
+                    # envio ("aguardando"). Como cada envio termina alguns segundos
+                    # depois das 09:00, a tentativa do dia seguinte caía nesse
+                    # bloqueio e o dia era pulado sem envio nem confirmação.
+                    # Agora tenta de novo quando liberar (ou em 15 min).
+                    retry_in = 900
+                    if result.status == 409:
+                        fail_data = result.data if isinstance(result.data, dict) else {}
+                        try:
+                            retry_in = int(fail_data.get("libera_em_segundos")) + 60
+                        except (TypeError, ValueError):
+                            retry_in = 900
+                    await db.retry_autosystem_autolike_at(
+                        sub_id,
+                        int(time.time()) + max(60, retry_in),
+                        result_text=str(result.data or result.error or ""),
+                    )
                     continue
 
                 data = result.data if isinstance(result.data, dict) else {}

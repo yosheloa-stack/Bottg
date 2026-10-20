@@ -1480,6 +1480,23 @@ class Database:
         )
         await self.db.commit()
 
+    async def retry_autosystem_autolike_at(
+        self, subscription_id: int, retry_at: int, result_text: str = ""
+    ) -> None:
+        """Agenda nova tentativa do Auto Like 220 sem pular o envio do dia.
+
+        Nunca passa da próxima janela das 09:00, para não acumular atraso.
+        """
+        now = int(time.time())
+        next_send_at = min(max(int(retry_at), now + 60), next_nine_am_epoch(now))
+        await self.db.execute(
+            "UPDATE ffhub_autolike_subscriptions "
+            "SET next_send_at = ?, last_result = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'active'",
+            (next_send_at, result_text, now, subscription_id),
+        )
+        await self.db.commit()
+
     async def create_autosystem_autolike_subscription(
         self,
         order_id: int,
