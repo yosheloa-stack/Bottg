@@ -1,6 +1,7 @@
 """Gerenciamento de VIP e consulta de assinatura."""
 from __future__ import annotations
 
+import html
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -198,8 +199,13 @@ async def cmd_vip(
     )
 
 
-async def _resolve_target(message: Message, db: Database) -> tuple[int | None, str]:
-    """Descobre o alvo do /addvip: menção (@username ou sem @) ou resposta à mensagem."""
+async def _resolve_target(
+    message: Message, db: Database, args: list[str] | None = None
+) -> tuple[int | None, str]:
+    """Descobre o alvo: menção, ID numérico, nome digitado ou resposta à mensagem.
+
+    ``args`` são os argumentos do comando (sem palavras de ação como "add").
+    """
     text = message.text or message.caption or ""
     for entity in message.entities or message.caption_entities or []:
         if entity.type == MessageEntityType.TEXT_MENTION and entity.user:
@@ -213,6 +219,19 @@ async def _resolve_target(message: Message, db: Database) -> tuple[int | None, s
                 return int(found["user_id"]), f"@{username}"
             return None, f"@{username}"
 
+    args = args or []
+    # Um número grande é o Telegram ID; números pequenos são os dias.
+    for arg in args:
+        if arg.isdigit() and len(arg) >= 5:
+            return int(arg), arg
+    words = [a for a in args if not a.isdigit()]
+    if words:
+        name = words[0]
+        found = await db.find_user_by_name(name)
+        if found:
+            return int(found["user_id"]), html.escape(name)
+        return None, html.escape(name)
+
     reply = message.reply_to_message
     # Em grupos com tópicos, toda mensagem "responde" à criação do tópico; isso não conta.
     if (
@@ -225,6 +244,12 @@ async def _resolve_target(message: Message, db: Database) -> tuple[int | None, s
         await db.upsert_user(user.id, user.username, user.first_name)
         return int(user.id), _user_label(user)
     return None, ""
+
+
+def _parse_days(args: list[str], default: int = 30) -> int:
+    """Dias = último número curto dos argumentos (números longos são IDs)."""
+    numbers = [a for a in args if a.isdigit() and len(a) < 5]
+    return int(numbers[-1]) if numbers else default
 
 
 def _user_label(user: User) -> str:
@@ -248,13 +273,13 @@ async def cmd_addvip(
     if owner_id is None:
         return
 
-    numbers = [a for a in (command.args or "").split() if a.isdigit()]
-    days = int(numbers[-1]) if numbers else 30
+    args = (command.args or "").split()
+    days = _parse_days(args)
     if days > 3650:
         await message.answer("⚠️ Use de 0 a 3650 dias. 0 = permanente.")
         return
 
-    target, label = await _resolve_target(message, db)
+    target, label = await _resolve_target(message, db, args)
     if target is None:
         if label:
             await message.answer(

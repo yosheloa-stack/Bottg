@@ -12,6 +12,7 @@ from aiogram.types import Message
 
 from app.config import Config
 from app.database import Database
+from app.handlers.vip import _parse_days, _resolve_target
 from app.owner_auth import resolve_owner_id
 from app.states import AdminVip2Add, AdminVip2Remove
 
@@ -90,11 +91,14 @@ async def _panel_text(db: Database) -> str:
         "Cada VIP2 pode fazer <b>1 envio a cada 24 horas</b>.\n"
         "Quem não tiver VIP2 é bloqueado antes da FFHub ser chamada.\n\n"
         "Comandos:\n"
-        "<code>/vip2 add ID 30</code>\n"
-        "<code>/vip2 add ID 0</code> — permanente\n"
-        "<code>/vip2 remove ID</code>\n"
+        "<code>/addvip2 ID 30</code> — soma 30 dias\n"
+        "<code>/addvip2 @usuario 30</code> — no grupo, marcando\n"
+        "<code>/addvip2 30</code> — respondendo a mensagem da pessoa\n"
+        "<code>/addvip2 ID 0</code> — permanente\n"
+        "<code>/vip2 remove ID</code> (ou @usuario)\n"
         "<code>/vip2 status ID</code>\n"
-        "<code>/vip2 list</code>"
+        "<code>/vip2 list</code>\n\n"
+        "<code>/vip2 ID 30</code> também funciona."
     )
 
 
@@ -126,56 +130,32 @@ async def cmd_vip2(
     action = args[0].lower()
 
     if action in {"add", "adicionar"}:
-        if len(args) < 2 or not args[1].isdigit():
-            await message.answer(
-                "Use: <code>/vip2 add TELEGRAM_ID DIAS</code>\n"
-                "Ex.: <code>/vip2 add 123456789 30</code>\n"
-                "Use <code>0</code> para permanente."
-            )
-            return
-
-        target = int(args[1])
-        try:
-            days = int(args[2]) if len(args) >= 3 else 30
-        except ValueError:
-            await message.answer("⚠️ Dias inválidos.")
-            return
-
-        if days < 0 or days > 3650:
-            await message.answer("⚠️ Use de 0 a 3650 dias. 0 = permanente.")
-            return
-
-        vip = await db.set_vip2(target, days, user_id)
-        await message.answer(
-            "✅ <b>VIP2 ativado</b>\n\n"
-            f"🆔 ID: <code>{target}</code>\n"
-            f"📅 Validade: <b>{_fmt_expiry(int(vip['expires_at']))}</b>"
-        )
-        await _notify(
-            bot,
-            target,
-            "🔥 <b>Seu VIP2 foi ativado!</b>\n\n"
-            "Agora você pode usar <code>/like2 UID</code> nos grupos.\n"
-            "🕒 Limite: <b>1 envio a cada 24 horas</b>.\n"
-            f"📅 Validade: <b>{_fmt_expiry(int(vip['expires_at']))}</b>",
-        )
+        await _add_vip2(message, db, bot, user_id, args[1:])
         return
 
     if action in {"remove", "remover", "del"}:
-        if len(args) < 2 or not args[1].isdigit():
-            await message.answer("Use: <code>/vip2 remove TELEGRAM_ID</code>")
+        target, label = await _resolve_target(message, db, args[1:])
+        if target is None:
+            await message.answer(
+                _not_found(label)
+                if label
+                else "Use: <code>/vip2 remove ID</code> ou <code>/vip2 remove @usuario</code>"
+            )
             return
-        target = int(args[1])
         removed = await db.remove_vip2(target)
         await message.answer(
-            "✅ VIP2 removido." if removed else "ℹ️ Esse ID não possui VIP2 ativo."
+            "✅ VIP2 removido." if removed else "ℹ️ Esse usuário não possui VIP2 ativo."
         )
         if removed:
             await _notify(bot, target, "ℹ️ <b>Seu acesso VIP2 foi encerrado.</b>")
         return
 
     if action in {"status", "ver"}:
-        target = int(args[1]) if len(args) >= 2 and args[1].isdigit() else user_id
+        target, label = await _resolve_target(message, db, args[1:])
+        if target is None and label:
+            await message.answer(_not_found(label))
+            return
+        target = target or user_id
         if _owner(target, config):
             await message.answer(_vip2_text(None, target, owner=True))
             return
@@ -199,7 +179,74 @@ async def cmd_vip2(
         await message.answer("\n".join(lines))
         return
 
-    await message.answer("⚠️ Ação inválida. Use <code>/vip2</code>.")
+    # Sem palavra de ação: "/vip2 ID 30", "/vip2 @usuario 30", "/vip2 Nome 1" = adicionar.
+    await _add_vip2(message, db, bot, user_id, args)
+
+
+@router.message(Command("addvip2"))
+async def cmd_addvip2(
+    message: Message,
+    command: CommandObject,
+    config: Config,
+    db: Database,
+    bot: Bot,
+) -> None:
+    """Dono adiciona VIP2: /addvip2 ID 30, /addvip2 @usuario 30 ou respondendo alguém."""
+    if not message.from_user:
+        return
+    owner_id = await resolve_owner_id(message, bot, config)
+    if owner_id is None:
+        return
+    await _add_vip2(message, db, bot, owner_id, (command.args or "").split())
+
+
+def _usage_add() -> str:
+    return (
+        "Use: <code>/addvip2 ID 30</code> ou <code>/addvip2 @usuario 30</code>\n"
+        "Ou responda a uma mensagem da pessoa com <code>/addvip2 30</code>.\n"
+        "Os dias somam ao VIP2 atual. <code>0</code> = permanente."
+    )
+
+
+def _not_found(label: str) -> str:
+    return (
+        f"⚠️ Não encontrei {label}. Use o Telegram ID, marque a pessoa pela lista "
+        "de menções ou responda a uma mensagem dela.\n"
+        "Se ela nunca falou com o bot, peça para dar /start."
+    )
+
+
+async def _add_vip2(
+    message: Message, db: Database, bot: Bot, owner_id: int, args: list[str]
+) -> None:
+    days = _parse_days(args)
+    if days > 3650:
+        await message.answer("⚠️ Use de 0 a 3650 dias. 0 = permanente.")
+        return
+
+    target, label = await _resolve_target(message, db, args)
+    if target is None:
+        await message.answer(_not_found(label) if label else _usage_add())
+        return
+
+    vip = await db.extend_vip2(target, days, owner_id)
+    expires_at = int(vip["expires_at"])
+    shown = label if label and label != str(target) else ""
+    await message.answer(
+        "✅ <b>VIP2 adicionado</b>\n\n"
+        f"👤 {shown + ' ' if shown else ''}(<code>{target}</code>)\n"
+        f"➕ {'Permanente' if days == 0 else f'{days} dias'}\n"
+        f"📅 Validade: <b>{_fmt_expiry(expires_at)}</b>\n"
+        f"⏳ Restante: <b>{_remaining(expires_at)}</b>"
+    )
+    await _notify(
+        bot,
+        target,
+        "🔥 <b>Seu VIP2 foi ativado!</b>\n\n"
+        "Agora você pode usar <code>/like2 UID</code> nos grupos.\n"
+        "🕒 Limite: <b>1 envio a cada 24 horas</b>.\n"
+        f"📅 Validade: <b>{_fmt_expiry(expires_at)}</b>",
+    )
 
 
 @router.message(AdminVip2Add.waiting_value)
