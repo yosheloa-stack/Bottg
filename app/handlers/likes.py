@@ -231,7 +231,9 @@ async def cmd_like(
                 await message.reply(
                     "🔒 <b>Bot sem licença ativa neste grupo.</b>\n\n"
                     "Para usar o envio de likes aqui, alugue o bot pelo menu "
-                    "no privado e vincule a licença a este grupo."
+                    "no privado e vincule a licença a este grupo.\n\n"
+                    "Já tem licença? O dono dela envia aqui "
+                    "<code>/ativarbot ID_DA_LICENÇA</code> novamente."
                 )
                 return
 

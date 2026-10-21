@@ -1,6 +1,8 @@
 """Handlers comuns: /start, menu, navegação, cancelar, suporte, pedidos."""
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -10,6 +12,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, ForceReply, Message
 
 from app import texts
+from app.backup import backup_now
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import back_home, cancel_only, main_menu
@@ -17,6 +20,7 @@ from app.states import PurchaseFlow
 from app.ui import edit_screen, send_menu
 from app.utils import format_price
 
+logger = logging.getLogger(__name__)
 router = Router(name="common")
 
 
@@ -66,6 +70,7 @@ async def cmd_start(
                 message.from_user.id,
                 message.chat.id,
             ):
+                asyncio.create_task(_backup_quietly(bot, db, config))
                 rental = await db.get_bot_rental(rental_id)
                 expires_text = "—"
                 if rental:
@@ -352,6 +357,8 @@ async def cb_my_id(query: CallbackQuery) -> None:
 async def cmd_activate_rental(
     message: Message,
     db: Database,
+    bot: Bot,
+    config: Config,
 ) -> None:
     if message.chat.type not in {"group", "supergroup"} or not message.from_user:
         await message.reply(
@@ -386,6 +393,32 @@ async def cmd_activate_rental(
         "✅ <b>ALUGUEL ATIVADO NESTE GRUPO</b>\n"
         f"📄 Licença: <code>#{rental_id}</code>"
     )
+    # Salva o vínculo já, para não perder se o bot reiniciar antes do backup periódico.
+    asyncio.create_task(_backup_quietly(bot, db, config))
+
+
+async def _backup_quietly(bot: Bot, db: Database, config: Config) -> None:
+    try:
+        await backup_now(bot, db, config)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha no backup após /ativarbot")
+
+
+@router.message(F.migrate_to_chat_id)
+async def on_group_migrated(message: Message, db: Database) -> None:
+    # Grupo comum promovido a supergrupo (ex.: ao dar admin ao bot): o chat_id muda.
+    moved = await db.migrate_rental_chat(message.chat.id, message.migrate_to_chat_id)
+    if moved:
+        logger.info(
+            "Licença(s) movida(s) do grupo %s para o supergrupo %s",
+            message.chat.id,
+            message.migrate_to_chat_id,
+        )
+
+
+@router.message(F.migrate_from_chat_id)
+async def on_supergroup_created(message: Message, db: Database) -> None:
+    await db.migrate_rental_chat(message.migrate_from_chat_id, message.chat.id)
 
 
 @router.message(Command("id", "meuid"))

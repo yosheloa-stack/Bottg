@@ -1147,6 +1147,15 @@ class Database:
             row = await cur.fetchone()
         return dict(row) if row else None
 
+    async def migrate_rental_chat(self, old_chat_id: int, new_chat_id: int) -> int:
+        """Grupo virou supergrupo: o Telegram troca o chat_id. Leva as licenças junto."""
+        cur = await self.db.execute(
+            "UPDATE bot_rentals SET chat_id = ?, updated_at = ? WHERE chat_id = ?",
+            (int(new_chat_id), int(time.time()), int(old_chat_id)),
+        )
+        await self.db.commit()
+        return cur.rowcount or 0
+
     # ----- Auto-Like Premium FFHub -----
     async def create_ffhub_autolike_subscription(
         self,
