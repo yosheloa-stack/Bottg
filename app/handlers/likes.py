@@ -252,9 +252,12 @@ async def cmd_like(
     if use_cooldown:
         allowed, remaining = await db.acquire_like_slot(message.from_user.id)
         if not allowed:
-            hours, rem = divmod(max(0, remaining), 3600)
+            days, rem = divmod(max(0, remaining), 86400)
+            hours, rem = divmod(rem, 3600)
             minutes, seconds = divmod(rem, 60)
-            if hours > 0:
+            if days > 0:
+                wait_text = f"{days}d {hours}h"
+            elif hours > 0:
                 wait_text = f"{hours}h {minutes}min"
             elif minutes > 0:
                 wait_text = f"{minutes}min {seconds}s"
@@ -262,8 +265,8 @@ async def cmd_like(
                 wait_text = f"{seconds}s"
 
             await message.reply(
-                "⏳ <b>Limite de envio atingido.</b>\n\n"
-                "Cada pessoa pode fazer <b>1 envio de likes a cada 24 horas</b>.\n"
+                "⏳ <b>Limite semanal atingido.</b>\n\n"
+                "Cada pessoa pode fazer <b>1 envio grátis de 220 likes por semana</b>.\n"
                 f"Você poderá usar novamente em <b>{wait_text}</b>.\n\n"
                 "💎 Usuários VIP não possuem esse limite."
             )

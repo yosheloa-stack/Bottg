@@ -55,14 +55,14 @@ def _vip_text(vip: dict | None, user_id: int, *, owner: bool = False) -> str:
             "💎 <b>VIP</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "❌ Você não possui VIP ativo.\n\n"
-            "Usuários VIP podem usar o comando <code>/like</code> sem o limite de 24 horas."
+            "Usuários VIP podem usar o comando <code>/like</code> sem o limite semanal."
         )
     expires_at = int(vip.get("expires_at") or 0)
     return (
         "💎 <b>VIP ATIVO</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"🆔 Telegram ID: <code>{user_id}</code>\n"
-        "♾️ <code>/like</code> sem limite de 24h\n"
+        "♾️ <code>/like</code> sem limite semanal\n"
         f"📅 Validade: <b>{_fmt_expiry(expires_at)}</b>\n"
         f"⏳ Restante: <b>{_remaining(expires_at)}</b>"
     )
@@ -82,7 +82,7 @@ async def _panel_text(db: Database) -> str:
         "💎 <b>GERENCIAR VIP</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"👥 VIPs ativos: <b>{len(vips)}</b>\n\n"
-        "VIP tem <b>/like ilimitado</b>, sem espera de 24 horas.\n"
+        "VIP tem <b>/like ilimitado</b>, sem espera de 7 dias.\n"
         "VIP com prazo expira automaticamente.\n\n"
         "Também pode usar:\n"
         "<code>/vip add ID 30</code>\n"
@@ -151,7 +151,7 @@ async def cmd_vip(
             bot,
             target,
             "💎 <b>Seu VIP foi ativado!</b>\n\n"
-            "Agora você pode usar <code>/like</code> sem o limite de 24 horas.\n"
+            "Agora você pode usar <code>/like</code> sem o limite semanal.\n"
             f"📅 Validade: <b>{_fmt_expiry(int(vip['expires_at']))}</b>",
         )
         return
@@ -282,7 +282,7 @@ async def cmd_addvip(
         bot,
         target,
         "💎 <b>Seu VIP foi ativado!</b>\n\n"
-        "Agora você pode usar <code>/like</code> sem o limite de 24 horas.\n"
+        "Agora você pode usar <code>/like</code> sem o limite semanal.\n"
         f"📅 Validade: <b>{_fmt_expiry(expires_at)}</b>",
     )
 
@@ -322,7 +322,7 @@ async def vip_add_receive(
         bot,
         target,
         "💎 <b>Seu VIP foi ativado!</b>\n\n"
-        "Você agora pode usar <code>/like</code> sem limite de 24 horas.\n"
+        "Você agora pode usar <code>/like</code> sem limite semanal.\n"
         f"📅 Validade: <b>{_fmt_expiry(int(vip['expires_at']))}</b>",
     )
 
