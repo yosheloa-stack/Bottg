@@ -5,7 +5,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.enums import ChatAction
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
@@ -79,6 +79,8 @@ async def cb_support(
 
 
 @router.message(Command("suporte"), F.chat.type == "private")
+# Deep link https://t.me/BOT?start=suporte (botão do aviso de limite semanal do /like).
+@router.message(CommandStart(deep_link=True, magic=F.args == "suporte"), F.chat.type == "private")
 async def cmd_support(
     message: Message,
     state: FSMContext,

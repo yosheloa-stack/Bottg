@@ -4,11 +4,12 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import re
 import time
 
 from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app import texts
 from app.announcements import announce_autolike_send
@@ -24,6 +25,26 @@ router = Router(name="likes")
 logger = logging.getLogger(__name__)
 
 GROUP_TYPES = {"group", "supergroup"}
+_TG_USERNAME = re.compile(r"^@?([A-Za-z][A-Za-z0-9_]{4,31})$")
+
+
+async def _vip_support_markup(bot: Bot, config: Config) -> InlineKeyboardMarkup | None:
+    """Botão do aviso de limite semanal: leva ao suporte para virar VIP.
+
+    Usa o @ de SUPPORT_USERNAME; se não estiver configurado, abre o suporte
+    no privado do bot (/start suporte).
+    """
+    match = _TG_USERNAME.match((config.support_username or "").strip())
+    if match and match.group(1).lower() != "seu_suporte":
+        url = f"https://t.me/{match.group(1)}"
+    else:
+        me = await bot.get_me()
+        if not me.username:
+            return None
+        url = f"https://t.me/{me.username}?start=suporte"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="💎 Quero ser VIP: falar com o suporte", url=url)]]
+    )
 
 
 def _valid_like_uid(game_id: str) -> bool:
@@ -268,7 +289,8 @@ async def cmd_like(
                 "⏳ <b>Limite semanal atingido.</b>\n\n"
                 "Cada pessoa pode fazer <b>1 envio grátis de 220 likes por semana</b>.\n"
                 f"Você poderá usar novamente em <b>{wait_text}</b>.\n\n"
-                "💎 Usuários VIP não possuem esse limite."
+                "💎 Usuários VIP não possuem esse limite.",
+                reply_markup=await _vip_support_markup(bot, config),
             )
             return
 
