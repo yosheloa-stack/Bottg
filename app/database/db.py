@@ -624,15 +624,17 @@ class Database:
         )
         await self.db.commit()
 
-    # ----- Likes: limite de 1 envio por usuário a cada 24 horas -----
+    # ----- Likes grátis (220): limite de 1 envio por usuário a cada 7 dias -----
+    LIKE_COOLDOWN_SECONDS = 7 * 24 * 60 * 60
+
     async def acquire_like_slot(self, user_id: int) -> tuple[bool, int]:
         """Reserva um envio evitando corrida entre comandos simultâneos.
 
         Retorna (permitido, segundos_restantes). A reserva temporária não
-        consome as 24h; elas só começam após complete_like_slot().
+        consome os 7 dias; eles só começam após complete_like_slot().
         """
         now = int(time.time())
-        cooldown = 24 * 60 * 60
+        cooldown = self.LIKE_COOLDOWN_SECONDS
         lock_seconds = 180
 
         await self.db.execute("BEGIN IMMEDIATE")
