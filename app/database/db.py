@@ -197,6 +197,13 @@ CREATE TABLE IF NOT EXISTS vip2_cooldowns (
     last_sent_at  INTEGER NOT NULL DEFAULT 0,
     lock_until    INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS like2_credits (
+    user_id       INTEGER PRIMARY KEY,
+    credits       INTEGER NOT NULL DEFAULT 0,
+    added_by      INTEGER NOT NULL DEFAULT 0,
+    updated_at    INTEGER NOT NULL
+);
 """
 
 
@@ -567,6 +574,53 @@ class Database:
         await self.db.execute(
             "UPDATE vip2_cooldowns SET lock_until = 0 WHERE user_id = ?",
             (int(user_id),),
+        )
+        await self.db.commit()
+
+    # ----- LIKE2: envios liberados pelo dono (/liberarlike2) -----
+    async def add_like2_credits(self, user_id: int, amount: int, added_by: int) -> int:
+        """Soma envios de /like2 ao saldo do usuário e retorna o novo total."""
+        now = int(time.time())
+        await self.db.execute(
+            """
+            INSERT INTO like2_credits (user_id, credits, added_by, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                credits = like2_credits.credits + excluded.credits,
+                added_by = excluded.added_by,
+                updated_at = excluded.updated_at
+            """,
+            (int(user_id), int(amount), int(added_by), now),
+        )
+        await self.db.commit()
+        return await self.get_like2_credits(user_id)
+
+    async def get_like2_credits(self, user_id: int) -> int:
+        async with self.db.execute(
+            "SELECT credits FROM like2_credits WHERE user_id = ?",
+            (int(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return max(0, int(row["credits"])) if row else 0
+
+    async def consume_like2_credit(self, user_id: int) -> bool:
+        """Desconta 1 envio de forma atômica. False se não houver saldo."""
+        cur = await self.db.execute(
+            """
+            UPDATE like2_credits
+            SET credits = credits - 1, updated_at = ?
+            WHERE user_id = ? AND credits > 0
+            """,
+            (int(time.time()), int(user_id)),
+        )
+        await self.db.commit()
+        return (cur.rowcount or 0) > 0
+
+    async def refund_like2_credit(self, user_id: int) -> None:
+        """Devolve o envio quando o /like2 falha."""
+        await self.db.execute(
+            "UPDATE like2_credits SET credits = credits + 1, updated_at = ? WHERE user_id = ?",
+            (int(time.time()), int(user_id)),
         )
         await self.db.commit()
 

@@ -6,10 +6,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, F, Router
+from aiogram.enums import MessageEntityType
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, User
 
+from app.autodelete import auto_delete
 from app.config import Config
 from app.database import Database
 from app.owner_auth import resolve_owner_id
@@ -94,7 +96,8 @@ async def _panel_text(db: Database) -> str:
         "<code>/vip2 add ID 0</code> — permanente\n"
         "<code>/vip2 remove ID</code>\n"
         "<code>/vip2 status ID</code>\n"
-        "<code>/vip2 list</code>"
+        "<code>/vip2 list</code>\n"
+        "<code>/liberarlike2 @usuario 5</code> — no grupo, libera envios"
     )
 
 
@@ -116,7 +119,11 @@ async def cmd_vip2(
 
     if not is_owner:
         vip = await db.get_vip2(user_id)
-        await message.answer(_vip2_text(vip, user_id))
+        text = _vip2_text(vip, user_id)
+        credits = await db.get_like2_credits(user_id)
+        if credits:
+            text += f"\n\n🎟️ Envios Like2 liberados: <b>{credits}</b>"
+        await message.answer(text)
         return
 
     if not args:
@@ -200,6 +207,106 @@ async def cmd_vip2(
         return
 
     await message.answer("⚠️ Ação inválida. Use <code>/vip2</code>.")
+
+
+def _user_label(user: User) -> str:
+    if user.username:
+        return f"@{user.username}"
+    return user.full_name or str(user.id)
+
+
+async def _resolve_targets(
+    message: Message, db: Database
+) -> tuple[list[tuple[int, str]], list[str]]:
+    """Pessoas marcadas (@username ou menção sem @) ou, sem marcação, a respondida."""
+    text = message.text or message.caption or ""
+    found: dict[int, str] = {}
+    missing: list[str] = []
+    for entity in message.entities or message.caption_entities or []:
+        if entity.type == MessageEntityType.TEXT_MENTION and entity.user:
+            user = entity.user
+            await db.upsert_user(user.id, user.username, user.first_name)
+            found.setdefault(int(user.id), _user_label(user))
+        elif entity.type == MessageEntityType.MENTION:
+            username = entity.extract_from(text).lstrip("@")
+            row = await db.find_user_by_username(username)
+            if row:
+                found.setdefault(int(row["user_id"]), f"@{username}")
+            else:
+                missing.append(f"@{username}")
+
+    reply = message.reply_to_message
+    # Em grupos com tópicos, toda mensagem "responde" à criação do tópico; isso não conta.
+    if (
+        not found
+        and not missing
+        and reply
+        and reply.from_user
+        and not reply.from_user.is_bot
+        and reply.forum_topic_created is None
+    ):
+        user = reply.from_user
+        await db.upsert_user(user.id, user.username, user.first_name)
+        found[int(user.id)] = _user_label(user)
+    return list(found.items()), missing
+
+
+@router.message(Command("liberarlike2", "addlike2", "darlike2"))
+async def cmd_liberar_like2(
+    message: Message,
+    command: CommandObject,
+    config: Config,
+    db: Database,
+    bot: Bot,
+) -> None:
+    """Dono libera envios de /like2 marcando as pessoas: /liberarlike2 @a @b 5."""
+    if not message.from_user:
+        return
+    owner_id = await resolve_owner_id(message, bot, config)
+    if owner_id is None:
+        return
+
+    numbers = [a for a in (command.args or "").split() if a.isdigit()]
+    amount = int(numbers[-1]) if numbers else 1
+    if amount < 1 or amount > 1000:
+        reply = await message.answer("⚠️ Use de 1 a 1000 envios.")
+        auto_delete(bot, message, reply)
+        return
+
+    targets, missing = await _resolve_targets(message, db)
+    if not targets:
+        if missing:
+            text = (
+                f"⚠️ Não encontrei {', '.join(missing)}. Peça para a pessoa dar /start "
+                "no bot ou responda a uma mensagem dela com <code>/liberarlike2 QTD</code>."
+            )
+        else:
+            text = (
+                "Use: <code>/liberarlike2 @usuario 5</code>\n"
+                "Pode marcar várias pessoas: <code>/liberarlike2 @a @b 3</code>\n"
+                "Ou responda a uma mensagem da pessoa com <code>/liberarlike2 5</code>.\n"
+                "Os envios somam ao saldo e descontam sozinhos a cada /like2."
+            )
+        reply = await message.answer(text)
+        auto_delete(bot, message, reply)
+        return
+
+    lines = ["✅ <b>LIKE2 liberado</b>", "━━━━━━━━━━━━━━━━━━━━"]
+    for target, label in targets:
+        total = await db.add_like2_credits(target, amount, owner_id)
+        lines.append(f"👤 {label} — +{amount} (saldo: <b>{total}</b>)")
+        await _notify(
+            bot,
+            target,
+            "🔥 <b>Like2 liberado para você!</b>\n\n"
+            f"🎟️ Envios recebidos: <b>{amount}</b>\n"
+            f"📦 Saldo atual: <b>{total}</b>\n\n"
+            "Use <code>/like2 SEU_ID</code> no grupo. Cada envio desconta 1 do saldo.",
+        )
+    if missing:
+        lines.append(f"\n⚠️ Não encontrei: {', '.join(missing)}")
+    reply = await message.answer("\n".join(lines))
+    auto_delete(bot, message, reply)
 
 
 @router.message(AdminVip2Add.waiting_value)

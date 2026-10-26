@@ -302,9 +302,10 @@ async def cmd_like2(
     owner_id = await resolve_owner_id(message, bot, config)
     is_owner = owner_id is not None
     is_vip2 = await db.is_vip2(message.from_user.id)
+    credits = 0 if is_owner else await db.get_like2_credits(message.from_user.id)
     arg = (command.args or "").strip()
 
-    has_direct_access = is_owner or is_vip2
+    has_direct_access = is_owner or is_vip2 or credits > 0
 
     # Sem UID: dono/VIP2/grupo do dono recebe instrução do envio direto.
     if not arg and has_direct_access:
@@ -313,7 +314,7 @@ async def cmd_like2(
             if is_owner
             else "VIP2"
             if is_vip2
-            else "GRUPO DO DONO"
+            else f"{credits} ENVIO(S) LIBERADO(S)"
         )
         await message.reply(
             f"🔥 <b>LIKE2 • {perfil}</b>\n\n"
@@ -330,7 +331,7 @@ async def cmd_like2(
         await message.reply(
             "🔒 <b>LIKE2 exclusivo para VIP2</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            "Você não possui acesso VIP2 ativo.\n\n"
+            "Você não possui acesso VIP2 ativo nem envios liberados.\n\n"
             "Nenhuma requisição foi enviada.\n"
             "Use <code>/vip2</code> para consultar seu acesso."
         )
@@ -354,11 +355,15 @@ async def cmd_like2(
             return
 
         # VIP2 pode fazer somente 1 envio concluído a cada 24 horas.
+        # Fora disso, usa os envios liberados pelo dono (/liberarlike2).
         # Donos continuam sem limite.
         vip2_slot_reserved = False
+        credit_used = False
         if is_vip2 and not is_owner:
             allowed, remaining = await db.acquire_vip2_slot(message.from_user.id)
-            if not allowed:
+            if not allowed and credits > 0:
+                credit_used = await db.consume_like2_credit(message.from_user.id)
+            if not allowed and not credit_used:
                 hours, rem = divmod(max(0, remaining), 3600)
                 minutes, seconds = divmod(rem, 60)
                 if hours > 0:
@@ -374,7 +379,21 @@ async def cmd_like2(
                     f"Você poderá enviar novamente em <b>{wait_text}</b>."
                 )
                 return
-            vip2_slot_reserved = True
+            vip2_slot_reserved = allowed
+        elif not is_owner:
+            credit_used = await db.consume_like2_credit(message.from_user.id)
+            if not credit_used:
+                await message.reply(
+                    "🔒 <b>Seus envios de Like2 acabaram.</b>\n\n"
+                    "Nenhuma requisição foi enviada."
+                )
+                return
+
+        async def _undo_reservation() -> None:
+            if vip2_slot_reserved:
+                await db.release_vip2_slot(message.from_user.id)
+            if credit_used:
+                await db.refund_like2_credit(message.from_user.id)
 
         status_msg = await message.reply("🔥 Enviando Like2...")
         started_at = time.perf_counter()
@@ -382,8 +401,8 @@ async def cmd_like2(
             "owner"
             if is_owner
             else "vip2"
-            if is_vip2
-            else "owner_group"
+            if vip2_slot_reserved
+            else "credito"
         )
         logger.info(
             "LIKE2 inicio | acesso=%s user=%s uid=%s",
@@ -397,8 +416,7 @@ async def cmd_like2(
                 timeout=60,
             )
         except asyncio.TimeoutError:
-            if vip2_slot_reserved:
-                await db.release_vip2_slot(message.from_user.id)
+            await _undo_reservation()
             elapsed = time.perf_counter() - started_at
             logger.error(
                 "LIKE2 timeout externo | acesso=%s user=%s uid=%s elapsed=%.2fs",
@@ -415,8 +433,7 @@ async def cmd_like2(
             )
             return
         except Exception as exc:  # noqa: BLE001
-            if vip2_slot_reserved:
-                await db.release_vip2_slot(message.from_user.id)
+            await _undo_reservation()
             logger.exception("Erro inesperado no /like2 uid=%s", game_id)
             await status_msg.edit_text(
                 "❌ <b>Erro no LIKE2</b>\n\n"
@@ -438,8 +455,7 @@ async def cmd_like2(
         data = result.data if isinstance(result.data, dict) else {}
 
         if not result.ok:
-            if vip2_slot_reserved:
-                await db.release_vip2_slot(message.from_user.id)
+            await _undo_reservation()
             error = (
                 result.error
                 or data.get("erro")
@@ -481,9 +497,13 @@ async def cmd_like2(
                 f"❤️ Enviados: <b>+{html.escape(str(sent_display))}</b>",
                 f"⚡ Tempo: <b>{elapsed:.2f}s</b>",
                 "",
-                f"✅ Envio concluído via <b>{'DONO' if is_owner else 'VIP2'}</b>.",
+                f"✅ Envio concluído via <b>{'DONO' if is_owner else 'VIP2' if vip2_slot_reserved else 'ENVIO LIBERADO'}</b>.",
             ]
         )
+        if credit_used:
+            lines.append(
+                f"🎟️ Envios restantes: <b>{await db.get_like2_credits(message.from_user.id)}</b>"
+            )
         await status_msg.edit_text("\n".join(lines))
         try:
             sent_value = int(sent) if sent is not None else 0
