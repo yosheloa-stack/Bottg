@@ -67,7 +67,7 @@ async def cmd_owner_autolike(
             "<code>/autolike list</code>\n"
             "<code>/autolike status UID</code>\n"
             "<code>/autolike cancel UID</code>\n\n"
-            "✅ 1 envio por dia pela FFHub\n"
+            "✅ 1 envio por dia\n"
             "✅ aproximadamente 500 a 1.000 likes por envio\n"
             "✅ horário fixo: 09:00 da manhã"
         )
@@ -204,8 +204,8 @@ async def cmd_owner_autolike(
 
     if not ffhub_shop.configured:
         await message.reply(
-            "⚠️ <b>FFHub não configurada.</b>\n"
-            "Configure a FFHub no painel do dono antes de ativar."
+            "⚠️ <b>Serviço de likes não configurado.</b>\n"
+            "Configure a chave no painel do dono antes de ativar."
         )
         return
 

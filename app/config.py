@@ -167,7 +167,7 @@ def load_config() -> Config:
             code="like2_single",
             title="💎 Like2 • Envio único",
             description=(
-                "Um envio pago de likes pela FFHub. "
+                "Um envio pago de likes. "
                 "Após o PIX ser aprovado, o bot solicita seu UID e envia automaticamente."
             ),
             price=price_like2_single,

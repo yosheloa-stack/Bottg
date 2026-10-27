@@ -150,11 +150,11 @@ async def _show_autolike_category(
     if code == "autolike220":
         title = "❤️ <b>AUTO LIKE 220</b>"
         rate = "<b>220 likes por dia</b>"
-        provider_text = "Envio diário automático pela Auto System às <b>09:00</b>."
+        provider_text = "Envio diário automático às <b>09:00</b>."
     else:
         title = "💎 <b>AUTO LIKE 500</b>"
         rate = "<b>aproximadamente 500 a 1.000 likes por dia</b>"
-        provider_text = "Envio diário automático pela FFHub às <b>09:00</b>."
+        provider_text = "Envio diário automático às <b>09:00</b>."
 
     reseller_line = (
         f"\n🤝 Revendedor: <b>{discount}% de desconto aplicado</b>"
