@@ -196,7 +196,7 @@ PREMIUM_AUTOLIKE_ACTIVATED = (
 LIKE2_SINGLE_CONFIRM = (
     "💎 <b>Like2 • Envio único</b>\n"
     "━━━━━━━━━━━━━━━━━━━━\n"
-    "❤️ 1 envio pago pela FFHub\n"
+    "❤️ 1 envio pago pelo nosso sistema\n"
     "💰 Valor: <b>R$ {price}</b>\n\n"
     "Após o PIX ser confirmado, eu vou pedir o <b>UID</b> da conta.\n"
     "Depois disso, o envio é feito automaticamente.\n\n"
