@@ -88,7 +88,7 @@ async def _panel_text(db: Database) -> str:
         f"👥 VIP2 ativos: <b>{len(vips)}</b>\n\n"
         "VIP2 libera exclusivamente o comando <code>/like2 UID</code>.\n"
         "Cada VIP2 pode fazer <b>1 envio a cada 24 horas</b>.\n"
-        "Quem não tiver VIP2 é bloqueado antes da FFHub ser chamada.\n\n"
+        "Quem não tiver VIP2 é bloqueado antes de qualquer envio.\n\n"
         "Comandos:\n"
         "<code>/vip2 add ID 30</code>\n"
         "<code>/vip2 add ID 0</code> — permanente\n"
