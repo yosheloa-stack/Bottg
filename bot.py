@@ -389,7 +389,7 @@ async def watch_autosystem_autolikes(
 
 async def main() -> None:
     config = load_config()
-    logger.info("AURORA_BUILD=MENU_V2_2026_10_16")
+    logger.info("AURORA_BUILD=DEPLOY_CHECK_2026_10_27_V2")
 
     bot = Bot(
         token=config.bot_token,
