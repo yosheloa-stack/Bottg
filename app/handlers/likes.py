@@ -67,7 +67,7 @@ async def _do_send_like(
         if use_cooldown:
             await db.release_like_slot(message.from_user.id)
         await status_msg.edit_text(
-            "⚠️ <b>Auto System não configurada.</b>\n"
+            "⚠️ <b>Serviço de likes temporariamente indisponível.</b>\n"
             "Avise um administrador."
         )
         return
@@ -151,7 +151,7 @@ async def _do_send_like(
 
     if result.status == 400:
         await status_msg.edit_text(
-            f"❌ {html.escape(error or 'Parâmetros inválidos para envio de likes.')}"
+            "❌ Não foi possível processar esse ID. Confira os números e tente novamente."
         )
         return
 
@@ -193,18 +193,18 @@ async def _do_send_like(
 
     if result.status == 429:
         await status_msg.edit_text(
-            f"⏳ {html.escape(error or 'Limite da Auto System atingido. Tente novamente em instantes.')}"
+            "⏳ Limite temporário atingido. Tente novamente em instantes."
         )
         return
 
     if result.status == 503:
         await status_msg.edit_text(
-            f"⏳ {html.escape(error or 'Auto System temporariamente indisponível. Tente novamente em instantes.')}"
+            "⏳ Serviço temporariamente indisponível. Tente novamente em instantes."
         )
         return
 
     if error:
-        await status_msg.edit_text(f"❌ {html.escape(error)}")
+        await status_msg.edit_text("⚠️ Não foi possível concluir o envio agora. Tente novamente mais tarde.")
         return
 
     await status_msg.edit_text(texts.GENERIC_ERROR)
@@ -330,7 +330,7 @@ async def cmd_like2(
             "Use assim:\n"
             "<code>/like2 SEU_ID</code>\n\n"
             "✅ Pode usar em grupos.\n"
-            "✅ Envio direto pela FFHub."
+            "✅ Envio direto de likes."
         )
         return
 
@@ -359,7 +359,7 @@ async def cmd_like2(
         if not ffhub_shop.configured:
             await message.reply(
                 "⚠️ <b>LIKE2 temporariamente indisponível.</b>\n\n"
-                "A integração FFHub ainda não está configurada."
+                "O serviço de envio ainda não está disponível."
             )
             return
 
@@ -418,9 +418,9 @@ async def cmd_like2(
                 elapsed,
             )
             await status_msg.edit_text(
-                "⏱️ <b>LIKE2 sem resposta da FFHub</b>\n\n"
+                "⏱️ <b>LIKE2 sem resposta do serviço</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
-                "A API não respondeu em até <b>60 segundos</b>.\n\n"
+                "O serviço não respondeu em até <b>60 segundos</b>.\n\n"
                 "⚠️ Não vou repetir automaticamente para evitar envio duplicado."
             )
             return
@@ -431,7 +431,7 @@ async def cmd_like2(
             await status_msg.edit_text(
                 "❌ <b>Erro no LIKE2</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
-                f"⚠️ {html.escape(str(exc) or 'Falha inesperada ao chamar a FFHub.')}"
+                "⚠️ Não foi possível concluir o envio. Tente novamente mais tarde."
             )
             return
 
@@ -456,12 +456,12 @@ async def cmd_like2(
                 or data.get("error")
                 or data.get("mensagem")
                 or data.get("message")
-                or "A FFHub não conseguiu concluir o envio."
+                or "Não foi possível concluir o envio."
             )
             await status_msg.edit_text(
                 "❌ <b>LIKE2 não enviado</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
-                f"⚠️ {html.escape(str(error))}"
+                "⚠️ Não foi possível concluir o envio agora. Tente novamente mais tarde."
             )
             return
 
@@ -491,7 +491,7 @@ async def cmd_like2(
                 f"❤️ Enviados: <b>+{html.escape(str(sent_display))}</b>",
                 f"⚡ Tempo: <b>{elapsed:.2f}s</b>",
                 "",
-                f"✅ Envio concluído via <b>{'DONO' if is_owner else 'VIP2'}</b>.",
+                "✅ Envio concluído com sucesso.",
             ]
         )
         await status_msg.edit_text("\n".join(lines))
