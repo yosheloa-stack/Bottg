@@ -287,7 +287,7 @@ async def cmd_like(
 
             await message.reply(
                 "⏳ <b>Limite semanal atingido.</b>\n\n"
-                "Cada pessoa pode fazer <b>1 envio grátis de 220 likes por semana</b>.\n"
+                f"Cada pessoa pode fazer <b>{db.LIKE_FREE_PER_WINDOW} envios grátis de 220 likes por semana</b>.\n"
                 f"Você poderá usar novamente em <b>{wait_text}</b>.\n\n"
                 "💎 Usuários VIP não possuem esse limite.",
                 reply_markup=await _vip_support_markup(bot, config),

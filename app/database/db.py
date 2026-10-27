@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS like_cooldowns (
     lock_until    INTEGER NOT NULL DEFAULT 0
 );
 
+-- Histórico dos envios grátis do /like (limite de N por semana).
+CREATE TABLE IF NOT EXISTS like_free_sends (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id  INTEGER NOT NULL,
+    sent_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_like_free_sends_user ON like_free_sends(user_id, sent_at);
+
 CREATE TABLE IF NOT EXISTS ffhub_autolike_subscriptions (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id      INTEGER NOT NULL UNIQUE,
@@ -290,6 +298,19 @@ class Database:
         if "purchase_announced" not in order_columns:
             await self._db.execute(
                 "ALTER TABLE orders ADD COLUMN purchase_announced INTEGER NOT NULL DEFAULT 0"
+            )
+
+        # Envios grátis feitos antes do histórico contam na semana atual.
+        async with self._db.execute("SELECT 1 FROM like_free_sends LIMIT 1") as cur:
+            has_free_sends = await cur.fetchone() is not None
+        if not has_free_sends:
+            await self._db.execute(
+                """
+                INSERT INTO like_free_sends (user_id, sent_at)
+                SELECT user_id, last_sent_at FROM like_cooldowns
+                WHERE last_sent_at > ?
+                """,
+                (now_ts - self.LIKE_WINDOW_SECONDS,),
             )
 
         await self._db.commit()
@@ -624,17 +645,17 @@ class Database:
         )
         await self.db.commit()
 
-    # ----- Likes grátis (220): limite de 1 envio por usuário a cada 7 dias -----
-    LIKE_COOLDOWN_SECONDS = 7 * 24 * 60 * 60
+    # ----- Likes grátis (220): limite de 3 envios por usuário a cada 7 dias -----
+    LIKE_WINDOW_SECONDS = 7 * 24 * 60 * 60
+    LIKE_FREE_PER_WINDOW = 3
 
     async def acquire_like_slot(self, user_id: int) -> tuple[bool, int]:
         """Reserva um envio evitando corrida entre comandos simultâneos.
 
         Retorna (permitido, segundos_restantes). A reserva temporária não
-        consome os 7 dias; eles só começam após complete_like_slot().
+        conta como envio; só complete_like_slot() registra o envio na semana.
         """
         now = int(time.time())
-        cooldown = self.LIKE_COOLDOWN_SECONDS
         lock_seconds = 180
 
         await self.db.execute("BEGIN IMMEDIATE")
@@ -648,10 +669,21 @@ class Database:
             last_sent_at = int(row["last_sent_at"]) if row else 0
             lock_until = int(row["lock_until"]) if row else 0
 
-            remaining = (last_sent_at + cooldown) - now
-            if remaining > 0:
+            async with self.db.execute(
+                """
+                SELECT sent_at FROM like_free_sends
+                WHERE user_id = ? AND sent_at > ?
+                ORDER BY sent_at
+                """,
+                (user_id, now - self.LIKE_WINDOW_SECONDS),
+            ) as cur:
+                recent = [int(r["sent_at"]) for r in await cur.fetchall()]
+
+            if len(recent) >= self.LIKE_FREE_PER_WINDOW:
+                # Libera quando o envio mais antigo que ainda conta sair da janela.
+                oldest = recent[len(recent) - self.LIKE_FREE_PER_WINDOW]
                 await self.db.commit()
-                return False, remaining
+                return False, max(1, oldest + self.LIKE_WINDOW_SECONDS - now)
 
             if lock_until > now:
                 await self.db.commit()
@@ -682,6 +714,14 @@ class Database:
                 lock_until = 0
             """,
             (user_id, now),
+        )
+        await self.db.execute(
+            "INSERT INTO like_free_sends (user_id, sent_at) VALUES (?, ?)",
+            (user_id, now),
+        )
+        await self.db.execute(
+            "DELETE FROM like_free_sends WHERE sent_at <= ?",
+            (now - self.LIKE_WINDOW_SECONDS,),
         )
         await self.db.commit()
 
