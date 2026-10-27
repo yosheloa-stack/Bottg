@@ -7,6 +7,7 @@ import logging
 import time
 
 from aiogram import Bot, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
@@ -24,6 +25,16 @@ router = Router(name="likes")
 logger = logging.getLogger(__name__)
 
 GROUP_TYPES = {"group", "supergroup"}
+
+async def _delete_user_command(message: Message, bot: Bot) -> None:
+    """Apaga comandos em grupos sem interromper o processamento."""
+    if message.chat.type not in GROUP_TYPES:
+        return
+    try:
+        await bot.delete_message(message.chat.id, message.message_id)
+    except (TelegramBadRequest, TelegramForbiddenError) as exc:
+        logger.warning("Falha ao apagar comando no grupo %s: %s", message.chat.id, exc)
+
 
 
 def _valid_like_uid(game_id: str) -> bool:
@@ -211,6 +222,7 @@ async def cmd_like(
     if not message.from_user:
         return
 
+    await _delete_user_command(message, bot)
     owner_id = await resolve_owner_id(message, bot, config)
     is_owner = owner_id is not None
     is_vip = await db.is_vip(message.from_user.id)
@@ -296,6 +308,7 @@ async def cmd_like2(
     if not message.from_user:
         return
 
+    await _delete_user_command(message, bot)
     owner_id = await resolve_owner_id(message, bot, config)
     is_owner = owner_id is not None
     is_vip2 = await db.is_vip2(message.from_user.id)
