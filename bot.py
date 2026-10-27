@@ -6,6 +6,9 @@ long polling do Telegram.
 """
 from __future__ import annotations
 
+# Deploy sync: mensagens públicas de /like e /like2 sem identificação de fornecedores.
+# Revisão 2026-10-27: atualiza o ponto de entrada para disparar o deploy via GitHub.
+
 import asyncio
 import html
 import logging
