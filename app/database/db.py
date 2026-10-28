@@ -197,6 +197,16 @@ CREATE TABLE IF NOT EXISTS vip2_cooldowns (
     last_sent_at  INTEGER NOT NULL DEFAULT 0,
     lock_until    INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS promo_groups (
+    chat_id        INTEGER PRIMARY KEY,
+    title          TEXT NOT NULL DEFAULT '',
+    added_by       INTEGER,
+    active         INTEGER NOT NULL DEFAULT 1,
+    last_promo_at  INTEGER NOT NULL DEFAULT 0,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
+);
 """
 
 
@@ -1653,6 +1663,79 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
         return {str(r["key"]): str(r["value"]) for r in rows}
+
+    # ----- Grupos de divulgação -----
+    async def upsert_promo_group(
+        self,
+        chat_id: int,
+        title: str,
+        added_by: int | None = None,
+    ) -> None:
+        """Registra/reativa um grupo onde o bot está presente.
+
+        Grupo novo começa com last_promo_at = agora: acabou de receber as
+        boas-vindas, então a primeira divulgação periódica vem depois do intervalo.
+        """
+        now = int(time.time())
+        await self.db.execute(
+            """
+            INSERT INTO promo_groups
+                (chat_id, title, added_by, active, last_promo_at, created_at, updated_at)
+            VALUES (?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                title = excluded.title,
+                added_by = COALESCE(excluded.added_by, promo_groups.added_by),
+                active = 1,
+                updated_at = excluded.updated_at
+            """,
+            (int(chat_id), title or "", added_by, now, now, now),
+        )
+        await self.db.commit()
+
+    async def deactivate_promo_group(self, chat_id: int) -> None:
+        await self.db.execute(
+            "UPDATE promo_groups SET active = 0, updated_at = ? WHERE chat_id = ?",
+            (int(time.time()), int(chat_id)),
+        )
+        await self.db.commit()
+
+    async def due_promo_groups(
+        self,
+        interval_seconds: int,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        cutoff = int(time.time()) - max(60, int(interval_seconds))
+        async with self.db.execute(
+            """
+            SELECT * FROM promo_groups
+            WHERE active = 1 AND last_promo_at <= ?
+            ORDER BY last_promo_at ASC
+            LIMIT ?
+            """,
+            (cutoff, int(limit)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def mark_promo_sent(self, chat_id: int) -> None:
+        now = int(time.time())
+        await self.db.execute(
+            "UPDATE promo_groups SET last_promo_at = ?, updated_at = ? WHERE chat_id = ?",
+            (now, now, int(chat_id)),
+        )
+        await self.db.commit()
+
+    async def reset_promo_schedule(self) -> None:
+        """Faz todos os grupos ativos receberem a divulgação no próximo ciclo."""
+        await self.db.execute("UPDATE promo_groups SET last_promo_at = 0 WHERE active = 1")
+        await self.db.commit()
+
+    async def count_promo_groups(self) -> tuple[int, int]:
+        async with self.db.execute(
+            "SELECT COUNT(*) AS total, COALESCE(SUM(active), 0) AS ativos FROM promo_groups"
+        ) as cur:
+            row = await cur.fetchone()
+        return (int(row["ativos"]), int(row["total"])) if row else (0, 0)
 
     # ----- Product settings (preço / estoque geridos pelo admin) -----
     async def init_product_settings(self, products: dict) -> None:

@@ -19,6 +19,22 @@ e pagamento automático via **PIX (Mercado Pago)**.
 | 💾 **Backup automático** | A cada 3 min (se algo mudou) o banco é enviado e fixado no privado do dono. Depois de um deploy que apague `data/bot.db`, o bot restaura sozinho saldo, pedidos, estoque e chaves. `/backup` força um backup; responder um `.db` com `/restaurar` troca o banco. |
 | ⚙️ **Painel Admin** | **Gerenciar produtos (alterar preço e estoque em tempo real)**, estatísticas, consulta de estoque da API e broadcast. |
 
+### 📣 Divulgação em grupos
+Qualquer pessoa pode adicionar o bot ao próprio grupo (botão **➕ Adicionar ao seu grupo**
+ou `/divulgar` no privado). Ao entrar, o bot manda boas-vindas com os botões
+**🛒 Loja** (abre o menu no privado) e **➕ Adicionar ao seu grupo**. Esses botões também
+aparecem nas respostas do `/like` em grupos e no comando `/loja`.
+
+A cada N horas o bot publica uma divulgação em cada grupo onde está. O dono controla com:
+
+| Comando | O que faz |
+|---|---|
+| `/divulgacao` | Status, intervalo e quantos grupos têm o bot |
+| `/divulgacao on` / `off` | Liga/desliga a divulgação automática (padrão: ligada) |
+| `/divulgacao horas 12` | Intervalo entre divulgações em cada grupo (1 a 168h; padrão 12h) |
+| `/divulgacao texto SUA MENSAGEM` | Troca o texto (aceita negrito/itálico); `texto padrao` volta ao original |
+| `/divulgacao agora` | Envia a divulgação em todos os grupos no próximo minuto |
+
 ### 🖼️ Banner do menu
 O GIF/imagem fica em `assets/menu.gif` (configurável por `MENU_BANNER`, aceita
 caminho local ou URL `https://`). O `file_id` é cacheado após o 1º envio para
