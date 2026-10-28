@@ -36,6 +36,41 @@ class AutoSystemLikesApi:
     def enabled(self) -> bool:
         return bool(self._key)
 
+    async def player_info(self, uid: str) -> tuple[int, dict[str, Any]]:
+        """GET /v1/info. Devolve (status HTTP, corpo JSON); status 0 = sem resposta."""
+        if not self.enabled:
+            return 0, {}
+        headers = {"X-Api-Key": self._key, "Accept": "application/json"}
+        params = {"uid": uid, "region": self._region}
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=35)) as session:
+                async with session.get(f"{self._base}/v1/info", params=params, headers=headers) as resp:
+                    try:
+                        payload = await resp.json(content_type=None)
+                    except Exception:
+                        payload = {}
+                    return resp.status, payload if isinstance(payload, dict) else {}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Auto System /v1/info falhou: %s", exc)
+            return 0, {}
+
+    async def player_banner(self, uid: str) -> bytes | None:
+        """GET /v1/banner: o cartão do jogador em PNG (sem marca), ou None."""
+        if not self.enabled:
+            return None
+        headers = {"X-Api-Key": self._key, "Accept": "image/png"}
+        params = {"uid": uid, "region": self._region}
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as session:
+                async with session.get(f"{self._base}/v1/banner", params=params, headers=headers) as resp:
+                    if resp.status != 200 or not resp.content_type.startswith("image/"):
+                        return None
+                    data = await resp.read()
+                    return data or None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Auto System /v1/banner falhou: %s", exc)
+            return None
+
     async def add_autolike(
         self,
         uid: str,
