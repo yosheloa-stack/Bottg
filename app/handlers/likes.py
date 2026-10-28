@@ -17,6 +17,7 @@ from app.config import Config
 from app.database import Database
 from app.keyboards.inline import main_menu
 from app.owner_auth import group_has_owner_admin, resolve_owner_id
+from app.promo import group_store_markup
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.utils import clean_game_id
@@ -120,7 +121,8 @@ async def _do_send_like(
                 depois=html.escape(str(after)) if after is not None else "—",
                 enviadas=sent_int,
                 tempo=f"{elapsed:.2f}",
-            )
+            ),
+            reply_markup=await group_store_markup(message),
         )
         # Aviso no grupo só para envios feitos no privado do bot.
         if sent_int > 0 and message.chat.type == "private":
@@ -187,7 +189,8 @@ async def _do_send_like(
                     if cooldown_text
                     else ""
                 ),
-            )
+            ),
+            reply_markup=await group_store_markup(message),
         )
         return
 
@@ -243,7 +246,9 @@ async def cmd_like(
                 await message.reply(
                     "🔒 <b>Bot sem licença ativa neste grupo.</b>\n\n"
                     "Para usar o envio de likes aqui, alugue o bot pelo menu "
-                    "no privado e vincule a licença a este grupo."
+                    "no privado e vincule a licença a este grupo.\n\n"
+                    "🛒 Na loja também tem Auto Like e Passe de Elite.",
+                    reply_markup=await group_store_markup(message),
                 )
                 return
 
@@ -277,7 +282,8 @@ async def cmd_like(
                 "⏳ <b>Limite de envio atingido.</b>\n\n"
                 "Cada pessoa pode fazer <b>1 envio de likes a cada 24 horas</b>.\n"
                 f"Você poderá usar novamente em <b>{wait_text}</b>.\n\n"
-                "💎 Usuários VIP não possuem esse limite."
+                "💎 Usuários VIP não possuem esse limite.",
+                reply_markup=await group_store_markup(message),
             )
             return
 

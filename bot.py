@@ -35,6 +35,7 @@ from app.services.support_ai import SquareCloudAI
 from app.support_agent import SupportAgent
 from app.services.payments import MercadoPagoGateway, PaymentStatus
 from app.webhook import build_webhook_app, start_webhook_server
+from app.promo import watch_promo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -531,6 +532,11 @@ async def main() -> None:
         watch_pending_payments(db, gateway, delivery),
         name="mercadopago-payment-watcher",
     )
+
+    promo_task = asyncio.create_task(
+        watch_promo(bot, db, config),
+        name="group-promo-watcher",
+    )
     if gateway.configured:
         logger.info("Monitor automático de pagamentos Mercado Pago iniciado.")
     else:
@@ -557,6 +563,8 @@ async def main() -> None:
                 BotCommand(command="start", description="Abrir menu principal"),
                 BotCommand(command="menu", description="Abrir menu principal"),
                 BotCommand(command="like", description="Enviar likes pelo grupo"),
+                BotCommand(command="loja", description="Ver produtos e comprar"),
+                BotCommand(command="divulgar", description="Adicionar o bot ao seu grupo"),
                 BotCommand(command="id", description="Mostrar meu ID do Telegram"),
                 BotCommand(command="suporte", description="Falar com o suporte"),
             ]
@@ -621,6 +629,11 @@ async def main() -> None:
                 await payment_task
             except asyncio.CancelledError:
                 pass
+        promo_task.cancel()
+        try:
+            await promo_task
+        except asyncio.CancelledError:
+            pass
         if runner:
             await runner.cleanup()
         await db.close()

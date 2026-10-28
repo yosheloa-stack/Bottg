@@ -1,12 +1,14 @@
 """Registro central dos routers de handlers."""
 from aiogram import Dispatcher
 
-from app import backup
+from app import backup, promo
 
 from app.handlers import admin, common, fallback, info, likes, owner_autolike, paid_autolike, store, support, vip, vip2
 
 
 def register_handlers(dp: Dispatcher) -> None:
+    # Registra grupos onde o bot já está, para a divulgação periódica.
+    dp.message.outer_middleware(promo.GroupTrackerMiddleware())
     # Suporte IA primeiro: o estado de atendimento tem prioridade sobre os demais fluxos.
     dp.include_router(support.router)
     dp.include_router(backup.router)
@@ -19,6 +21,8 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.include_router(vip.router)
     dp.include_router(vip2.router)
     dp.include_router(owner_autolike.router)
+    # Divulgação: boas-vindas em grupos, /loja, /divulgar e /divulgacao.
+    dp.include_router(promo.router)
     # Deve ficar por último: captura apenas UID de pedidos já pagos.
     dp.include_router(paid_autolike.router)
     # Último: encerra loading de qualquer botão antigo/desconhecido.
