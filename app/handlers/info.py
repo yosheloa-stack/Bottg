@@ -82,38 +82,144 @@ def _data_curta(v) -> str | None:
     return re.sub(r"\s*(às|as|at)\s*\d{1,2}:\d{2}(:\d{2})?\s*$", "", s, flags=re.I)
 
 
+def _data_hora(v) -> str | None:
+    """Data com hora (último login): "30/09/2026 01:00"."""
+    if _vazio(v):
+        return None
+    s = str(v).strip()
+    try:
+        if re.fullmatch(r"\d{9,13}", s):
+            n = int(s) / (1000 if len(s) > 11 else 1)
+            return datetime.fromtimestamp(n, _BRT).strftime("%d/%m/%Y %H:%M")
+        if re.match(r"\d{4}-\d{2}-\d{2}", s):
+            d = datetime.fromisoformat(s.replace(" UTC", "").replace(" ", "T")).replace(tzinfo=timezone.utc)
+            return d.astimezone(_BRT).strftime("%d/%m/%Y %H:%M")
+    except (ValueError, OverflowError, OSError):
+        pass
+    return _data_curta(v)
+
+
+# "Language_PT", "LANGUAGE_PORTUGUESE", "pt" → nome do idioma.
+_IDIOMAS = [
+    (r"portugu|^pt\b|_pt$", "Português"), (r"spanish|espa|^es\b|_es$", "Español"),
+    (r"english|^en\b|_en$", "English"), (r"indones|^id\b|_id$", "Bahasa Indonesia"),
+    (r"thai|^th\b|_th$", "ไทย"), (r"vietnam|^vi\b|_vi$", "Tiếng Việt"),
+    (r"russian|^ru\b|_ru$", "Русский"), (r"arab|^ar\b|_ar$", "العربية"),
+]
+
+
+def _idioma(v) -> str | None:
+    if _vazio(v):
+        return None
+    s = str(v)
+    for padrao, nome in _IDIOMAS:
+        if re.search(padrao, s, re.I):
+            return nome
+    return re.sub(r"^language[_ ]*", "", s, flags=re.I).replace("_", " ")
+
+
+def _codigo(v) -> bool:
+    """Rank como número cru (código do jogo) não diz nada pra quem lê."""
+    return v is not None and bool(re.fullmatch(r"\s*\d+\s*", str(v)))
+
+
+def _rank(nome, pontos) -> str | None:
+    n = None if _vazio(nome) or _codigo(nome) else str(nome)
+    p = None if _vazio(pontos) else f"{_numero(pontos)} pts"
+    return " • ".join(x for x in (n, p) if x) or None
+
+
 def _texto_site(d: dict) -> str:
+    """O /info COMPLETO: conta, rank, perfil, pet, guilda e líder em blocos.
+    Campo que a API não mandou não aparece, e bloco vazio some inteiro."""
     def linha(emoji, rotulo, valor):
         return None if _vazio(valor) else f"{emoji} <b>{rotulo}:</b> {html.escape(str(valor))}"
 
-    def bloco(*linhas):
-        return "\n".join(x for x in linhas if x)
+    def bloco(titulo, *linhas):
+        ok = [x for x in linhas if x]
+        return "\n".join([titulo, *ok]) if ok else ""
+
+    def num(v):
+        return None if _vazio(v) else _numero(v)
 
     rank = d.get("rank") or {}
+    nomes = d.get("nomes") or {}
+    pet = d.get("pet") or {}
     clan = d.get("clan") or {}
+    cap = d.get("capitao") or {}
+    cap_rank = cap.get("rank") or {}
     credito = d.get("credito") or {}
     social = d.get("social") or {}
     assinatura = "" if _vazio(social.get("assinatura")) else " ".join(str(social["assinatura"]).split())[:140]
+    membros = None
+    if not _vazio(clan.get("membros")):
+        membros = num(clan.get("membros")) if _vazio(clan.get("capacidade")) else f"{num(clan['membros'])}/{num(clan['capacidade'])}"
     partes = [
         "🎮 <b>INFO FREE FIRE</b>",
-        bloco(
-            linha("👤", "Nick", d.get("nick")),
-            linha("🆔", "UID", d.get("uid")),
-            linha("🌎", "Região", d.get("regiao")),
-            linha("📊", "Nível", d.get("nivel")),
-            linha("💚", "Likes", None if _vazio(d.get("likes")) else _numero(d.get("likes"))),
-        ),
-        bloco(
-            linha("🏆", "Rank BR", rank.get("br")),
-            linha("⚔️", "Rank CS", rank.get("cs")),
-            linha("🛡️", "Guilda", clan.get("nome")),
-            linha("⭐", "Reputação", credito.get("pontuacao")),
-            linha("📅", "Conta criada", _data_curta(d.get("conta_criada"))),
-            linha("🕒", "Último login", _data_curta(d.get("ultimo_acesso"))),
-        ),
+        bloco("👤 <b>CONTA</b>",
+              linha("🏷️", "Nick", d.get("nick")),
+              linha("🆔", "UID", d.get("uid")),
+              linha("🌎", "Região", d.get("regiao")),
+              linha("🗣️", "Idioma", _idioma(d.get("linguagem"))),
+              linha("📊", "Nível", d.get("nivel")),
+              linha("✨", "XP", num(d.get("exp"))),
+              linha("💚", "Likes", num(d.get("likes"))),
+              linha("📱", "Versão", d.get("versao")),
+              linha("📅", "Conta criada", _data_curta(d.get("conta_criada"))),
+              linha("🕒", "Último login", _data_hora(d.get("ultimo_acesso")))),
+        bloco("🏆 <b>RANK</b>",
+              linha("🥇", "Rank BR", _rank(rank.get("br"), rank.get("br_pontos"))),
+              linha("🔝", "Maior rank BR", None if _codigo(rank.get("br_maximo")) else rank.get("br_maximo")),
+              linha("⚔️", "Rank CS", _rank(rank.get("cs"), rank.get("cs_pontos"))),
+              linha("🔝", "Maior rank CS", None if _codigo(rank.get("cs_maximo")) else rank.get("cs_maximo")),
+              linha("🗓️", "Temporada", rank.get("temporada"))),
+        bloco("🎖️ <b>PERFIL</b>",
+              linha("⭐", "Pontuação de honra", credito.get("pontuacao", d.get("reputacao"))),
+              linha("🏅", "Emblemas", num(d.get("emblemas"))),
+              linha("💎", "Diamantes gastos", num(d.get("diamantes_gastos"))),
+              linha("👑", "Título", nomes.get("titulo")),
+              linha("🖼️", "Banner", nomes.get("banner")),
+              linha("🧑", "Avatar", nomes.get("avatar")),
+              linha("📌", "Pin", nomes.get("pin")),
+              linha("🎒", "Mochila", nomes.get("mochila"))),
+        bloco("🐾 <b>PET</b>",
+              linha("🏷️", "Nome", pet.get("nome")),
+              linha("📊", "Nível", pet.get("nivel")),
+              linha("✨", "XP", num(pet.get("exp")))),
+        bloco("🛡️ <b>GUILDA</b>",
+              linha("🏷️", "Nome", clan.get("nome")),
+              linha("🆔", "ID", clan.get("id")),
+              linha("📊", "Nível", clan.get("nivel")),
+              linha("👥", "Membros", membros)),
+        bloco("👑 <b>LÍDER DA GUILDA</b>",
+              linha("🏷️", "Nick", cap.get("nick")),
+              linha("🆔", "UID", cap.get("uid") or clan.get("capitao_uid")),
+              linha("📊", "Nível", cap.get("nivel")),
+              linha("💚", "Likes", num(cap.get("likes"))),
+              linha("🥇", "Rank BR", _rank(cap_rank.get("br"), cap_rank.get("br_pontos"))),
+              linha("🕒", "Último login", _data_hora(cap.get("ultimo_acesso")))),
         f"💬 <i>{html.escape(assinatura)}</i>" if assinatura else "",
     ]
     return "\n\n".join(p for p in partes if p)
+
+
+_LIMITE_LEGENDA = 1000
+
+
+def _visivel(texto: str) -> int:
+    """Tamanho que o Telegram conta na legenda: sem as tags HTML."""
+    return len(html.unescape(re.sub(r"<[^>]+>", "", texto)).encode("utf-16-le")) // 2
+
+
+def _dividir_legenda(texto: str) -> tuple[str, str]:
+    """Os blocos que cabem na legenda da foto, e o resto (vai logo abaixo)."""
+    blocos = texto.split("\n\n")
+    cabe: list[str] = []
+    for i, b in enumerate(blocos):
+        if _visivel("\n\n".join([*cabe, b])) > _LIMITE_LEGENDA:
+            return "\n\n".join(cabe), "\n\n".join(blocos[i:])
+        cabe.append(b)
+    return texto, ""
 
 
 async def _info_site(message: Message, game_id: str, site: AutoSystemLikesApi) -> bool:
@@ -128,9 +234,12 @@ async def _info_site(message: Message, game_id: str, site: AutoSystemLikesApi) -
         return False
     texto = _texto_site(d)
     if imagem:
+        legenda, resto = _dividir_legenda(texto)
         try:
-            await message.answer_photo(BufferedInputFile(imagem, filename="info.png"), caption=texto[:1024])
+            await message.answer_photo(BufferedInputFile(imagem, filename="info.png"), caption=legenda or None)
             await status_msg.delete()
+            if resto:
+                await message.answer(resto)
             return True
         except Exception:  # noqa: BLE001 — sem a foto, vai o texto
             pass

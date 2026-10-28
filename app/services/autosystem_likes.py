@@ -43,7 +43,7 @@ class AutoSystemLikesApi:
         headers = {"X-Api-Key": self._key, "Accept": "application/json"}
         params = {"uid": uid, "region": self._region}
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=35)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
                 async with session.get(f"{self._base}/v1/info", params=params, headers=headers) as resp:
                     try:
                         payload = await resp.json(content_type=None)
