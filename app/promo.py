@@ -102,13 +102,13 @@ async def store_markup(bot: Bot) -> InlineKeyboardMarkup | None:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🛒 Loja",
+                    text="Loja",
                     url=f"https://t.me/{username}?start=shop",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="➕ Adicionar ao seu grupo",
+                    text="Adicionar ao seu grupo",
                     url=f"https://t.me/{username}?startgroup=promo",
                 ),
             ],
@@ -268,11 +268,11 @@ async def cmd_share(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="➕ Adicionar ao meu grupo",
+                        text="Adicionar ao meu grupo",
                         url=f"{bot_link}?startgroup=promo",
                     )
                 ],
-                [InlineKeyboardButton(text="📤 Compartilhar", url=share_url)],
+                [InlineKeyboardButton(text="Compartilhar", url=share_url)],
             ]
         ),
     )
