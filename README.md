@@ -20,9 +20,9 @@ e pagamento automático via **PIX (Mercado Pago)**.
 | ⚙️ **Painel Admin** | **Gerenciar produtos (alterar preço e estoque em tempo real)**, estatísticas, consulta de estoque da API e broadcast. |
 
 ### 📣 Divulgação em grupos
-Qualquer pessoa pode adicionar o bot ao próprio grupo (botão **➕ Adicionar ao seu grupo**
+Qualquer pessoa pode adicionar o bot ao próprio grupo (botão **Adicionar ao seu grupo**
 ou `/divulgar` no privado). Ao entrar, o bot manda boas-vindas com os botões
-**🛒 Loja** (abre o menu no privado) e **➕ Adicionar ao seu grupo**. Esses botões também
+**Loja** (abre o menu no privado) e **Adicionar ao seu grupo**. Esses botões também
 aparecem nas respostas do `/like` em grupos e no comando `/loja`.
 
 A cada N horas o bot publica uma divulgação em cada grupo onde está. O dono controla com:
