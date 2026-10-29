@@ -63,3 +63,4 @@ class BinanceTopup(StatesGroup):
 
 class BinanceOwner(StatesGroup):
     waiting_value = State()
+    waiting_qr = State()

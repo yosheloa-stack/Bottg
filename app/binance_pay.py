@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 SETTING_EMAIL = "BINANCE_EMAIL"
 SETTING_PASSWORD = "BINANCE_APP_PASSWORD"
 SETTING_PAY_ID = "BINANCE_PAY_ID"
+SETTING_QR = "BINANCE_QR_FILE_ID"
 SETTING_RATE = "BINANCE_USDT_RATE"
 SETTING_ENABLED = "BINANCE_ENABLED"
 # Só e-mails a partir deste momento contam, para não cruzar pagamentos antigos.
@@ -61,6 +62,7 @@ class BinanceSettings:
     email: str
     password: str
     pay_id: str
+    qr_file_id: str
     manual_rate: Decimal | None
     enabled: bool
     since_ts: int
@@ -94,6 +96,7 @@ async def load_settings(db: Database) -> BinanceSettings:
         email=await get(SETTING_EMAIL),
         password=await get(SETTING_PASSWORD),
         pay_id=await get(SETTING_PAY_ID),
+        qr_file_id=await get(SETTING_QR),
         manual_rate=manual_rate,
         enabled=(await get(SETTING_ENABLED)) == "1",
         since_ts=since_ts,

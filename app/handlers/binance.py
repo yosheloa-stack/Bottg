@@ -183,7 +183,7 @@ async def topup_user(message: Message, state: FSMContext, db: Database) -> None:
     )
     kb.row(InlineKeyboardButton(text="Já paguei / verificar", callback_data=f"usdtchk:{order_id}"))
     kb.row(InlineKeyboardButton(text="Cancelar pedido", callback_data=f"usdtcancel:{order_id}"))
-    sent = await message.answer(
+    text = (
         "<b>PAGAMENTO EM USDT</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"Pedido: <code>#{order_id}</code>\n"
@@ -192,14 +192,29 @@ async def topup_user(message: Message, state: FSMContext, db: Database) -> None:
         f"Para o Pay ID: <code>{html.escape(settings.pay_id)}</code>\n\n"
         "<b>Como pagar:</b>\n"
         "1. Abra a Binance e toque em <b>Pay</b> &gt; <b>Enviar</b>.\n"
-        "2. Cole o Pay ID acima.\n"
-        f"3. Envie exatamente <b>{_usdt(usdt)} USDT</b>.\n\n"
+        + (
+            "2. Cole o Pay ID acima ou leia o QR Code.\n"
+            if settings.qr_file_id
+            else "2. Cole o Pay ID acima.\n"
+        )
+        + f"3. Envie exatamente <b>{_usdt(usdt)} USDT</b>.\n\n"
         "<b>O valor precisa ser exato: nem a menos, nem a mais.</b>\n"
         "Pagamento com valor diferente não é confirmado automaticamente.\n"
         "A confirmação é automática e leva poucos minutos depois que o pagamento chega.\n\n"
-        "Este pedido vale por 24 horas.",
-        reply_markup=kb.as_markup(),
+        "Este pedido vale por 24 horas."
     )
+    sent = None
+    if settings.qr_file_id:
+        try:
+            sent = await message.answer_photo(
+                settings.qr_file_id,
+                caption=text,
+                reply_markup=kb.as_markup(),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Falha ao enviar o QR Code da Binance; seguindo só com texto")
+    if sent is None:
+        sent = await message.answer(text, reply_markup=kb.as_markup())
     try:
         await db.set_order_payment_message(order_id, sent.chat.id, sent.message_id)
     except Exception:  # noqa: BLE001
@@ -322,6 +337,7 @@ async def _panel(db: Database) -> tuple[str, InlineKeyboardMarkup]:
         f"E-mail: <b>{_mask_email(s.email)}</b>\n"
         f"Senha de app: <b>{'configurada' if s.password else 'não configurada'}</b>\n"
         f"Pay ID: <b>{html.escape(s.pay_id) or 'não configurado'}</b>\n"
+        f"QR Code: <b>{'configurado' if s.qr_file_id else 'não configurado'}</b>\n"
         f"Cotação: <b>{rate_line}</b>\n"
         f"Pedidos aguardando: <b>{pending}</b>\n\n"
         "O bot lê os e-mails de recebimento da Binance a cada 30 segundos "
@@ -336,6 +352,7 @@ async def _panel(db: Database) -> tuple[str, InlineKeyboardMarkup]:
         InlineKeyboardButton(text="Pay ID", callback_data="bnc:set:payid"),
         InlineKeyboardButton(text="Cotação", callback_data="bnc:set:rate"),
     )
+    kb.row(InlineKeyboardButton(text="QR Code", callback_data="bnc:qr"))
     kb.row(
         InlineKeyboardButton(
             text="Desativar" if s.enabled else "Ativar",
@@ -384,6 +401,44 @@ async def cb_set(query: CallbackQuery, state: FSMContext, config: Config) -> Non
     await state.set_state(BinanceOwner.waiting_value)
     await state.update_data(binance_field=field)
     await query.message.answer(FIELDS[field][1] + "\n\nUse /cancel para desistir.")
+
+
+@router.callback_query(F.data == "bnc:qr")
+async def cb_qr(query: CallbackQuery, state: FSMContext, config: Config) -> None:
+    if not _is_owner(query.from_user.id, config):
+        await query.answer("Sem permissão.", show_alert=True)
+        return
+    await query.answer()
+    await state.set_state(BinanceOwner.waiting_qr)
+    await query.message.answer(
+        "Envie a <b>foto do seu QR Code</b> de recebimento da Binance "
+        "(na Binance: Pay &gt; Receber &gt; salvar imagem).\n"
+        "Para remover o QR Code, envie <code>remover</code>.\n\n"
+        "Use /cancel para desistir."
+    )
+
+
+@router.message(BinanceOwner.waiting_qr, F.photo)
+async def owner_qr_photo(message: Message, state: FSMContext, db: Database, config: Config) -> None:
+    if not message.from_user or not _is_owner(message.from_user.id, config):
+        return
+    await db.set_owner_setting(bp.SETTING_QR, message.photo[-1].file_id)
+    await state.clear()
+    text, kb = await _panel(db)
+    await message.answer("QR Code salvo. Ele vai junto das instruções de pagamento.\n\n" + text, reply_markup=kb)
+
+
+@router.message(BinanceOwner.waiting_qr, F.text.regexp(r"^(?!/).+"))
+async def owner_qr_text(message: Message, state: FSMContext, db: Database, config: Config) -> None:
+    if not message.from_user or not _is_owner(message.from_user.id, config):
+        return
+    if (message.text or "").strip().lower() not in {"remover", "apagar", "remove"}:
+        await message.reply("Envie uma foto do QR Code, ou <code>remover</code>.")
+        return
+    await db.set_owner_setting(bp.SETTING_QR, "")
+    await state.clear()
+    text, kb = await _panel(db)
+    await message.answer("QR Code removido.\n\n" + text, reply_markup=kb)
 
 
 @router.message(BinanceOwner.waiting_value, F.text.regexp(r"^(?!/).+"))

@@ -482,4 +482,5 @@ LINES: list[tuple[str, str, str]] = [
     ("3. Envie exatamente <b>{} USDT</b>.", "3. Envía exactamente <b>{} USDT</b>.", "3. Send exactly <b>{} USDT</b>."),
     ("<b>O valor precisa ser exato: nem a menos, nem a mais.</b>", "<b>El valor debe ser exacto: ni menos, ni más.</b>", "<b>The amount must be exact: not less, not more.</b>"),
     ("Pagamento com valor diferente não é confirmado automaticamente.", "Un pago con valor diferente no se confirma automáticamente.", "A payment with a different amount is not confirmed automatically."),
+    ("2. Cole o Pay ID acima ou leia o QR Code.", "2. Pega el Pay ID de arriba o escanea el código QR.", "2. Paste the Pay ID above or scan the QR code."),
 ]
