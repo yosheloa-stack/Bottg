@@ -500,7 +500,10 @@ async def cmd_like2(
                 "✅ Envio concluído com sucesso.",
             ]
         )
-        await status_msg.edit_text("\n".join(lines))
+        await status_msg.edit_text(
+            "\n".join(lines),
+            reply_markup=await group_store_markup(message),
+        )
         try:
             sent_value = int(sent) if sent is not None else 0
             # Aviso no grupo só para envios feitos no privado do bot.
