@@ -6,6 +6,7 @@ Docs: https://www.mercadopago.com.br/developers/pt/reference/payments/_payments/
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from decimal import Decimal
 
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 API_URL = "https://api.mercadopago.com"
 TIMEOUT = aiohttp.ClientTimeout(total=30)
+# Espera mínima/máxima depois de um 429 (limite de requisições) do MP.
+RATE_LIMIT_MIN_BACKOFF = 60
+RATE_LIMIT_MAX_BACKOFF = 600
 
 _STATUS_MAP = {
     "pending": PaymentStatus.PENDING,
@@ -47,6 +51,9 @@ class MercadoPagoGateway(PaymentGateway):
     def __init__(self, access_token: str, notification_url: str = "") -> None:
         self._token = access_token.strip()
         self._notification_url = notification_url.strip()
+        # Até quando o monitor automático deve evitar novas consultas (429).
+        self.rate_limited_until = 0.0
+        self._rate_limit_backoff = RATE_LIMIT_MIN_BACKOFF
 
     @property
     def configured(self) -> bool:
@@ -174,6 +181,15 @@ class MercadoPagoGateway(PaymentGateway):
                 endpoint,
                 headers=self._headers(),
             ) as resp:
+                if resp.status == 429:
+                    self._register_rate_limit(resp.headers.get("Retry-After"))
+                    logger.warning(
+                        "get_status MP retornou 429 para %s; pausando consultas "
+                        "automáticas por %ss",
+                        identifier,
+                        int(self.rate_limited_until - time.time()),
+                    )
+                    return PaymentStatus.UNKNOWN
                 if resp.status != 200:
                     logger.warning(
                         "get_status MP retornou %s para %s",
@@ -183,6 +199,7 @@ class MercadoPagoGateway(PaymentGateway):
                     return PaymentStatus.UNKNOWN
                 data = await resp.json(content_type=None)
 
+        self._rate_limit_backoff = RATE_LIMIT_MIN_BACKOFF
         if is_order:
             return _ORDER_STATUS_MAP.get(
                 str(data.get("status") or ""),
@@ -192,6 +209,21 @@ class MercadoPagoGateway(PaymentGateway):
             str(data.get("status") or ""),
             PaymentStatus.UNKNOWN,
         )
+
+    @property
+    def rate_limited(self) -> bool:
+        return time.time() < self.rate_limited_until
+
+    def _register_rate_limit(self, retry_after: str | None) -> None:
+        """Marca uma pausa após 429, respeitando Retry-After ou dobrando a espera."""
+        try:
+            wait = int(float(retry_after)) if retry_after else 0
+        except ValueError:
+            wait = 0
+        wait = max(wait, self._rate_limit_backoff)
+        wait = min(wait, RATE_LIMIT_MAX_BACKOFF)
+        self.rate_limited_until = time.time() + wait
+        self._rate_limit_backoff = min(wait * 2, RATE_LIMIT_MAX_BACKOFF)
 
     async def parse_webhook(self, query: dict, body: dict) -> str | None:
         """Extrai ID de payment legado ou order da notificação do Mercado Pago."""

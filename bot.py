@@ -10,6 +10,7 @@ import asyncio
 import html
 import logging
 import os
+import time
 from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, Dispatcher
@@ -40,34 +41,81 @@ logging.basicConfig(
 logger = logging.getLogger("bottg")
 
 
+# Monitor automático de PIX: o webhook é o caminho principal; o polling é só
+# reserva. Pedidos novos são consultados com frequência, os antigos bem menos,
+# e depois de PENDING_MAX_AGE o pedido é marcado como expirado e sai da fila.
+# Um pagamento atrasado ainda é entregue pelo webhook ou pelo botão "Já paguei".
+PENDING_POLL_FAST_WINDOW = 30 * 60
+PENDING_POLL_FAST_INTERVAL = 20
+PENDING_POLL_SLOW_INTERVAL = 5 * 60
+PENDING_MAX_AGE = 24 * 60 * 60
+PENDING_CALL_SPACING = 0.5
+
+
 async def watch_pending_payments(
     db: Database,
     gateway: MercadoPagoGateway,
     delivery: DeliveryService,
 ) -> None:
     """Confirma PIX pendentes automaticamente e entrega pedidos pagos."""
+    next_check: dict[int, float] = {}
     while True:
         try:
             orders = await db.pending_orders(limit=100)
+            now = time.time()
+            pending_ids = {int(o["id"]) for o in orders}
+            for order_id in list(next_check):
+                if order_id not in pending_ids:
+                    del next_check[order_id]
+
             for order in orders:
+                if gateway.rate_limited:
+                    break
+                order_id = int(order["id"])
                 payment_id = order.get("payment_id")
                 if not payment_id:
                     continue
+
+                age = now - int(order.get("created_at") or now)
+                if age > PENDING_MAX_AGE:
+                    logger.info(
+                        "PIX do pedido %s sem pagamento há mais de 24h; marcado como expirado",
+                        order_id,
+                    )
+                    await db.update_order_status(order_id, "expired")
+                    continue
+
+                if next_check.get(order_id, 0) > now:
+                    continue
+                next_check[order_id] = now + (
+                    PENDING_POLL_FAST_INTERVAL
+                    if age < PENDING_POLL_FAST_WINDOW
+                    else PENDING_POLL_SLOW_INTERVAL
+                )
+
                 try:
                     status = await gateway.get_status(str(payment_id))
                 except Exception:  # noqa: BLE001
                     logger.exception(
-                        "Falha ao consultar PIX Mercado Pago do pedido %s", order.get("id")
+                        "Falha ao consultar PIX Mercado Pago do pedido %s", order_id
                     )
                     continue
+                finally:
+                    await asyncio.sleep(PENDING_CALL_SPACING)
 
                 if status == PaymentStatus.APPROVED:
                     logger.info(
                         "PIX Mercado Pago confirmado automaticamente | pedido=%s | txid=%s",
-                        order.get("id"),
+                        order_id,
                         payment_id,
                     )
-                    await delivery.fulfill_order(order["id"])
+                    await delivery.fulfill_order(order_id)
+                elif status in (
+                    PaymentStatus.EXPIRED,
+                    PaymentStatus.CANCELLED,
+                    PaymentStatus.REJECTED,
+                ):
+                    await db.update_order_status(order_id, "expired")
         except Exception:  # noqa: BLE001
             logger.exception("Erro no monitor automático de pagamentos Mercado Pago")
 

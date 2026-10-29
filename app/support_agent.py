@@ -417,7 +417,7 @@ class SupportAgent:
             "status_mercado_pago": status.value,
             "status_pedido": order["status"],
         }
-        if status == PaymentStatus.APPROVED and order["status"] == "pending":
+        if status == PaymentStatus.APPROVED and order["status"] in ("pending", "expired"):
             ok = await self.delivery.fulfill_order(int(order["id"]))
             refreshed = await self.db.get_order(int(order["id"])) or order
             result["acao"] = "Pagamento aprovado: entrega disparada agora."
