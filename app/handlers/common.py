@@ -14,7 +14,7 @@ from app.config import Config
 from app.database import Database
 from app.i18n import LANGUAGE_FIRST, t, user_lang, welcome_text
 from app.outgoing import set_current_language
-from app.keyboards.inline import back_home, cancel_only, language_menu, main_menu
+from app.keyboards.inline import back_home, cancel_only, language_menu, main_menu, products_menu
 from app.states import PurchaseFlow
 from app.ui import edit_screen, send_menu
 from app.utils import format_price
@@ -140,6 +140,16 @@ async def _open_customer_home(
         await _customer_welcome(db, config, query.from_user.id, lang),
         main_menu(False, lang),
     )
+
+
+@router.callback_query(F.data == "menu:products")
+async def cb_products(query: CallbackQuery, db: Database) -> None:
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    lang = await user_lang(db, query.from_user)
+    await edit_screen(query, t(lang, "products_title"), products_menu(lang))
 
 
 @router.callback_query(F.data == "menu:lang")

@@ -18,6 +18,22 @@ def main_menu(is_admin: bool = False, lang: str = DEFAULT_LANG) -> InlineKeyboar
     is_admin é mantido por compatibilidade, mas não exibe controles de dono.
     """
     kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text=t(lang, "btn_products"), callback_data="menu:products"))
+    kb.row(
+        InlineKeyboardButton(text=t(lang, "btn_balance"), callback_data="shop:balance"),
+        InlineKeyboardButton(text=t(lang, "btn_giftcard"), callback_data="shop:giftcard"),
+    )
+    kb.row(
+        InlineKeyboardButton(text=t(lang, "btn_orders"), callback_data="menu:orders"),
+        InlineKeyboardButton(text=t(lang, "btn_support"), callback_data="menu:support"),
+    )
+    kb.row(InlineKeyboardButton(text=t(lang, "btn_language"), callback_data="menu:lang"))
+    return kb.as_markup()
+
+
+def products_menu(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
+    """Lista de produtos aberta pelo botão Produtos do menu inicial."""
+    kb = InlineKeyboardBuilder()
     kb.row(
         InlineKeyboardButton(text=t(lang, "btn_auto220"), callback_data="shop:auto220"),
         InlineKeyboardButton(text=t(lang, "btn_auto500"), callback_data="shop:auto500"),
@@ -26,18 +42,8 @@ def main_menu(is_admin: bool = False, lang: str = DEFAULT_LANG) -> InlineKeyboar
         InlineKeyboardButton(text=t(lang, "btn_passe"), callback_data="nav:v2:passe"),
         InlineKeyboardButton(text=t(lang, "btn_reseller"), callback_data="shop:reseller"),
     )
-    kb.row(
-        InlineKeyboardButton(text=t(lang, "btn_balance"), callback_data="shop:balance"),
-        InlineKeyboardButton(text=t(lang, "btn_rent"), callback_data="shop:rent"),
-    )
-    kb.row(
-        InlineKeyboardButton(text=t(lang, "btn_giftcard"), callback_data="shop:giftcard"),
-        InlineKeyboardButton(text=t(lang, "btn_orders"), callback_data="menu:orders"),
-    )
-    kb.row(
-        InlineKeyboardButton(text=t(lang, "btn_support"), callback_data="menu:support"),
-        InlineKeyboardButton(text=t(lang, "btn_language"), callback_data="menu:lang"),
-    )
+    kb.row(InlineKeyboardButton(text=t(lang, "btn_rent"), callback_data="shop:rent"))
+    kb.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="nav:v2:home"))
     return kb.as_markup()
 
 
