@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from decimal import ROUND_DOWN, Decimal, InvalidOperation
+from decimal import ROUND_DOWN, ROUND_UP, Decimal, InvalidOperation
 
 import aiohttp
 from aiogram import Bot
@@ -52,6 +52,8 @@ MIN_FETCH_SPACING = 10
 _lock = asyncio.Lock()
 _last_fetch = 0.0
 _rate_cache: tuple[float, Decimal] | None = None
+# Último estado lido do banco, para os teclados (síncronos) saberem se mostram o botão.
+_available = False
 
 
 @dataclass
@@ -87,7 +89,8 @@ async def load_settings(db: Database) -> BinanceSettings:
         since_ts = int(await get(SETTING_SINCE) or 0)
     except ValueError:
         since_ts = 0
-    return BinanceSettings(
+    global _available
+    settings = BinanceSettings(
         email=await get(SETTING_EMAIL),
         password=await get(SETTING_PASSWORD),
         pay_id=await get(SETTING_PAY_ID),
@@ -95,6 +98,12 @@ async def load_settings(db: Database) -> BinanceSettings:
         enabled=(await get(SETTING_ENABLED)) == "1",
         since_ts=since_ts,
     )
+    _available = settings.ready
+    return settings
+
+
+def cached_available() -> bool:
+    return _available
 
 
 async def is_available(db: Database) -> bool:
@@ -148,14 +157,29 @@ def _order_usdt(order: dict) -> Decimal | None:
         return None
 
 
-async def create_topup_order(
+def usdt_for_brl(brl: Decimal, rate: Decimal) -> Decimal:
+    """Preço fixo do plano em USDT, arredondado para cima no centavo."""
+    return (brl / rate).quantize(Decimal("0.01"), rounding=ROUND_UP)
+
+
+async def create_binance_order(
     db: Database,
     user_id: int,
     usdt: Decimal,
     binance_user: str,
     rate: Decimal,
+    *,
+    product_code: str = "balance_topup",
+    amount_brl: Decimal | None = None,
+    game_id: str = "",
+    plan_days: int = 0,
 ) -> tuple[int, Decimal, Decimal]:
-    """Cria o pedido e devolve (id, USDT exato a enviar, R$ a creditar)."""
+    """Cria o pedido e devolve (id, USDT exato a enviar, R$ do pedido).
+
+    Recarga: o R$ creditado sai do USDT. Plano: o R$ é o preço do plano.
+    Se outro pedido pendente já usa o mesmo valor, soma 1 centavo para
+    cada pagamento ser identificado sem confusão.
+    """
     async with _lock:
         taken = {
             _order_usdt(o)
@@ -165,15 +189,19 @@ async def create_topup_order(
         usdt = usdt.quantize(Decimal("0.01"))
         while usdt in taken:
             usdt += Decimal("0.01")
-        brl = (usdt * rate).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        if amount_brl is None:
+            brl = (usdt * rate).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        else:
+            brl = amount_brl.quantize(Decimal("0.01"))
         metadata = json.dumps(
             {"usdt": str(usdt), "binance_user": binance_user, "rate": str(rate)}
         )
         order_id = await db.create_order(
             user_id=user_id,
-            product_code="balance_topup",
-            game_id="",
+            product_code=product_code,
+            game_id=game_id,
             amount=str(brl),
+            plan_days=plan_days,
             metadata=metadata,
             paid_with="binance",
         )

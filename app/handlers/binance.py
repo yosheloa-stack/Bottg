@@ -94,9 +94,46 @@ async def topup_amount(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(usdt=str(amount))
     await state.set_state(BinanceTopup.waiting_user)
+    await message.answer(ASK_USER)
+
+
+def binance_unavailable_text() -> str:
+    return UNAVAILABLE
+
+
+ASK_USER = (
+    "Agora envie o seu <b>nome de usuário ou Pay ID</b> na Binance, "
+    "da conta que vai fazer o pagamento."
+)
+
+
+async def ask_binance_user_for_plan(
+    message: Message,
+    state: FSMContext,
+    *,
+    product_code: str,
+    description: str,
+    amount_brl: Decimal,
+    usdt: Decimal,
+    game_id: str,
+    plan_days: int,
+) -> None:
+    """Plano com preço fixo: guarda o pedido e só pede o usuário da Binance."""
+    await state.set_state(BinanceTopup.waiting_user)
+    await state.update_data(
+        plan_code=product_code,
+        plan_description=description,
+        plan_brl=str(amount_brl),
+        usdt=str(usdt),
+        plan_game_id=game_id,
+        plan_days=plan_days,
+    )
     await message.answer(
-        "Agora envie o seu <b>nome de usuário ou Pay ID</b> na Binance, "
-        "da conta que vai fazer o pagamento."
+        "<b>PAGAMENTO EM USDT</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"Produto: <b>{description}</b>\n"
+        f"Valor fixo: <b>{_usdt(usdt)} USDT</b>\n\n"
+        + ASK_USER
     )
 
 
@@ -115,13 +152,30 @@ async def topup_user(message: Message, state: FSMContext, db: Database) -> None:
         await message.answer(UNAVAILABLE)
         return
 
-    order_id, usdt, brl = await bp.create_topup_order(
-        db,
-        message.from_user.id,
-        Decimal(data.get("usdt") or "0"),
-        binance_user,
-        rate,
-    )
+    plan_code = data.get("plan_code")
+    if plan_code:
+        order_id, usdt, brl = await bp.create_binance_order(
+            db,
+            message.from_user.id,
+            Decimal(data.get("usdt") or "0"),
+            binance_user,
+            rate,
+            product_code=plan_code,
+            amount_brl=Decimal(data.get("plan_brl") or "0"),
+            game_id=data.get("plan_game_id") or "",
+            plan_days=int(data.get("plan_days") or 0),
+        )
+        detail_line = f"Produto: <b>{data.get('plan_description') or ''}</b>\n"
+    else:
+        order_id, usdt, brl = await bp.create_binance_order(
+            db,
+            message.from_user.id,
+            Decimal(data.get("usdt") or "0"),
+            binance_user,
+            rate,
+        )
+        detail_line = f"Saldo que você recebe: <b>R$ {format_price(brl)}</b>\n"
+
     kb = InlineKeyboardBuilder()
     kb.row(
         InlineKeyboardButton(text="Copiar valor", copy_text=CopyTextButton(text=_usdt(usdt))),
@@ -133,10 +187,15 @@ async def topup_user(message: Message, state: FSMContext, db: Database) -> None:
         "<b>PAGAMENTO EM USDT</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"Pedido: <code>#{order_id}</code>\n"
+        f"{detail_line}"
         f"Envie exatamente: <b>{_usdt(usdt)} USDT</b>\n"
-        f"Para o Pay ID: <code>{html.escape(settings.pay_id)}</code>\n"
-        f"Saldo que você recebe: <b>R$ {format_price(brl)}</b>\n\n"
-        "Faça o envio pelo Binance Pay (transferência interna), com o valor exato acima.\n"
+        f"Para o Pay ID: <code>{html.escape(settings.pay_id)}</code>\n\n"
+        "<b>Como pagar:</b>\n"
+        "1. Abra a Binance e toque em <b>Pay</b> &gt; <b>Enviar</b>.\n"
+        "2. Cole o Pay ID acima.\n"
+        f"3. Envie exatamente <b>{_usdt(usdt)} USDT</b>.\n\n"
+        "<b>O valor precisa ser exato: nem a menos, nem a mais.</b>\n"
+        "Pagamento com valor diferente não é confirmado automaticamente.\n"
         "A confirmação é automática e leva poucos minutos depois que o pagamento chega.\n\n"
         "Este pedido vale por 24 horas.",
         reply_markup=kb.as_markup(),

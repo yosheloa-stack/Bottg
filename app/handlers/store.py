@@ -29,7 +29,12 @@ from app.keyboards.inline import (
     payment_pending,
     reseller_area_menu,
 )
-from app.handlers.binance import balance_method_text, topup_method_menu
+from app.handlers.binance import (
+    ask_binance_user_for_plan,
+    balance_method_text,
+    binance_unavailable_text,
+    topup_method_menu,
+)
 from app.services.passe import PasseApi
 from app.services.payments.base import PaymentGateway, PaymentStatus
 from app.states import CustomerPlanFlow, PurchaseFlow
@@ -931,6 +936,42 @@ async def checkout_pix(
         product_code=code,
         amount=amount,
         description=description,
+        game_id=game_id,
+        plan_days=days,
+    )
+
+
+@router.callback_query(F.data.startswith("paybnc:"))
+async def checkout_binance(
+    query: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+    config: Config,
+) -> None:
+    code, ref_value = _parse_checkout(query.data, "paybnc:")
+    if code == "balance_topup":
+        await _ack(query)
+        return
+    rate = await binance_pay.current_rate(db) if await binance_pay.is_available(db) else None
+    if rate is None:
+        await query.answer(binance_unavailable_text(), show_alert=True)
+        return
+    details = await _checkout_details(
+        db, config, query.from_user.id, code, ref_value
+    )
+    if not details:
+        await _ack(query)
+        await query.message.answer("⚠️ Pedido inválido ou indisponível.")
+        return
+    await _ack(query)
+    amount, description, game_id, days = details
+    await ask_binance_user_for_plan(
+        query.message,
+        state,
+        product_code=code,
+        description=description,
+        amount_brl=amount,
+        usdt=binance_pay.usdt_for_brl(amount, rate),
         game_id=game_id,
         plan_days=days,
     )

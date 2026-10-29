@@ -93,6 +93,15 @@ def checkout_menu(
             callback_data=f"paypix:{product_code}{suffix}",
         )
     )
+    from app.binance_pay import cached_available
+
+    if cached_available():
+        kb.row(
+            InlineKeyboardButton(
+                text="Pagar com Binance (USDT)",
+                callback_data=f"paybnc:{product_code}{suffix}",
+            )
+        )
     if allow_balance:
         kb.row(
             InlineKeyboardButton(
