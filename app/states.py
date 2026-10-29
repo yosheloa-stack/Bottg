@@ -54,3 +54,12 @@ class CustomerPlanFlow(StatesGroup):
 
 class SupportChat(StatesGroup):
     chatting = State()
+
+
+class BinanceTopup(StatesGroup):
+    waiting_amount = State()
+    waiting_user = State()
+
+
+class BinanceOwner(StatesGroup):
+    waiting_value = State()

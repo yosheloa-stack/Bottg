@@ -3,7 +3,7 @@ from aiogram import Dispatcher
 
 from app import backup
 
-from app.handlers import admin, common, fallback, info, likes, owner_autolike, paid_autolike, store, support, vip, vip2
+from app.handlers import admin, binance, common, fallback, info, likes, owner_autolike, paid_autolike, store, support, vip, vip2
 
 
 def register_handlers(dp: Dispatcher) -> None:
@@ -13,6 +13,7 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.include_router(common.router)
     # Comandos administrativos por texto têm prioridade sobre estados de compra.
     dp.include_router(admin.router)
+    dp.include_router(binance.router)
     dp.include_router(likes.router)
     dp.include_router(info.router)
     dp.include_router(store.router)

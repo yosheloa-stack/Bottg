@@ -204,6 +204,7 @@ async def cmd_admin(message: Message, config: Config, bot: Bot) -> None:
         "<code>/setkey mp ACCESS_TOKEN</code>\n"
         "<code>/setkey passe CHAVE</code>\n"
         "<code>/setkey ia CHAVE</code> — IA do suporte (Square Cloud)\n"
+        "<code>/binance</code> — pagamento USDT confirmado por e-mail\n"
         "<code>/giftcard 20</code> — gera Gift Card de R$ 20\n"
         "<code>/giftcard 20 5</code> — gera com 5 usos\n"
         "<code>/anuncios</code> — usar dentro do grupo de avisos\n"

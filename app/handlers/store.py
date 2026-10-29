@@ -9,7 +9,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, ForceReply, Message
 
-from app import texts
+from app import binance_pay, texts
 from app.catalog import (
     price_for_user,
     reseller_discount_percent,
@@ -29,6 +29,7 @@ from app.keyboards.inline import (
     payment_pending,
     reseller_area_menu,
 )
+from app.handlers.binance import balance_method_text, topup_method_menu
 from app.services.passe import PasseApi
 from app.services.payments.base import PaymentGateway, PaymentStatus
 from app.states import CustomerPlanFlow, PurchaseFlow
@@ -633,22 +634,50 @@ async def shop_balance(
 ) -> None:
     await _ack(query)
     try:
-        balance = _from_cents(await db.get_balance_cents(query.from_user.id))
-        await state.set_state(CustomerPlanFlow.waiting_balance_amount)
-        await query.message.answer(
-            "💰 <b>ADICIONAR SALDO</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"👛 Saldo atual: <b>R$ {format_price(balance)}</b>\n\n"
-            "Digite o valor que deseja adicionar via PIX.\n"
-            "Mínimo: <b>R$ 1,00</b> · Máximo: <b>R$ 5.000,00</b>\n"
-            "\n🔧 REF: BALANCE",
-            reply_markup=ForceReply(
-                selective=True,
-                input_field_placeholder="Ex.: 20,00",
-            ),
-        )
+        if await binance_pay.is_available(db):
+            balance = _from_cents(await db.get_balance_cents(query.from_user.id))
+            await query.message.answer(
+                balance_method_text(format_price(balance)),
+                reply_markup=topup_method_menu(),
+            )
+            return
+        await _ask_pix_balance_amount(query, state, db)
     except Exception as exc:  # noqa: BLE001
         await _customer_callback_error(query, "balance", exc)
+
+
+@router.callback_query(F.data == "topup:pix")
+async def topup_pix(
+    query: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+) -> None:
+    await _ack(query)
+    try:
+        await _ask_pix_balance_amount(query, state, db)
+    except Exception as exc:  # noqa: BLE001
+        await _customer_callback_error(query, "balance", exc)
+
+
+async def _ask_pix_balance_amount(
+    query: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+) -> None:
+    balance = _from_cents(await db.get_balance_cents(query.from_user.id))
+    await state.set_state(CustomerPlanFlow.waiting_balance_amount)
+    await query.message.answer(
+        "💰 <b>ADICIONAR SALDO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"👛 Saldo atual: <b>R$ {format_price(balance)}</b>\n\n"
+        "Digite o valor que deseja adicionar via PIX.\n"
+        "Mínimo: <b>R$ 1,00</b> · Máximo: <b>R$ 5.000,00</b>\n"
+        "\n🔧 REF: BALANCE",
+        reply_markup=ForceReply(
+            selective=True,
+            input_field_placeholder="Ex.: 20,00",
+        ),
+    )
 
 
 async def _balance_amount_response(

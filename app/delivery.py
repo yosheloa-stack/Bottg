@@ -144,7 +144,11 @@ class DeliveryService:
                     int(order["user_id"]),
                     amount_cents,
                     order_id=order_id,
-                    description="Recarga via PIX",
+                    description=(
+                        "Recarga via Binance"
+                        if order.get("paid_with") == "binance"
+                        else "Recarga via PIX"
+                    ),
                 )
                 await self.db.update_order_status(order_id, "delivered")
                 await self.bot.send_message(

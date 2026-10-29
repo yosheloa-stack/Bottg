@@ -212,6 +212,13 @@ CREATE TABLE IF NOT EXISTS like2_credits (
     added_by      INTEGER NOT NULL DEFAULT 0,
     updated_at    INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS binance_emails (
+    email_key   TEXT PRIMARY KEY,
+    order_id    INTEGER,
+    result      TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL
+);
 """
 
 
@@ -912,6 +919,37 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
+
+    async def pending_binance_orders(self, limit: int = 200) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM orders "
+            "WHERE status = 'pending' AND paid_with = 'binance' "
+            "ORDER BY id ASC LIMIT ?",
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def binance_email_seen(self, email_key: str) -> bool:
+        async with self.db.execute(
+            "SELECT 1 FROM binance_emails WHERE email_key = ?", (email_key,)
+        ) as cur:
+            return await cur.fetchone() is not None
+
+    async def mark_binance_email(
+        self,
+        email_key: str,
+        order_id: int | None,
+        result: str,
+    ) -> bool:
+        """Registra o e-mail como processado. False se já estava registrado."""
+        cur = await self.db.execute(
+            "INSERT OR IGNORE INTO binance_emails "
+            "(email_key, order_id, result, created_at) VALUES (?, ?, ?, ?)",
+            (email_key, order_id, result, int(time.time())),
+        )
+        await self.db.commit()
+        return bool(cur.rowcount)
 
     # ----- Consultas do suporte (IA) -----
     async def orders_by_user(self, user_id: int, limit: int = 15) -> list[dict[str, Any]]:

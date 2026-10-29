@@ -34,6 +34,7 @@ from app.services.support_ai import SquareCloudAI
 from app.support_agent import SupportAgent
 from app.services.payments import MercadoPagoGateway, PaymentStatus
 from app.webhook import build_webhook_app, start_webhook_server
+from app.binance_pay import watch_binance_payments
 
 logging.basicConfig(
     level=logging.INFO,
@@ -581,6 +582,11 @@ async def main() -> None:
         watch_pending_payments(db, gateway, delivery),
         name="mercadopago-payment-watcher",
     )
+
+    binance_task = asyncio.create_task(
+        watch_binance_payments(bot, db, config, delivery),
+        name="binance-email-payment-watcher",
+    )
     if gateway.configured:
         logger.info("Monitor automático de pagamentos Mercado Pago iniciado.")
     else:
@@ -699,6 +705,11 @@ async def main() -> None:
                 await payment_task
             except asyncio.CancelledError:
                 pass
+        binance_task.cancel()
+        try:
+            await binance_task
+        except asyncio.CancelledError:
+            pass
         if runner:
             await runner.cleanup()
         await db.close()
