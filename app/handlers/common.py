@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery, ForceReply, Message
 from app import texts
 from app.config import Config
 from app.database import Database
-from app.i18n import t, user_lang, welcome_text
+from app.i18n import LANGUAGE_FIRST, t, user_lang, welcome_text
 from app.keyboards.inline import back_home, cancel_only, language_menu, main_menu
 from app.states import PurchaseFlow
 from app.ui import edit_screen, send_menu
@@ -85,6 +85,12 @@ async def cmd_start(
         message.from_user.username,
         message.from_user.first_name,
     )
+    # Primeiro acesso: pergunta o idioma antes de mostrar o menu.
+    if not await db.get_user_language(message.from_user.id):
+        lang = await user_lang(db, message.from_user)
+        await message.answer(LANGUAGE_FIRST, reply_markup=language_menu(lang))
+        return
+
     lang = await user_lang(db, message.from_user)
     await send_menu(
         message,
@@ -158,6 +164,21 @@ async def cb_set_language(
         await query.answer(t(lang, "language_saved"))
     except Exception:
         pass
+    msg = query.message
+    if msg and not (msg.animation or msg.photo or msg.document or msg.video):
+        # Veio da pergunta de idioma (texto puro): troca pelo menu com banner.
+        await state.clear()
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+        await send_menu(
+            msg,
+            await _menu_media(db, config),
+            await _customer_welcome(db, config, query.from_user.id, lang),
+            main_menu(False, lang),
+        )
+        return
     await _open_customer_home(query, state, config, db)
 
 
