@@ -48,6 +48,29 @@ async def _vip_support_markup(bot: Bot, config: Config) -> InlineKeyboardMarkup 
     )
 
 
+async def _add_group_markup(
+    bot: Bot,
+    base: InlineKeyboardMarkup | None = None,
+) -> InlineKeyboardMarkup | None:
+    """Botão "Adicionar em grupo" embaixo de toda resposta de likes."""
+    try:
+        me = await bot.get_me()
+    except Exception:  # noqa: BLE001
+        return base
+    if not me.username:
+        return base
+    rows = list(base.inline_keyboard) if base else []
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Adicionar em grupo",
+                url=f"https://t.me/{me.username}?startgroup=true",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _valid_like_uid(game_id: str) -> bool:
     """Valida UID numérico aceito pelo comando /like."""
     return game_id.isdigit() and 8 <= len(game_id) <= 11
@@ -71,7 +94,7 @@ async def _do_send_like(
     use_cooldown: bool = True,
 ) -> None:
     """Envia /like exclusivamente pela Auto System."""
-    status_msg = await message.reply("⏳ Enviando likes...")
+    status_msg = await message.reply("⏳ Enviando likes...", reply_markup=await _add_group_markup(message.bot))
     started_at = time.perf_counter()
 
     if not autosystem_likes_api.enabled:
@@ -79,7 +102,8 @@ async def _do_send_like(
             await db.release_like_slot(message.from_user.id)
         await status_msg.edit_text(
             "⚠️ <b>Serviço de likes não configurado.</b>\n"
-            "Avise um administrador."
+            "Avise um administrador.",
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
@@ -131,7 +155,8 @@ async def _do_send_like(
                 depois=html.escape(str(after)) if after is not None else "—",
                 enviadas=sent_int,
                 tempo=f"{elapsed:.2f}",
-            )
+            ),
+            reply_markup=await _add_group_markup(message.bot),
         )
         # Aviso no grupo só para envios feitos no privado do bot.
         if sent_int > 0 and message.chat.type == "private":
@@ -162,14 +187,16 @@ async def _do_send_like(
 
     if result.status == 400:
         await status_msg.edit_text(
-            f"❌ {html.escape(error or 'Parâmetros inválidos para envio de likes.')}"
+            f"❌ {html.escape(error or 'Parâmetros inválidos para envio de likes.')}",
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
     if result.status in (401, 403):
         await status_msg.edit_text(
             "⚠️ O serviço de likes está temporariamente indisponível. "
-            "Avise um administrador."
+            "Avise um administrador.",
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
@@ -180,11 +207,12 @@ async def _do_send_like(
         detail = str(error or "").lower()
         confirmed_missing = code in {"PLAYER_NOTFOUND", "PLAYER_NOT_FOUND", "UID_NOT_FOUND"}
         if confirmed_missing and ("jogador" in detail or "player" in detail or "uid" in detail):
-            await status_msg.edit_text(texts.LIKE_NOT_FOUND)
+            await status_msg.edit_text(texts.LIKE_NOT_FOUND, reply_markup=await _add_group_markup(message.bot))
         else:
             await status_msg.edit_text(
                 "⚠️ Não foi possível confirmar o perfil desse ID agora. "
-                "Tente novamente em alguns minutos. Nenhum envio foi confirmado."
+                "Tente novamente em alguns minutos. Nenhum envio foi confirmado.",
+                reply_markup=await _add_group_markup(message.bot),
             )
         return
 
@@ -198,27 +226,30 @@ async def _do_send_like(
                     if cooldown_text
                     else ""
                 ),
-            )
+            ),
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
     if result.status == 429:
         await status_msg.edit_text(
-            f"⏳ {html.escape(error or 'Limite do serviço atingido. Tente novamente em instantes.')}"
+            f"⏳ {html.escape(error or 'Limite do serviço atingido. Tente novamente em instantes.')}",
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
     if result.status == 503:
         await status_msg.edit_text(
-            f"⏳ {html.escape(error or 'Serviço temporariamente indisponível. Tente novamente em instantes.')}"
+            f"⏳ {html.escape(error or 'Serviço temporariamente indisponível. Tente novamente em instantes.')}",
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
     if error:
-        await status_msg.edit_text(f"❌ {html.escape(error)}")
+        await status_msg.edit_text(f"❌ {html.escape(error)}", reply_markup=await _add_group_markup(message.bot))
         return
 
-    await status_msg.edit_text(texts.GENERIC_ERROR)
+    await status_msg.edit_text(texts.GENERIC_ERROR, reply_markup=await _add_group_markup(message.bot))
 
 
 @router.message(Command("like", "likes"))
@@ -240,7 +271,7 @@ async def cmd_like(
     # Usuário comum/VIP segue usando /like em grupos.
     # Donos têm acesso total e podem usar também no privado.
     if message.chat.type not in GROUP_TYPES and not is_owner:
-        await message.answer(texts.LIKE_PRIVATE_BLOCKED)
+        await message.answer(texts.LIKE_PRIVATE_BLOCKED, reply_markup=await _add_group_markup(message.bot))
         return
 
     # Grupos administrados pelos donos são liberados. Outros grupos precisam
@@ -253,19 +284,21 @@ async def cmd_like(
                 await message.reply(
                     "🔒 <b>Bot sem licença ativa neste grupo.</b>\n\n"
                     "Para usar o envio de likes aqui, alugue o bot pelo menu "
-                    "no privado e vincule a licença a este grupo."
+                    "no privado e vincule a licença a este grupo.",
+                    reply_markup=await _add_group_markup(message.bot),
                 )
                 return
 
     arg = (command.args or "").strip()
     if not arg:
-        await message.reply("Use assim: <code>/like SEU_ID</code>")
+        await message.reply("Use assim: <code>/like SEU_ID</code>", reply_markup=await _add_group_markup(message.bot))
         return
 
     game_id = clean_game_id(arg.split()[0])
     if not _valid_like_uid(game_id):
         await message.reply(
-            "⚠️ ID inválido. Envie somente números, de 8 a 11 dígitos."
+            "⚠️ ID inválido. Envie somente números, de 8 a 11 dígitos.",
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
@@ -291,7 +324,7 @@ async def cmd_like(
                 f"Cada pessoa pode fazer <b>{db.LIKE_FREE_PER_WINDOW} envios grátis de 220 likes por semana</b>.\n"
                 f"Você poderá usar novamente em <b>{wait_text}</b>.\n\n"
                 "💎 Usuários VIP não possuem esse limite.",
-                reply_markup=await _vip_support_markup(bot, config),
+                reply_markup=await _add_group_markup(bot, await _vip_support_markup(bot, config)),
             )
             return
 
@@ -344,7 +377,8 @@ async def cmd_like2(
             "Use assim:\n"
             "<code>/like2 SEU_ID</code>\n\n"
             "✅ Pode usar em grupos.\n"
-            "✅ Envio direto e automático."
+            "✅ Envio direto e automático.",
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
@@ -356,7 +390,8 @@ async def cmd_like2(
             "━━━━━━━━━━━━━━━━━━━━\n"
             "Você não possui acesso VIP2 ativo nem envios liberados.\n\n"
             "Nenhuma requisição foi enviada.\n"
-            "Use <code>/vip2</code> para consultar seu acesso."
+            "Use <code>/vip2</code> para consultar seu acesso.",
+            reply_markup=await _add_group_markup(message.bot),
         )
         return
 
@@ -366,14 +401,16 @@ async def cmd_like2(
         if not _valid_like_uid(game_id):
             await message.reply(
                 "⚠️ ID inválido. Envie somente números, de 8 a 11 dígitos.\n"
-                "Exemplo: <code>/like2 813856263</code>"
+                "Exemplo: <code>/like2 813856263</code>",
+                reply_markup=await _add_group_markup(message.bot),
             )
             return
 
         if not ffhub_shop.configured:
             await message.reply(
                 "⚠️ <b>LIKE2 temporariamente indisponível.</b>\n\n"
-                "A integração ainda não está configurada."
+                "A integração ainda não está configurada.",
+                reply_markup=await _add_group_markup(message.bot),
             )
             return
 
@@ -399,7 +436,8 @@ async def cmd_like2(
                 await message.reply(
                     "⏳ <b>Limite diário do VIP2 atingido.</b>\n\n"
                     "Seu VIP2 permite <b>1 envio de Like2 a cada 24 horas</b>.\n"
-                    f"Você poderá enviar novamente em <b>{wait_text}</b>."
+                    f"Você poderá enviar novamente em <b>{wait_text}</b>.",
+                    reply_markup=await _add_group_markup(message.bot),
                 )
                 return
             vip2_slot_reserved = allowed
@@ -408,7 +446,8 @@ async def cmd_like2(
             if not credit_used:
                 await message.reply(
                     "🔒 <b>Seus envios de Like2 acabaram.</b>\n\n"
-                    "Nenhuma requisição foi enviada."
+                    "Nenhuma requisição foi enviada.",
+                    reply_markup=await _add_group_markup(message.bot),
                 )
                 return
 
@@ -418,7 +457,7 @@ async def cmd_like2(
             if credit_used:
                 await db.refund_like2_credit(message.from_user.id)
 
-        status_msg = await message.reply("🔥 Enviando Like2...")
+        status_msg = await message.reply("🔥 Enviando Like2...", reply_markup=await _add_group_markup(message.bot))
         started_at = time.perf_counter()
         access_type = (
             "owner"
@@ -452,7 +491,8 @@ async def cmd_like2(
                 "⏱️ <b>LIKE2 sem resposta do servidor</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
                 "A API não respondeu em até <b>60 segundos</b>.\n\n"
-                "⚠️ Não vou repetir automaticamente para evitar envio duplicado."
+                "⚠️ Não vou repetir automaticamente para evitar envio duplicado.",
+                reply_markup=await _add_group_markup(message.bot),
             )
             return
         except Exception as exc:  # noqa: BLE001
@@ -461,7 +501,8 @@ async def cmd_like2(
             await status_msg.edit_text(
                 "❌ <b>Erro no LIKE2</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
-                f"⚠️ {html.escape(str(exc) or 'Falha inesperada no envio.')}"
+                f"⚠️ {html.escape(str(exc) or 'Falha inesperada no envio.')}",
+                reply_markup=await _add_group_markup(message.bot),
             )
             return
 
@@ -490,7 +531,8 @@ async def cmd_like2(
             await status_msg.edit_text(
                 "❌ <b>LIKE2 não enviado</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
-                f"⚠️ {html.escape(str(error))}"
+                f"⚠️ {html.escape(str(error))}",
+                reply_markup=await _add_group_markup(message.bot),
             )
             return
 
@@ -527,7 +569,7 @@ async def cmd_like2(
             lines.append(
                 f"🎟️ Envios restantes: <b>{await db.get_like2_credits(message.from_user.id)}</b>"
             )
-        await status_msg.edit_text("\n".join(lines))
+        await status_msg.edit_text("\n".join(lines), reply_markup=await _add_group_markup(message.bot))
         try:
             sent_value = int(sent) if sent is not None else 0
             # Aviso no grupo só para envios feitos no privado do bot.
@@ -557,5 +599,6 @@ async def cmd_like2(
     else:
         await message.reply(
             "ℹ️ O Auto Like 500 agora é comprado pelo menu privado do bot.\n"
-            "Abra o privado e use <code>/start</code>."
+            "Abra o privado e use <code>/start</code>.",
+            reply_markup=await _add_group_markup(message.bot),
         )
