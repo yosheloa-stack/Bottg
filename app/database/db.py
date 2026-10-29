@@ -295,6 +295,11 @@ class Database:
                 "ALTER TABLE orders ADD COLUMN purchase_announced INTEGER NOT NULL DEFAULT 0"
             )
 
+        async with self._db.execute("PRAGMA table_info(users)") as cur:
+            user_columns = {str(row["name"]) for row in await cur.fetchall()}
+        if "language" not in user_columns:
+            await self._db.execute("ALTER TABLE users ADD COLUMN language TEXT")
+
         await self._db.commit()
 
     async def close(self) -> None:
@@ -330,6 +335,25 @@ class Database:
         ) as cur:
             row = await cur.fetchone()
         return dict(row) if row else None
+
+    async def get_user_language(self, user_id: int) -> str | None:
+        async with self.db.execute(
+            "SELECT language FROM users WHERE user_id = ?",
+            (int(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return str(row["language"]) if row and row["language"] else None
+
+    async def set_user_language(self, user_id: int, language: str) -> None:
+        await self.db.execute(
+            """
+            INSERT INTO users (user_id, created_at, language)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET language = excluded.language
+            """,
+            (int(user_id), int(time.time()), language),
+        )
+        await self.db.commit()
 
     async def count_users(self) -> int:
         async with self.db.execute("SELECT COUNT(*) AS c FROM users") as cur:

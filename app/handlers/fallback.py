@@ -7,8 +7,8 @@ from aiogram.types import CallbackQuery
 
 from app.config import Config
 from app.database import Database
+from app.i18n import user_lang, welcome_text
 from app.keyboards.inline import main_menu
-from app import texts
 from app.ui import edit_screen
 
 router = Router(name="fallback")
@@ -30,17 +30,9 @@ async def unknown_callback(
     try:
         await state.clear()
         await db.clear_customer_pending_input(query.from_user.id)
-        balance_cents = await db.get_balance_cents(query.from_user.id)
-        reseller = await db.is_reseller(query.from_user.id)
-        balance = balance_cents / 100
-
-        text = (
-            texts.WELCOME.format(shop_name=config.shop_name)
-            + "\n\n"
-            + f"👛 Saldo: <b>R$ {balance:.2f}</b>\n"
-            + f"🤝 Revenda: <b>{'Ativa ✅' if reseller else 'Não ativa'}</b>"
-        )
-        await edit_screen(query, text, main_menu(False))
+        lang = await user_lang(db, query.from_user)
+        text = await welcome_text(db, config.shop_name, query.from_user.id, lang)
+        await edit_screen(query, text, main_menu(False, lang))
     except Exception:
         try:
             await query.message.answer(
