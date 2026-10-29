@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     BufferedInputFile,
@@ -432,7 +433,8 @@ async def custom_days_persistent_input(
 ) -> None:
     pending = await db.get_customer_pending_input(message.from_user.id)
     if not pending or pending.get("action") != "custom_days":
-        return
+        # Não é a resposta do período: deixa outros handlers tratarem o número.
+        raise SkipHandler
 
     code = str(pending.get("value") or "")
     if code not in AUTOLIKE_CODES:

@@ -1,6 +1,8 @@
 """Acesso ao banco de dados (SQLite assíncrono)."""
 from __future__ import annotations
 
+import asyncio
+import functools
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -236,10 +238,35 @@ def next_nine_am_epoch(now_ts: int | None = None) -> int:
     return int(target.timestamp())
 
 
+def _serialized(method):
+    """Uma transação por vez: a conexão é única e o SQLite não aceita
+    BEGIN dentro de outra transação aberta (dois /like ao mesmo tempo)."""
+
+    @functools.wraps(method)
+    async def wrapper(self, *args, **kwargs):
+        async with self._tx_lock:
+            return await method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class Database:
     def __init__(self, path: str) -> None:
         self._path = path
         self._db: Optional[aiosqlite.Connection] = None
+        self._tx_lock = asyncio.Lock()
+
+    async def _begin(self) -> None:
+        """BEGIN IMMEDIATE mesmo se outra escrita deixou uma transação implícita aberta."""
+        for _ in range(5):
+            try:
+                await self.db.execute("BEGIN IMMEDIATE")
+                return
+            except aiosqlite.OperationalError as exc:
+                if "within a transaction" not in str(exc):
+                    raise
+                await self.db.commit()
+        await self.db.execute("BEGIN IMMEDIATE")
 
     async def connect(self) -> None:
         Path(self._path).parent.mkdir(parents=True, exist_ok=True)
@@ -593,13 +620,14 @@ class Database:
         return len(await self.active_vip2s())
 
     # ----- VIP2: 1 envio /like2 por usuário a cada 24 horas -----
+    @_serialized
     async def acquire_vip2_slot(self, user_id: int) -> tuple[bool, int]:
         """Reserva uma tentativa do VIP2 sem consumir as 24h antes do sucesso."""
         now = int(time.time())
         cooldown = 24 * 60 * 60
         lock_seconds = 180
 
-        await self.db.execute("BEGIN IMMEDIATE")
+        await self._begin()
         try:
             async with self.db.execute(
                 "SELECT last_sent_at, lock_until FROM vip2_cooldowns WHERE user_id = ?",
@@ -707,16 +735,18 @@ class Database:
     LIKE_WINDOW_SECONDS = 7 * 24 * 60 * 60
     LIKE_FREE_PER_WINDOW = 3
 
+    @_serialized
     async def acquire_like_slot(self, user_id: int) -> tuple[bool, int]:
         """Reserva um envio evitando corrida entre comandos simultâneos.
 
-        Retorna (permitido, segundos_restantes). A reserva temporária não
+        Retorna (permitido, segundos_restantes); segundos negativos indicam
+        um envio ainda em andamento. A reserva temporária não
         conta como envio; só complete_like_slot() registra o envio na semana.
         """
         now = int(time.time())
         lock_seconds = 180
 
-        await self.db.execute("BEGIN IMMEDIATE")
+        await self._begin()
         try:
             async with self.db.execute(
                 "SELECT last_sent_at, lock_until FROM like_cooldowns WHERE user_id = ?",
@@ -744,8 +774,9 @@ class Database:
                 return False, max(1, oldest + self.LIKE_WINDOW_SECONDS - now)
 
             if lock_until > now:
+                # Negativo = ainda há um envio em andamento (não é o limite semanal).
                 await self.db.commit()
-                return False, max(1, lock_until - now)
+                return False, -max(1, lock_until - now)
 
             await self.db.execute(
                 """
@@ -1134,6 +1165,7 @@ class Database:
             row = await cur.fetchone()
         return int(row["balance_cents"]) if row else 0
 
+    @_serialized
     async def credit_wallet(
         self,
         user_id: int,
@@ -1144,7 +1176,7 @@ class Database:
     ) -> int:
         amount_cents = max(0, int(amount_cents))
         now = int(time.time())
-        await self.db.execute("BEGIN IMMEDIATE")
+        await self._begin()
         try:
             if order_id is not None:
                 async with self.db.execute(
@@ -1181,6 +1213,7 @@ class Database:
             raise
         return await self.get_balance_cents(user_id)
 
+    @_serialized
     async def spend_wallet(
         self,
         user_id: int,
@@ -1191,7 +1224,7 @@ class Database:
     ) -> tuple[bool, int]:
         amount_cents = max(0, int(amount_cents))
         now = int(time.time())
-        await self.db.execute("BEGIN IMMEDIATE")
+        await self._begin()
         try:
             async with self.db.execute(
                 "SELECT balance_cents FROM wallets WHERE user_id = ?",
@@ -1762,6 +1795,7 @@ class Database:
         await self.db.commit()
         return bool(cur.rowcount)
 
+    @_serialized
     async def redeem_gift_card(
         self,
         code: str,
@@ -1771,7 +1805,7 @@ class Database:
         user_id = int(user_id)
         now = int(time.time())
 
-        await self.db.execute("BEGIN IMMEDIATE")
+        await self._begin()
         try:
             async with self.db.execute(
                 "SELECT * FROM gift_cards WHERE code = ?",

@@ -4,12 +4,14 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.enums import ChatAction
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.config import Config
+from app.database import Database
 from app.keyboards.inline import back_home
 from app.states import SupportChat
 from app.support_agent import SupportAgent
@@ -114,7 +116,15 @@ async def support_message(
     message: Message,
     state: FSMContext,
     support_agent: SupportAgent,
+    db: Database,
 ) -> None:
+    # Pedido pago esperando o UID: o número vai para a ativação, não para a IA.
+    text = (message.text or "").strip()
+    if text.isdigit() and 8 <= len(text) <= 11 and message.from_user:
+        if await db.get_awaiting_id_order(message.from_user.id):
+            await state.clear()
+            raise SkipHandler
+
     data = await state.get_data()
     if data.get("support_busy"):
         await message.answer("⏳ Ainda estou analisando sua mensagem anterior, só um instante.")

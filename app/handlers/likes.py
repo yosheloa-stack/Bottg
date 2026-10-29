@@ -302,6 +302,12 @@ async def cmd_like(
 
     if use_cooldown:
         allowed, remaining = await db.acquire_like_slot(message.from_user.id)
+        if not allowed and remaining < 0:
+            await message.reply(
+                "⏳ Seu envio anterior ainda está em andamento. Aguarde alguns instantes.",
+                reply_markup=await _add_group_markup(bot),
+            )
+            return
         if not allowed:
             days, rem = divmod(max(0, remaining), 86400)
             hours, rem = divmod(rem, 3600)

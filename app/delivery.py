@@ -6,6 +6,7 @@ não é entregue novamente.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from decimal import Decimal
@@ -39,6 +40,8 @@ class DeliveryService:
         self.config = config
         self.autolike = autolike
         self.passe = passe
+        # Webhook, monitor e botão "Já paguei" podem chamar ao mesmo tempo.
+        self._locks: dict[int, asyncio.Lock] = {}
 
     async def _remove_payment_message(self, order: dict) -> None:
         chat_id = order.get("payment_chat_id")
@@ -67,8 +70,14 @@ class DeliveryService:
     async def fulfill_order(self, order_id: int) -> bool:
         """Entrega o pedido. Retorna True se entregue com sucesso.
 
-        Idempotente: se já entregue, retorna True sem reenviar.
+        Idempotente: se já entregue, retorna True sem reenviar. Um pedido é
+        processado por vez, para não entregar (ou anunciar) em dobro.
         """
+        lock = self._locks.setdefault(int(order_id), asyncio.Lock())
+        async with lock:
+            return await self._fulfill_order(int(order_id))
+
+    async def _fulfill_order(self, order_id: int) -> bool:
         order = await self.db.get_order(order_id)
         if not order:
             logger.warning("fulfill_order: pedido %s não encontrado", order_id)
@@ -87,14 +96,17 @@ class DeliveryService:
             await self._notify_failure(order)
             return False
 
+        # Anuncia só na primeira confirmação, não a cada nova verificação.
+        first_time = order["status"] in {"pending", "paid", "expired"}
         try:
-            await announce_purchase(
-                self.bot,
-                self.db,
-                order,
-                product.title,
-                product.delivery,
-            )
+            if first_time:
+                await announce_purchase(
+                    self.bot,
+                    self.db,
+                    order,
+                    product.title,
+                    product.delivery,
+                )
         except Exception:  # noqa: BLE001
             logger.exception("Falha ao anunciar compra do pedido %s", order_id)
 

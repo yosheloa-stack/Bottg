@@ -50,6 +50,21 @@ async def resolve_owner_id(
         for member in admins
         if getattr(member, "user", None) is not None
     }
+    # A mensagem anônima pode ser de qualquer admin anônimo do grupo. Só vale
+    # como dono quando todos os admins anônimos do grupo são donos.
+    anonymous_ids = {
+        int(member.user.id)
+        for member in admins
+        if getattr(member, "user", None) is not None
+        and getattr(member, "is_anonymous", False)
+    }
+    owner_ids = {int(x) for x in config.admin_ids}
+    if not anonymous_ids or not anonymous_ids <= owner_ids:
+        logger.info(
+            "Mensagem anônima ignorada como dono: há admins anônimos que não são donos | chat=%s",
+            message.chat.id,
+        )
+        return None
 
     for owner_id in config.admin_ids:
         if int(owner_id) in admin_ids:

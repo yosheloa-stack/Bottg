@@ -409,6 +409,9 @@ LINES: list[tuple[str, str, str]] = [
      "Con el VIP envías sin este límite. Toca en <b>Adquirir VIP</b>.",
      "With VIP you send without this limit. Tap <b>Get VIP</b>."),
     ("Adquirir VIP", "Adquirir VIP", "Get VIP"),
+    ("Seu envio anterior ainda está em andamento. Aguarde alguns instantes.",
+     "Tu envío anterior aún está en curso. Espera unos instantes.",
+     "Your previous send is still in progress. Please wait a moment."),
 
     # ----- Compra do VIP -----
     ("<b>VIP</b>", "<b>VIP</b>", "<b>VIP</b>"),
