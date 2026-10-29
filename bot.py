@@ -527,7 +527,7 @@ async def main() -> None:
     support_agent = SupportAgent(support_ai, bot, db, config, gateway, delivery)
 
     # Tudo que o bot envia sai sem emojis e no idioma do usuário.
-    bot.session.middleware(OutgoingTextMiddleware(db))
+    bot.session.middleware(OutgoingTextMiddleware(db, config.admin_ids))
 
     dp = Dispatcher()
     dp.update.outer_middleware(UserLanguageMiddleware(db))

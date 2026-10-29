@@ -151,11 +151,11 @@ async def _show_autolike_category(
     if code == "autolike220":
         title = "❤️ <b>AUTO LIKE 220</b>"
         rate = "<b>220 likes por dia</b>"
-        provider_text = "Envio diário automático pela Auto System às <b>09:00</b>."
+        provider_text = "Envio diário automático às <b>09:00</b>."
     else:
         title = "💎 <b>AUTO LIKE 500</b>"
         rate = "<b>aproximadamente 500 a 1.000 likes por dia</b>"
-        provider_text = "Envio diário automático pela FFHub às <b>09:00</b>."
+        provider_text = "Envio diário automático às <b>09:00</b>."
 
     reseller_line = (
         f"\n🤝 Revendedor: <b>{discount}% de desconto aplicado</b>"
@@ -234,7 +234,7 @@ async def _create_pix_order(
     if not getattr(gateway, "configured", True):
         await edit_screen(
             query,
-            "⚠️ <b>Mercado Pago ainda não está configurado.</b>\n\n"
+            "⚠️ <b>O pagamento ainda não está configurado.</b>\n\n"
             "Tente novamente mais tarde.",
             back_home(),
         )
@@ -267,7 +267,7 @@ async def _create_pix_order(
         await db.update_order_status(order_id, "failed", str(exc))
         error_text = (
             "❌ <b>Não consegui gerar o PIX.</b>\n\n"
-            "O Mercado Pago recusou a criação da cobrança ou a integração "
+            "O sistema de pagamento recusou a cobrança ou a integração "
             "ainda não está pronta.\n\n"
             f"📄 Pedido: <code>#{order_id}</code>\n"
             "Tente novamente em alguns instantes. Se continuar, avise o suporte."
@@ -679,7 +679,7 @@ async def _balance_amount_response(
     if not getattr(gateway, "configured", True):
         await message.reply(
             "⚠️ <b>Pagamento temporariamente indisponível.</b>\n\n"
-            "O Mercado Pago ainda não está configurado."
+            "O pagamento ainda não está configurado."
         )
         return
 
@@ -710,7 +710,7 @@ async def _balance_amount_response(
         await db.update_order_status(order_id, "failed", str(exc))
         await status.edit_text(
             "❌ <b>Não consegui gerar o PIX.</b>\n\n"
-            "O Mercado Pago recusou a criação da cobrança ou a integração "
+            "O sistema de pagamento recusou a cobrança ou a integração "
             "ainda não está pronta.\n\n"
             f"📄 Pedido: <code>#{order_id}</code>\n"
             "Tente novamente. Se continuar, avise o suporte.",

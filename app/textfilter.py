@@ -82,6 +82,26 @@ def translate(text: str, lang: str) -> str:
     return "\n".join(lines)
 
 
-def render(text: str, lang: str) -> str:
-    """Remove emojis e traduz para o idioma do usuário."""
-    return translate(strip_emojis(text), lang)
+# Nomes de fornecedores que o cliente não deve ver (ex.: erro vindo da API).
+_PROVIDER_PHRASE = re.compile(
+    r"\s+(?:pela|pelo|da|do|na|no|via|by|por)\s+(?:a\s+|o\s+)?(?:FFHub|Auto ?System|Mercado Pago)\b",
+    re.I,
+)
+_PROVIDER = re.compile(r"\b(?:FFHub|Auto ?System|Mercado Pago)\b", re.I)
+
+
+def hide_providers(text: str) -> str:
+    if not text:
+        return text
+    text = _PROVIDER_PHRASE.sub("", text)
+    text = re.sub(r"\b([Aa]|[Oo])\s+(?=(?:FFHub|Auto ?System|Mercado Pago)\b)",
+                  lambda m: "O " if m.group(1).isupper() else "o ", text)
+    return _PROVIDER.sub("sistema", text)
+
+
+def render(text: str, lang: str, *, hide: bool = False) -> str:
+    """Remove emojis, esconde fornecedores (para clientes) e traduz."""
+    text = strip_emojis(text)
+    if hide:
+        text = hide_providers(text)
+    return translate(text, lang)

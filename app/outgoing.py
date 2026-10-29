@@ -53,10 +53,21 @@ class UserLanguageMiddleware(BaseMiddleware):
 
 
 class OutgoingTextMiddleware(BaseRequestMiddleware):
-    """Remove emojis e traduz textos, legendas e botões antes de enviar."""
+    """Remove emojis e traduz textos, legendas e botões antes de enviar.
 
-    def __init__(self, db) -> None:
+    Para quem não é dono, também esconde nomes de fornecedores.
+    """
+
+    def __init__(self, db, admin_ids=()) -> None:
         self.db = db
+        self.admin_ids = {int(x) for x in admin_ids}
+
+    def _is_admin_target(self, method) -> bool:
+        chat_id = getattr(method, "chat_id", None)
+        if chat_id is None:
+            current = _current.get()
+            return bool(current and current[0] in self.admin_ids)
+        return isinstance(chat_id, int) and chat_id in self.admin_ids
 
     async def _lang_for(self, method) -> str:
         chat_id = getattr(method, "chat_id", None)
@@ -75,36 +86,37 @@ class OutgoingTextMiddleware(BaseRequestMiddleware):
         return saved if saved in LANGUAGES else DEFAULT_LANG
 
     @staticmethod
-    def _markup(markup, lang: str):
+    def _markup(markup, lang: str, hide: bool):
         if isinstance(markup, InlineKeyboardMarkup):
             rows = [
-                [b.model_copy(update={"text": render(b.text, lang)}) for b in row]
+                [b.model_copy(update={"text": render(b.text, lang, hide=hide)}) for b in row]
                 for row in markup.inline_keyboard
             ]
             return markup.model_copy(update={"inline_keyboard": rows})
         if isinstance(markup, ReplyKeyboardMarkup):
             rows = [
-                [b.model_copy(update={"text": render(b.text, lang)}) for b in row]
+                [b.model_copy(update={"text": render(b.text, lang, hide=hide)}) for b in row]
                 for row in markup.keyboard
             ]
             return markup.model_copy(update={"keyboard": rows})
         if isinstance(markup, ForceReply) and markup.input_field_placeholder:
             return markup.model_copy(
-                update={"input_field_placeholder": render(markup.input_field_placeholder, lang)}
+                update={"input_field_placeholder": render(markup.input_field_placeholder, lang, hide=hide)}
             )
         return markup
 
     async def __call__(self, make_request, bot, method):
         try:
             lang = await self._lang_for(method)
+            hide = not self._is_admin_target(method)
             updates: dict[str, Any] = {}
             if isinstance(getattr(method, "text", None), str) and not getattr(method, "entities", None):
-                updates["text"] = render(method.text, lang)
+                updates["text"] = render(method.text, lang, hide=hide)
             if isinstance(getattr(method, "caption", None), str) and not getattr(method, "caption_entities", None):
-                updates["caption"] = render(method.caption, lang)
+                updates["caption"] = render(method.caption, lang, hide=hide)
             markup = getattr(method, "reply_markup", None)
             if markup is not None:
-                updates["reply_markup"] = self._markup(markup, lang)
+                updates["reply_markup"] = self._markup(markup, lang, hide)
             for key, value in updates.items():
                 setattr(method, key, value)
         except Exception:  # noqa: BLE001

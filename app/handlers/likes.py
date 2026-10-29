@@ -78,7 +78,7 @@ async def _do_send_like(
         if use_cooldown:
             await db.release_like_slot(message.from_user.id)
         await status_msg.edit_text(
-            "⚠️ <b>Auto System não configurada.</b>\n"
+            "⚠️ <b>Serviço de likes não configurado.</b>\n"
             "Avise um administrador."
         )
         return
@@ -204,13 +204,13 @@ async def _do_send_like(
 
     if result.status == 429:
         await status_msg.edit_text(
-            f"⏳ {html.escape(error or 'Limite da Auto System atingido. Tente novamente em instantes.')}"
+            f"⏳ {html.escape(error or 'Limite do serviço atingido. Tente novamente em instantes.')}"
         )
         return
 
     if result.status == 503:
         await status_msg.edit_text(
-            f"⏳ {html.escape(error or 'Auto System temporariamente indisponível. Tente novamente em instantes.')}"
+            f"⏳ {html.escape(error or 'Serviço temporariamente indisponível. Tente novamente em instantes.')}"
         )
         return
 
@@ -344,7 +344,7 @@ async def cmd_like2(
             "Use assim:\n"
             "<code>/like2 SEU_ID</code>\n\n"
             "✅ Pode usar em grupos.\n"
-            "✅ Envio direto pela FFHub."
+            "✅ Envio direto e automático."
         )
         return
 
@@ -373,7 +373,7 @@ async def cmd_like2(
         if not ffhub_shop.configured:
             await message.reply(
                 "⚠️ <b>LIKE2 temporariamente indisponível.</b>\n\n"
-                "A integração FFHub ainda não está configurada."
+                "A integração ainda não está configurada."
             )
             return
 
@@ -449,7 +449,7 @@ async def cmd_like2(
                 elapsed,
             )
             await status_msg.edit_text(
-                "⏱️ <b>LIKE2 sem resposta da FFHub</b>\n\n"
+                "⏱️ <b>LIKE2 sem resposta do servidor</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
                 "A API não respondeu em até <b>60 segundos</b>.\n\n"
                 "⚠️ Não vou repetir automaticamente para evitar envio duplicado."
@@ -461,7 +461,7 @@ async def cmd_like2(
             await status_msg.edit_text(
                 "❌ <b>Erro no LIKE2</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
-                f"⚠️ {html.escape(str(exc) or 'Falha inesperada ao chamar a FFHub.')}"
+                f"⚠️ {html.escape(str(exc) or 'Falha inesperada no envio.')}"
             )
             return
 
@@ -485,7 +485,7 @@ async def cmd_like2(
                 or data.get("error")
                 or data.get("mensagem")
                 or data.get("message")
-                or "A FFHub não conseguiu concluir o envio."
+                or "Não foi possível concluir o envio."
             )
             await status_msg.edit_text(
                 "❌ <b>LIKE2 não enviado</b>\n\n"

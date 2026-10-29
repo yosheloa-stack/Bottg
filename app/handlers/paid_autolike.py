@@ -71,7 +71,7 @@ async def receive_paid_autolike_uid(
         if not autosystem_likes_api.enabled:
             await db.update_order_status(order["id"], "failed")
             await message.reply(
-                "⚠️ A AutoSystem não está configurada no momento. "
+                "⚠️ O serviço não está configurado no momento. "
                 "Fale com o suporte."
             )
             return
@@ -112,7 +112,7 @@ async def receive_paid_autolike_uid(
                 result.error
                 or (result.data.get("erro") if isinstance(result.data, dict) else None)
                 or (result.data.get("error") if isinstance(result.data, dict) else None)
-                or "A FFHub não conseguiu concluir o envio."
+                or "Não foi possível concluir o envio."
             )
             await sending.edit_text(
                 "⚠️ <b>Pagamento confirmado, mas o envio falhou.</b>\n\n"
