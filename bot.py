@@ -567,7 +567,35 @@ async def main() -> None:
                 BotCommand(command="divulgar", description="Adicionar o bot ao seu grupo"),
                 BotCommand(command="id", description="Mostrar meu ID do Telegram"),
                 BotCommand(command="suporte", description="Falar com o suporte"),
+                BotCommand(command="idioma", description="Mudar idioma do menu"),
             ]
+        )
+        # Descrições dos comandos para quem usa o Telegram em espanhol/inglês.
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Abrir menú principal"),
+                BotCommand(command="menu", description="Abrir menú principal"),
+                BotCommand(command="like", description="Enviar likes en el grupo"),
+                BotCommand(command="loja", description="Ver productos y comprar"),
+                BotCommand(command="divulgar", description="Agregar el bot a tu grupo"),
+                BotCommand(command="id", description="Mostrar mi ID de Telegram"),
+                BotCommand(command="suporte", description="Hablar con soporte"),
+                BotCommand(command="idioma", description="Cambiar idioma del menú"),
+            ],
+            language_code="es",
+        )
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Open main menu"),
+                BotCommand(command="menu", description="Open main menu"),
+                BotCommand(command="like", description="Send likes in the group"),
+                BotCommand(command="loja", description="View products and buy"),
+                BotCommand(command="divulgar", description="Add the bot to your group"),
+                BotCommand(command="id", description="Show my Telegram ID"),
+                BotCommand(command="suporte", description="Talk to support"),
+                BotCommand(command="language", description="Change menu language"),
+            ],
+            language_code="en",
         )
         me = await bot.get_me()
         logger.info("Bot iniciado como @%s", me.username)

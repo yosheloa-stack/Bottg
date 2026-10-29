@@ -15,6 +15,7 @@ from app import texts
 from app.announcements import announce_autolike_send
 from app.config import Config
 from app.database import Database
+from app.i18n import user_lang
 from app.keyboards.inline import main_menu
 from app.owner_auth import group_has_owner_admin, resolve_owner_id
 from app.promo import group_store_markup
@@ -525,7 +526,7 @@ async def cmd_like2(
             "💎 <b>Auto Like 500</b>\n\n"
             "A loja antiga do /like2 foi removida.\n"
             "Use o menu principal abaixo:",
-            reply_markup=main_menu(False),
+            reply_markup=main_menu(False, await user_lang(db, message.from_user)),
         )
     else:
         await message.reply(

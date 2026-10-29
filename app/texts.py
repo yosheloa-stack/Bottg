@@ -220,3 +220,30 @@ LIKE2_SINGLE_ASK_ID = (
     "💎 Seu envio Like2 está liberado.\n"
     "Agora envie somente o <b>UID</b> da conta que vai receber os likes."
 )
+
+
+WELCOME_ES = (
+    "💚 <b>{shop_name}</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "<b>Servicios automáticos para Free Fire</b>\n\n"
+    "❤️ Auto Like 220/día\n"
+    "💎 Auto Like 500+ /día\n"
+    "🎟️ Pase Élite\n"
+    "🤝 Área de reventa\n"
+    "💰 Billetera y saldo\n"
+    "🤖 Alquiler del bot para grupos\n\n"
+    "Elige una opción abajo para continuar. 👇"
+)
+
+WELCOME_EN = (
+    "💚 <b>{shop_name}</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "<b>Automatic services for Free Fire</b>\n\n"
+    "❤️ Auto Like 220/day\n"
+    "💎 Auto Like 500+ /day\n"
+    "🎟️ Elite Pass\n"
+    "🤝 Reseller area\n"
+    "💰 Wallet and balance\n"
+    "🤖 Bot rental for groups\n\n"
+    "Choose an option below to continue. 👇"
+)
