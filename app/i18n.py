@@ -19,6 +19,13 @@ WELCOME: dict[str, str] = {
     "en": texts.WELCOME_EN,
 }
 
+# Pergunta mostrada no primeiro /start, antes de o usuário escolher.
+LANGUAGE_FIRST = (
+    "🌐 <b>Escolha seu idioma</b>\n"
+    "🌐 <b>Elige tu idioma</b>\n"
+    "🌐 <b>Choose your language</b>"
+)
+
 STRINGS: dict[str, dict[str, str]] = {
     "pt": {
         "balance": "👛 Saldo: <b>R$ {balance}</b>",
