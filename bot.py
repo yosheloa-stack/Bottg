@@ -24,6 +24,7 @@ from app.config import load_config
 from app.database import Database
 from app.delivery import DeliveryService
 from app.handlers import register_handlers
+from app.outgoing import OutgoingTextMiddleware, UserLanguageMiddleware
 from app.services.autolike import AutoLikeApi
 from app.services.autosystem_likes import AutoSystemLikesApi
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
@@ -525,7 +526,11 @@ async def main() -> None:
     )
     support_agent = SupportAgent(support_ai, bot, db, config, gateway, delivery)
 
+    # Tudo que o bot envia sai sem emojis e no idioma do usuário.
+    bot.session.middleware(OutgoingTextMiddleware(db))
+
     dp = Dispatcher()
+    dp.update.outer_middleware(UserLanguageMiddleware(db))
     # Injeção de dependências nos handlers
     dp["config"] = config
     dp["db"] = db

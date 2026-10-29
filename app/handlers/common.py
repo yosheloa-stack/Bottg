@@ -13,6 +13,7 @@ from app import texts
 from app.config import Config
 from app.database import Database
 from app.i18n import LANGUAGE_FIRST, t, user_lang, welcome_text
+from app.outgoing import set_current_language
 from app.keyboards.inline import back_home, cancel_only, language_menu, main_menu
 from app.states import PurchaseFlow
 from app.ui import edit_screen, send_menu
@@ -160,6 +161,7 @@ async def cb_set_language(
 ) -> None:
     lang = query.data.split(":", 1)[1]
     await db.set_user_language(query.from_user.id, lang)
+    set_current_language(query.from_user.id, lang)
     try:
         await query.answer(t(lang, "language_saved"))
     except Exception:

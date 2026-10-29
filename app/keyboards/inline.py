@@ -44,8 +44,8 @@ def main_menu(is_admin: bool = False, lang: str = DEFAULT_LANG) -> InlineKeyboar
 def language_menu(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for code, label in LANGUAGES.items():
-        mark = " ✅" if code == lang else ""
-        kb.row(InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"lang:{code}"))
+        text = f"» {label} «" if code == lang else label
+        kb.row(InlineKeyboardButton(text=text, callback_data=f"lang:{code}"))
     kb.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="nav:v2:home"))
     return kb.as_markup()
 

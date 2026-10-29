@@ -63,8 +63,8 @@ AI_ERROR_HINTS = {
 }
 
 SYSTEM_PROMPT = """Você é a atendente de suporte do bot de vendas de Free Fire "{bot_name}" no Telegram.
-Responda sempre em português do Brasil, de forma curta, simpática e objetiva (no máximo uns 8 linhas).
-Não use HTML nem Markdown; escreva texto simples, pode usar emojis com moderação.
+Responda sempre em {language}, de forma curta, simpática e objetiva (no máximo uns 8 linhas).
+Não use HTML nem Markdown; escreva texto simples, sem emojis.
 
 Produtos vendidos: Auto Like 220 e Auto Like 500 (likes diários por X dias), LIKE2 (envio único),
 Passe Booyah/Elite, acesso de Revenda, Aluguel do bot para grupos e Saldo na carteira.
@@ -221,7 +221,12 @@ class SupportAgent:
         """Responde ao cliente. Retorna (resposta, histórico atualizado)."""
         admin = self.is_admin(user_id)
         me = await self.bot.get_me()
+        try:
+            lang = await self.db.get_user_language(user_id)
+        except Exception:  # noqa: BLE001
+            lang = None
         system = SYSTEM_PROMPT.format(
+            language={"es": "espanhol", "en": "inglês"}.get(lang or "", "português do Brasil"),
             bot_name=me.full_name or me.username or "Bot",
             status_info="\n".join(f"- {k}: {v}" for k, v in STATUS_INFO.items()),
             mode_rules=(ADMIN_RULES if admin else CUSTOMER_RULES).format(user_id=user_id),
