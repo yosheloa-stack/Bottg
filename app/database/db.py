@@ -215,6 +215,16 @@ CREATE TABLE IF NOT EXISTS like2_credits (
     updated_at    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS bot_groups (
+    chat_id     INTEGER PRIMARY KEY,
+    title       TEXT NOT NULL DEFAULT '',
+    username    TEXT NOT NULL DEFAULT '',
+    added_by    INTEGER,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS binance_emails (
     email_key   TEXT PRIMARY KEY,
     order_id    INTEGER,
@@ -353,6 +363,76 @@ class Database:
             await self._db.execute("ALTER TABLE users ADD COLUMN language TEXT")
 
         await self._db.commit()
+
+    # ----- Grupos onde o bot está -----
+    async def upsert_bot_group(
+        self,
+        chat_id: int,
+        title: str,
+        username: str = "",
+        added_by: int | None = None,
+    ) -> None:
+        """Registra/reativa um grupo onde o bot está presente."""
+        now = int(time.time())
+        await self.db.execute(
+            """
+            INSERT INTO bot_groups
+                (chat_id, title, username, added_by, active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                title = CASE WHEN excluded.title != '' THEN excluded.title
+                             ELSE bot_groups.title END,
+                username = excluded.username,
+                added_by = COALESCE(excluded.added_by, bot_groups.added_by),
+                active = 1,
+                updated_at = excluded.updated_at
+            """,
+            (int(chat_id), title or "", username or "", added_by, now, now),
+        )
+        await self.db.commit()
+
+    async def deactivate_bot_group(self, chat_id: int) -> None:
+        await self.db.execute(
+            "UPDATE bot_groups SET active = 0, updated_at = ? WHERE chat_id = ?",
+            (int(time.time()), int(chat_id)),
+        )
+        await self.db.commit()
+
+    async def list_bot_groups(self, active_only: bool = True) -> list[dict[str, Any]]:
+        query = "SELECT * FROM bot_groups"
+        if active_only:
+            query += " WHERE active = 1"
+        query += " ORDER BY created_at ASC"
+        async with self.db.execute(query) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def count_bot_groups(self) -> tuple[int, int]:
+        async with self.db.execute(
+            "SELECT COUNT(*) AS total, COALESCE(SUM(active), 0) AS ativos FROM bot_groups"
+        ) as cur:
+            row = await cur.fetchone()
+        return (int(row["ativos"]), int(row["total"])) if row else (0, 0)
+
+    async def known_group_chat_ids(self) -> set[int]:
+        """IDs de grupos que já apareceram em outras tabelas (aluguel, autolike, pedidos).
+
+        Serve para descobrir grupos onde o bot entrou antes do registro existir.
+        """
+        queries = (
+            "SELECT DISTINCT chat_id AS cid FROM bot_rentals WHERE chat_id < 0",
+            "SELECT DISTINCT notify_chat_id AS cid FROM ffhub_autolike_subscriptions "
+            "WHERE notify_chat_id < 0",
+            "SELECT DISTINCT payment_chat_id AS cid FROM orders WHERE payment_chat_id < 0",
+        )
+        ids: set[int] = set()
+        for query in queries:
+            try:
+                async with self.db.execute(query) as cur:
+                    ids.update(int(r["cid"]) for r in await cur.fetchall())
+            except Exception:  # noqa: BLE001
+                continue
+        return ids
 
     async def close(self) -> None:
         if self._db:
