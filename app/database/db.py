@@ -460,6 +460,16 @@ class Database:
         )
         await self.db.commit()
 
+    async def get_user_id_by_username(self, username: str) -> int | None:
+        """ID de quem já falou com o bot usando esse @ (sem diferenciar maiúsculas)."""
+        async with self.db.execute(
+            "SELECT user_id FROM users WHERE LOWER(username) = LOWER(?) "
+            "ORDER BY created_at DESC LIMIT 1",
+            (username.lstrip("@"),),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row["user_id"]) if row else None
+
     async def get_user(self, user_id: int) -> Optional[dict[str, Any]]:
         async with self.db.execute(
             "SELECT * FROM users WHERE user_id = ?",

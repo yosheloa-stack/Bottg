@@ -1,7 +1,8 @@
 """Registro dos grupos onde o bot está e comando /grupos para o dono.
 
 - Quando o bot entra/sai de um grupo, o Telegram avisa (my_chat_member) e
-  o grupo é gravado/desativado no banco.
+  o grupo é gravado/desativado no banco. Na entrada, o @YoshGGx recebe um
+  aviso no privado com o link do grupo (quando dá para obter).
 - Grupos onde o bot já estava antes desta versão são registrados na primeira
   mensagem que o bot receber neles.
 - /grupos lista os grupos; /grupos atualizar confere cada um no Telegram
@@ -40,6 +41,8 @@ router = Router(name="groups")
 
 GROUP_TYPES = {"group", "supergroup"}
 REFRESH_WORDS = {"atualizar", "verificar", "checar"}
+# Recebe no privado um aviso sempre que alguém adiciona o bot em um grupo.
+GROUP_ADD_NOTIFY_USERNAME = "YoshGGx"
 
 
 class GroupTrackerMiddleware(BaseMiddleware):
@@ -76,11 +79,88 @@ class GroupTrackerMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+async def _group_link(bot: Bot, chat: Any) -> str:
+    """Link público do grupo; senão tenta gerar um convite (precisa ser admin)."""
+    if chat.username:
+        return f"https://t.me/{chat.username}"
+    try:
+        invite = await bot.create_chat_invite_link(chat.id, name="Aviso do bot")
+        return invite.invite_link
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        full = await bot.get_chat(chat.id)
+        if full.invite_link:
+            return full.invite_link
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+async def _notify_group_added(
+    bot: Bot,
+    db: Database,
+    config: Config,
+    event: ChatMemberUpdated,
+) -> None:
+    """Avisa o @ configurado (e, se não achar, os donos) que o bot entrou num grupo."""
+    chat = event.chat
+    user = event.from_user
+    link = await _group_link(bot, chat)
+    try:
+        members: int | None = await bot.get_chat_member_count(chat.id)
+    except Exception:  # noqa: BLE001
+        members = None
+
+    who = "desconhecido"
+    if user:
+        who = html.escape(user.full_name or "")
+        if user.username:
+            who += f" (@{html.escape(user.username)})"
+        who += f" · <code>{user.id}</code>"
+
+    text = (
+        "<b>BOT ADICIONADO EM UM GRUPO</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"Grupo: <b>{html.escape(chat.title or 'Sem nome')}</b>\n"
+        f"ID: <code>{chat.id}</code>\n"
+        + (f"Membros: <b>{members}</b>\n" if members is not None else "")
+        + f"Adicionado por: {who}\n"
+        + (
+            f"Link: {html.escape(link)}"
+            if link
+            else "Link: indisponível (grupo privado e o bot não é admin)"
+        )
+    )
+
+    targets: list[int] = []
+    notify_id = await db.get_user_id_by_username(GROUP_ADD_NOTIFY_USERNAME)
+    if notify_id is not None:
+        targets.append(notify_id)
+    else:
+        logger.warning(
+            "@%s ainda não iniciou o bot; aviso de grupo vai para os donos",
+            GROUP_ADD_NOTIFY_USERNAME,
+        )
+        targets.extend(int(x) for x in config.admin_ids)
+
+    for target in targets:
+        try:
+            await bot.send_message(target, text, disable_web_page_preview=True)
+        except Exception:  # noqa: BLE001
+            logger.exception("Falha ao avisar %s sobre o grupo %s", target, chat.id)
+
+
 @router.my_chat_member(
     ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION),
     F.chat.type.in_(GROUP_TYPES),
 )
-async def on_bot_added(event: ChatMemberUpdated, db: Database) -> None:
+async def on_bot_added(
+    event: ChatMemberUpdated,
+    db: Database,
+    bot: Bot,
+    config: Config,
+) -> None:
     added_by = event.from_user.id if event.from_user else None
     await db.upsert_bot_group(
         event.chat.id,
@@ -94,6 +174,7 @@ async def on_bot_added(event: ChatMemberUpdated, db: Database) -> None:
         event.chat.title,
         added_by,
     )
+    await _notify_group_added(bot, db, config, event)
 
 
 @router.my_chat_member(
