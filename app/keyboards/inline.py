@@ -5,37 +5,48 @@ from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMa
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.catalog import ResolvedProduct
+from app.i18n import DEFAULT_LANG, LANGUAGES, t
 
 
 def _price(value) -> str:
     return f"{value:.2f}".replace(".", ",")
 
 
-def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
-    """Menu inicial exclusivo para clientes.
+def main_menu(is_admin: bool = False, lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
+    """Menu inicial exclusivo para clientes, no idioma do usuário.
 
     is_admin é mantido por compatibilidade, mas não exibe controles de dono.
     """
     kb = InlineKeyboardBuilder()
     kb.row(
-        InlineKeyboardButton(text="❤️ Auto Like 220", callback_data="shop:auto220"),
-        InlineKeyboardButton(text="💎 Auto Like 500", callback_data="shop:auto500"),
+        InlineKeyboardButton(text=t(lang, "btn_auto220"), callback_data="shop:auto220"),
+        InlineKeyboardButton(text=t(lang, "btn_auto500"), callback_data="shop:auto500"),
     )
     kb.row(
-        InlineKeyboardButton(text="🎟️ Passe de Elite", callback_data="nav:v2:passe"),
-        InlineKeyboardButton(text="🤝 Revenda", callback_data="shop:reseller"),
+        InlineKeyboardButton(text=t(lang, "btn_passe"), callback_data="nav:v2:passe"),
+        InlineKeyboardButton(text=t(lang, "btn_reseller"), callback_data="shop:reseller"),
     )
     kb.row(
-        InlineKeyboardButton(text="💰 Adicionar saldo", callback_data="shop:balance"),
-        InlineKeyboardButton(text="🤖 Alugar bot", callback_data="shop:rent"),
+        InlineKeyboardButton(text=t(lang, "btn_balance"), callback_data="shop:balance"),
+        InlineKeyboardButton(text=t(lang, "btn_rent"), callback_data="shop:rent"),
     )
     kb.row(
-        InlineKeyboardButton(text="🎁 Resgatar Gift Card", callback_data="shop:giftcard"),
-        InlineKeyboardButton(text="📦 Meus pedidos", callback_data="menu:orders"),
+        InlineKeyboardButton(text=t(lang, "btn_giftcard"), callback_data="shop:giftcard"),
+        InlineKeyboardButton(text=t(lang, "btn_orders"), callback_data="menu:orders"),
     )
     kb.row(
-        InlineKeyboardButton(text="🆘 Suporte", callback_data="menu:support"),
+        InlineKeyboardButton(text=t(lang, "btn_support"), callback_data="menu:support"),
+        InlineKeyboardButton(text=t(lang, "btn_language"), callback_data="menu:lang"),
     )
+    return kb.as_markup()
+
+
+def language_menu(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for code, label in LANGUAGES.items():
+        mark = " ✅" if code == lang else ""
+        kb.row(InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"lang:{code}"))
+    kb.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="nav:v2:home"))
     return kb.as_markup()
 
 

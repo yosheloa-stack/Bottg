@@ -19,6 +19,7 @@ from app.catalog import (
 from app.config import Config
 from app.database import Database
 from app.delivery import DeliveryService
+from app.i18n import user_lang
 from app.keyboards.inline import (
     autolike_days_menu,
     back_home,
@@ -984,7 +985,7 @@ async def purchase_receive_id(
         await state.clear()
         await message.answer(
             "ℹ️ Esse fluxo antigo foi removido. Use o menu principal.",
-            reply_markup=main_menu(False),
+            reply_markup=main_menu(False, await user_lang(db, message.from_user)),
         )
         return
 
