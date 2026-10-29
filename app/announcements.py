@@ -51,7 +51,13 @@ async def _acquire_markup(bot: Bot) -> InlineKeyboardMarkup | None:
                     text="🛒 Adquirir",
                     url=f"https://t.me/{me.username}?start=shop",
                 )
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ Adicionar em grupo",
+                    url=f"https://t.me/{me.username}?startgroup=true",
+                )
+            ],
         ]
     )
 

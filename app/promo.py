@@ -90,7 +90,7 @@ async def _bot_username(bot: Bot) -> str:
 
 
 async def store_markup(bot: Bot) -> InlineKeyboardMarkup | None:
-    """Botões 🛒 Loja + ➕ Adicionar ao seu grupo."""
+    """Botões 🛒 Loja + ➕ Adicionar em grupo."""
     try:
         username = await _bot_username(bot)
     except Exception:  # noqa: BLE001
@@ -108,8 +108,8 @@ async def store_markup(bot: Bot) -> InlineKeyboardMarkup | None:
             ],
             [
                 InlineKeyboardButton(
-                    text="Adicionar ao seu grupo",
-                    url=f"https://t.me/{username}?startgroup=promo",
+                    text="➕ Adicionar em grupo",
+                    url=f"https://t.me/{username}?startgroup=true",
                 ),
             ],
         ]
