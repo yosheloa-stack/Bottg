@@ -95,6 +95,7 @@ def load_config() -> Config:
     price_autolike500_day = Decimal(_get("PRICE_AUTOLIKE500_DAY", "0.00"))
     price_reseller_access = Decimal(_get("PRICE_RESELLER_ACCESS", "0.00"))
     price_bot_rental = Decimal(_get("PRICE_BOT_RENTAL_30D", "0.00"))
+    price_vip = Decimal(_get("PRICE_VIP_30D", "0.00"))
     price_like2_single = Decimal(_get("PRICE_LIKE2_SINGLE", "0.00"))
     price_like2_7d = Decimal(_get("PRICE_LIKE2_7D", "0.00"))
     price_like2_15d = Decimal(_get("PRICE_LIKE2_15D", "0.00"))
@@ -160,6 +161,17 @@ def load_config() -> Config:
             ),
             price=price_bot_rental,
             delivery="bot_rental",
+            days=30,
+        ),
+        "vip_access": Product(
+            code="vip_access",
+            title="VIP",
+            description=(
+                "VIP por <b>30 dias</b>: use o <code>/like</code> sem o limite "
+                "semanal."
+            ),
+            price=price_vip,
+            delivery="vip_access",
             days=30,
         ),
         # Produtos antigos mantidos para pedidos já existentes.

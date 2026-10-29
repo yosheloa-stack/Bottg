@@ -67,6 +67,7 @@ PRODUCT_ALIASES = {
     "aluguel": "bot_rental",
     "bot": "bot_rental",
     "passe": "passe",
+    "vip": "vip_access",
     # Legado
     "7": "like2_7d",
     "7d": "like2_7d",
@@ -232,7 +233,7 @@ async def cmd_set_price_direct(
         await message.reply(
             "Use: <code>/preco 220 0,60</code>\n"
             "Produtos: <code>220</code>, <code>500</code>, <code>passe</code>, "
-            "<code>revenda</code> ou <code>aluguel</code>."
+            "<code>revenda</code>, <code>aluguel</code> ou <code>vip</code>."
         )
         return
     code = _resolve_product_code(parts[1])
@@ -303,6 +304,7 @@ async def cmd_products_status(
         "passe",
         "reseller_access",
         "bot_rental",
+        "vip_access",
         "like2_single",
     ):
         rp = products.get(code)

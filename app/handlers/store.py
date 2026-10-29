@@ -3,11 +3,20 @@ from __future__ import annotations
 
 import base64
 import logging
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, ForceReply, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    ForceReply,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from app import binance_pay, texts
 from app.catalog import (
@@ -631,6 +640,67 @@ async def shop_reseller(
         await _customer_callback_error(query, "reseller", exc)
 
 
+async def vip_offer_screen(
+    db: Database,
+    config: Config,
+    user_id: int,
+):
+    """Tela de compra do VIP (botão Adquirir VIP do aviso de limite)."""
+    rp = await resolve_product(config, db, "vip_access")
+    price = Decimal("0")
+    if rp and rp.available:
+        price = (await _effective_price(db, rp, user_id))[0]
+    if price <= 0:
+        return (
+            "<b>VIP</b>\n\n"
+            "A compra do VIP ainda não está disponível. Fale com o suporte.",
+            InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Suporte", callback_data="menu:support")],
+                    [InlineKeyboardButton(text="Menu", callback_data="nav:v2:home")],
+                ]
+            ),
+        )
+
+    vip = await db.get_vip(user_id)
+    if not vip:
+        status = "Status: <b>sem VIP ativo</b>"
+    elif not int(vip.get("expires_at") or 0):
+        status = "Status: <b>VIP permanente</b>"
+    else:
+        until = datetime.fromtimestamp(
+            int(vip["expires_at"]), ZoneInfo("America/Sao_Paulo")
+        ).strftime("%d/%m/%Y %H:%M")
+        status = (
+            f"Status: <b>VIP ativo até {until}</b>\n"
+            "Comprando de novo, os dias são somados."
+        )
+    return (
+        "<b>VIP</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Use o <code>/like</code> sem o limite semanal.\n\n"
+        f"Período: <b>{rp.product.days or 30} dias</b>\n"
+        f"Valor: <b>R$ {format_price(price)}</b>\n"
+        f"{status}\n\n"
+        "O VIP é ativado automaticamente após o pagamento.",
+        checkout_menu("vip_access", allow_balance=True),
+    )
+
+
+@router.callback_query(F.data == "shop:vip")
+async def shop_vip(
+    query: CallbackQuery,
+    db: Database,
+    config: Config,
+) -> None:
+    await _ack(query)
+    try:
+        text, markup = await vip_offer_screen(db, config, query.from_user.id)
+        await edit_screen(query, text, markup)
+    except Exception as exc:  # noqa: BLE001
+        await _customer_callback_error(query, "vip", exc)
+
+
 @router.callback_query(F.data == "shop:balance")
 async def shop_balance(
     query: CallbackQuery,
@@ -903,6 +973,11 @@ async def _checkout_details(
         if not is_valid_game_id(uid) or rp.stock == 0:
             return None
         return price, rp.title, uid, 0
+
+    if code == "vip_access":
+        if not rp.available:
+            return None
+        return price, rp.title, "", rp.product.days
 
     if code in {"reseller_access", "bot_rental"}:
         if rp.stock == 0:

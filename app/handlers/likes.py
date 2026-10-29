@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
-import re
 import time
 
 from aiogram import Bot, Router
@@ -26,26 +25,23 @@ router = Router(name="likes")
 logger = logging.getLogger(__name__)
 
 GROUP_TYPES = {"group", "supergroup"}
-_TG_USERNAME = re.compile(r"^@?([A-Za-z][A-Za-z0-9_]{4,31})$")
 
 
-async def _vip_support_markup(bot: Bot, config: Config) -> InlineKeyboardMarkup | None:
-    """Botão do aviso de limite semanal: leva ao suporte para virar VIP.
-
-    Usa o @ de SUPPORT_USERNAME; se não estiver configurado, abre o suporte
-    no privado do bot (/start suporte).
-    """
-    match = _TG_USERNAME.match((config.support_username or "").strip())
-    if match and match.group(1).lower() != "seu_suporte":
-        url = f"https://t.me/{match.group(1)}"
+async def _buy_vip_markup(message: Message) -> InlineKeyboardMarkup | None:
+    """Botão Adquirir VIP do aviso de limite: abre a compra do VIP no privado."""
+    if message.chat.type == "private":
+        url = None
     else:
-        me = await bot.get_me()
+        me = await message.bot.get_me()
         if not me.username:
             return None
-        url = f"https://t.me/{me.username}?start=suporte"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="💎 Quero ser VIP: falar com o suporte", url=url)]]
+        url = f"https://t.me/{me.username}?start=vip"
+    button = (
+        InlineKeyboardButton(text="Adquirir VIP", url=url)
+        if url
+        else InlineKeyboardButton(text="Adquirir VIP", callback_data="shop:vip")
     )
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
 
 async def _add_group_markup(
@@ -323,8 +319,8 @@ async def cmd_like(
                 "⏳ <b>Limite semanal atingido.</b>\n\n"
                 f"Cada pessoa pode fazer <b>{db.LIKE_FREE_PER_WINDOW} envios grátis de 220 likes por semana</b>.\n"
                 f"Você poderá usar novamente em <b>{wait_text}</b>.\n\n"
-                "💎 Usuários VIP não possuem esse limite.",
-                reply_markup=await _add_group_markup(bot, await _vip_support_markup(bot, config)),
+                "Com o VIP você envia sem esse limite. Toque em <b>Adquirir VIP</b>.",
+                reply_markup=await _add_group_markup(bot, await _buy_vip_markup(message)),
             )
             return
 

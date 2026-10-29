@@ -454,6 +454,33 @@ class Database:
             "added_by": int(added_by),
         }
 
+    async def extend_vip(self, user_id: int, days: int, added_by: int) -> dict[str, Any]:
+        """Soma dias ao VIP atual (compra). VIP permanente continua permanente."""
+        current = await self.get_vip(user_id)
+        if current and not int(current.get("expires_at") or 0):
+            return current
+        now = int(time.time())
+        base = max(now, int(current["expires_at"])) if current else now
+        expires_at = base + max(1, int(days)) * 86400
+
+        await self.db.execute(
+            """
+            INSERT INTO vip_users (user_id, expires_at, added_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                expires_at = excluded.expires_at,
+                added_by = excluded.added_by,
+                updated_at = excluded.updated_at
+            """,
+            (int(user_id), expires_at, int(added_by), now, now),
+        )
+        await self.db.commit()
+        return {
+            "user_id": int(user_id),
+            "expires_at": expires_at,
+            "added_by": int(added_by),
+        }
+
     async def remove_vip(self, user_id: int) -> bool:
         cur = await self.db.execute(
             "DELETE FROM vip_users WHERE user_id = ?",

@@ -35,6 +35,27 @@ def _is_admin(user_id: int, config: Config) -> bool:
     return user_id in config.admin_ids
 
 
+# Deep link https://t.me/BOT?start=vip (botão Adquirir VIP do aviso de limite do /like).
+@router.message(CommandStart(deep_link=True, magic=F.args == "vip"), F.chat.type == "private")
+async def cmd_start_vip(
+    message: Message,
+    state: FSMContext,
+    db: Database,
+    config: Config,
+) -> None:
+    from app.handlers.store import vip_offer_screen
+
+    await state.clear()
+    if message.from_user:
+        await db.upsert_user(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name,
+        )
+    text, markup = await vip_offer_screen(db, config, message.from_user.id)
+    await message.answer(text, reply_markup=markup)
+
+
 @router.message(CommandStart())
 async def cmd_start(
     message: Message,

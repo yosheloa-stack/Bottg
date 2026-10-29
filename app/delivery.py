@@ -7,7 +7,9 @@ não é entregue novamente.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 
@@ -184,6 +186,37 @@ class DeliveryService:
                 return True
             except Exception:  # noqa: BLE001
                 logger.exception("Falha ao ativar revendedor pedido %s", order_id)
+                await self._notify_failure(order)
+                return False
+
+        if product.delivery == "vip_access":
+            try:
+                days = int(order.get("plan_days") or product.days or 30)
+                vip = await self.db.extend_vip(
+                    int(order["user_id"]),
+                    days,
+                    int(order["user_id"]),
+                )
+                await self.db.update_order_status(order_id, "delivered")
+                expires_at = int(vip.get("expires_at") or 0)
+                until = (
+                    datetime.fromtimestamp(
+                        expires_at, ZoneInfo("America/Sao_Paulo")
+                    ).strftime("%d/%m/%Y %H:%M")
+                    if expires_at
+                    else "Permanente"
+                )
+                await self.bot.send_message(
+                    int(order["user_id"]),
+                    "<b>VIP ATIVADO!</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    "Agora você pode usar <code>/like</code> sem o limite semanal.\n"
+                    f"Validade: <b>{until}</b>",
+                    reply_markup=back_home(),
+                )
+                return True
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha ao ativar VIP pedido %s", order_id)
                 await self._notify_failure(order)
                 return False
 
