@@ -12,7 +12,8 @@ from aiogram.types import CallbackQuery, ForceReply, Message
 from app import texts
 from app.config import Config
 from app.database import Database
-from app.keyboards.inline import back_home, cancel_only, main_menu
+from app.i18n import t, user_lang, welcome_text
+from app.keyboards.inline import back_home, cancel_only, language_menu, main_menu
 from app.states import PurchaseFlow
 from app.ui import edit_screen, send_menu
 from app.utils import format_price
@@ -25,16 +26,8 @@ async def _menu_media(db: Database, config: Config) -> str:
     return override or config.menu_banner
 
 
-async def _customer_welcome(db: Database, config: Config, user_id: int) -> str:
-    balance_cents = await db.get_balance_cents(user_id)
-    reseller = await db.is_reseller(user_id)
-    balance = balance_cents / 100
-    return (
-        texts.WELCOME.format(shop_name=config.shop_name)
-        + "\n\n"
-        + f"👛 Saldo: <b>R$ {format_price(balance)}</b>\n"
-        + f"🤝 Revenda: <b>{'Ativa ✅' if reseller else 'Não ativa'}</b>"
-    )
+async def _customer_welcome(db: Database, config: Config, user_id: int, lang: str) -> str:
+    return await welcome_text(db, config.shop_name, user_id, lang)
 
 
 def _is_admin(user_id: int, config: Config) -> bool:
@@ -92,11 +85,12 @@ async def cmd_start(
         message.from_user.username,
         message.from_user.first_name,
     )
+    lang = await user_lang(db, message.from_user)
     await send_menu(
         message,
         await _menu_media(db, config),
-        await _customer_welcome(db, config, message.from_user.id),
-        main_menu(False),
+        await _customer_welcome(db, config, message.from_user.id, lang),
+        main_menu(False, lang),
     )
 
 
@@ -109,16 +103,15 @@ async def cmd_menu(
     db: Database,
 ) -> None:
     await state.clear()
+    lang = await user_lang(db, message.from_user)
     if message.chat.type != "private":
-        await message.reply(
-            "ℹ️ O menu de compras funciona no privado do bot."
-        )
+        await message.reply(t(lang, "menu_private_only"))
         return
     await send_menu(
         message,
         await _menu_media(db, config),
-        await _customer_welcome(db, config, message.from_user.id),
-        main_menu(False),
+        await _customer_welcome(db, config, message.from_user.id, lang),
+        main_menu(False, lang),
     )
 
 
@@ -134,11 +127,50 @@ async def _open_customer_home(
         pass
     await state.clear()
     await db.clear_customer_pending_input(query.from_user.id)
+    lang = await user_lang(db, query.from_user)
     await edit_screen(
         query,
-        await _customer_welcome(db, config, query.from_user.id),
-        main_menu(False),
+        await _customer_welcome(db, config, query.from_user.id, lang),
+        main_menu(False, lang),
     )
+
+
+@router.callback_query(F.data == "menu:lang")
+async def cb_language(query: CallbackQuery, db: Database) -> None:
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    lang = await user_lang(db, query.from_user)
+    await edit_screen(query, t(lang, "language_title"), language_menu(lang))
+
+
+@router.callback_query(F.data.regexp(r"^lang:(pt|es|en)$"))
+async def cb_set_language(
+    query: CallbackQuery,
+    state: FSMContext,
+    config: Config,
+    db: Database,
+) -> None:
+    lang = query.data.split(":", 1)[1]
+    await db.set_user_language(query.from_user.id, lang)
+    try:
+        await query.answer(t(lang, "language_saved"))
+    except Exception:
+        pass
+    await _open_customer_home(query, state, config, db)
+
+
+@router.message(Command("idioma", "language", "lang"))
+async def cmd_language(message: Message, state: FSMContext, db: Database) -> None:
+    if not message.from_user:
+        return
+    lang = await user_lang(db, message.from_user)
+    if message.chat.type != "private":
+        await message.reply(t(lang, "menu_private_only"))
+        return
+    await state.clear()
+    await message.answer(t(lang, "language_title"), reply_markup=language_menu(lang))
 
 
 @router.callback_query(F.data == "shop:giftcard")
@@ -444,12 +476,13 @@ async def cb_cancel(
     db: Database,
 ) -> None:
     await state.clear()
+    lang = await user_lang(db, query.from_user)
     await edit_screen(
         query,
-        await _customer_welcome(db, config, query.from_user.id),
-        main_menu(False),
+        await _customer_welcome(db, config, query.from_user.id, lang),
+        main_menu(False, lang),
     )
-    await query.answer("Cancelado")
+    await query.answer(t(lang, "cancelled"))
 
 
 @router.message(Command("cancel"))
