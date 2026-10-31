@@ -9,7 +9,6 @@ Cada e-mail é registrado uma única vez, então nunca credita em dobro.
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 import logging
 import time
@@ -45,8 +44,11 @@ MAX_USDT = Decimal("1000.00")
 ORDER_TTL = 24 * 60 * 60
 # Tolerância para o relógio do e-mail vir um pouco antes da criação do pedido.
 ORDER_CLOCK_SKEW = 15 * 60
-# Pagamento sem pedido correspondente vira aviso ao dono depois deste tempo.
+# Dois pedidos pendentes com o mesmo valor e sem nome no e-mail: espera este
+# tempo (o pedido errado pode ser cancelado) antes de pedir ajuda ao dono.
 UNMATCHED_GRACE = 6 * 60 * 60
+# Janela para ligar um pagamento atrasado a um pedido expirado ou cancelado.
+LATE_PAYMENT_WINDOW = 48 * 60 * 60
 POLL_INTERVAL = 30
 MIN_FETCH_SPACING = 10
 
@@ -233,6 +235,13 @@ def _match_order(mail: BinanceMail, orders: list[dict]) -> dict | None:
     return None
 
 
+def _orders_line(orders: list[dict]) -> str:
+    return ", ".join(
+        f"#{o['id']} (cliente <code>{o['user_id']}</code>, {o['status']})"
+        for o in orders
+    )
+
+
 async def _notify_owners(bot: Bot, config: Config, text: str) -> None:
     for owner_id in config.admin_ids:
         try:
@@ -263,7 +272,13 @@ async def process_inbox(
                 await db.update_order_status(int(order["id"]), "expired")
             else:
                 orders.append(order)
-        if not orders:
+        # Pedido expirado/cancelado recente ainda pode receber pagamento atrasado.
+        recently_closed = [
+            o
+            for o in await db.recent_binance_orders(int(now - LATE_PAYMENT_WINDOW))
+            if o["status"] in {"expired", "cancelled"}
+        ]
+        if not orders and not recently_closed:
             return 0
         if not force and now - _last_fetch < MIN_FETCH_SPACING:
             return 0
@@ -292,18 +307,44 @@ async def process_inbox(
                     )
                 continue
 
-            if now - mail.date_ts > UNMATCHED_GRACE:
-                if await db.mark_binance_email(mail.key, None, "unmatched"):
+            # Sem pedido pendente casando. Só avisa o dono quando o valor bate
+            # com um pedido do bot; outros recebimentos da conta são ignorados.
+            related = [
+                o
+                for o in await db.recent_binance_orders(
+                    int(mail.date_ts - LATE_PAYMENT_WINDOW)
+                )
+                if _order_usdt(o) == mail.amount
+                and int(o.get("created_at") or 0) - ORDER_CLOCK_SKEW <= mail.date_ts
+            ]
+            ambiguous = [o for o in related if o["status"] == "pending"]
+            late = [o for o in related if o["status"] in {"expired", "cancelled"}]
+            if ambiguous:
+                if now - mail.date_ts <= UNMATCHED_GRACE:
+                    continue
+                if await db.mark_binance_email(mail.key, None, "ambiguous"):
                     await _notify_owners(
                         bot,
                         config,
-                        "<b>Pagamento USDT sem pedido</b>\n"
+                        "<b>Pagamento USDT sem identificação</b>\n"
                         f"Valor: <b>{mail.amount} USDT</b>\n"
-                        f"Remetente: <b>{html.escape(mail.payer or 'não identificado')}</b>\n"
-                        f"Assunto: {html.escape(mail.subject)}\n\n"
-                        "Nenhum pedido pendente tinha esse valor. "
-                        "Se for de um cliente, credite manualmente.",
+                        f"Pedidos com esse valor: {_orders_line(ambiguous)}\n\n"
+                        "O e-mail não diz quem pagou. Confira na Binance e "
+                        "credite o cliente certo manualmente.",
                     )
+            elif late:
+                if await db.mark_binance_email(mail.key, None, "late"):
+                    await _notify_owners(
+                        bot,
+                        config,
+                        "<b>Pagamento USDT de pedido encerrado</b>\n"
+                        f"Valor: <b>{mail.amount} USDT</b>\n"
+                        f"Pedidos: {_orders_line(late)}\n\n"
+                        "O pagamento chegou depois que o pedido expirou ou foi "
+                        "cancelado. Se for desse cliente, credite manualmente.",
+                    )
+            else:
+                await db.mark_binance_email(mail.key, None, "unrelated")
 
     for order_id in to_fulfill:
         await delivery.fulfill_order(order_id)

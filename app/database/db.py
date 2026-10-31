@@ -1078,6 +1078,16 @@ class Database:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
+    async def recent_binance_orders(self, since_ts: int) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM orders "
+            "WHERE paid_with = 'binance' AND created_at >= ? "
+            "ORDER BY id ASC",
+            (int(since_ts),),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
     async def binance_email_seen(self, email_key: str) -> bool:
         async with self.db.execute(
             "SELECT 1 FROM binance_emails WHERE email_key = ?", (email_key,)
