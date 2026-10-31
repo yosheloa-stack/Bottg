@@ -69,7 +69,7 @@ async def cmd_owner_autolike(
             "<code>/autolike cancel UID</code>\n\n"
             "✅ 1 envio por dia pela FFHub\n"
             "✅ aproximadamente 500 a 1.000 likes por envio\n"
-            "✅ horário fixo: 09:00 da manhã"
+            "✅ horário fixo: 05:00 da manhã"
         )
         return
 
@@ -244,7 +244,7 @@ async def cmd_owner_autolike(
         return
 
     sub = await db.get_ffhub_autolike_status(uid)
-    next_text = _fmt_time(sub.get("next_send_at")) if sub else "09:00"
+    next_text = _fmt_time(sub.get("next_send_at")) if sub else "05:00"
 
     await message.reply(
         "🔥 <b>AUTO LIKE 500 ATIVADO</b>\n"
@@ -252,9 +252,9 @@ async def cmd_owner_autolike(
         f"🆔 UID: <code>{uid}</code>\n"
         f"📆 Duração: <b>{days} dias</b>\n"
         "❤️ Por envio: <b>aprox. 500 a 1.000 likes</b>\n"
-        "⏰ Horário fixo: <b>09:00 da manhã</b>\n"
+        "⏰ Horário fixo: <b>05:00 da manhã</b>\n"
         f"📅 Próximo envio: <b>{next_text}</b>\n\n"
-        "✅ O sistema fará os envios diariamente às 09:00."
+        "✅ O sistema fará os envios diariamente às 05:00."
         + (
             "\n📣 As entregas também serão avisadas neste grupo."
             if notify_chat_id is not None
