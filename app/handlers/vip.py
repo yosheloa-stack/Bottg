@@ -187,7 +187,10 @@ async def cmd_vip(
         for vip in vips[:50]:
             uid = int(vip["user_id"])
             exp = int(vip.get("expires_at") or 0)
-            lines.append(f"• <code>{uid}</code> — {_fmt_expiry(exp)}")
+            lines.append(
+                f"• <code>{uid}</code> — {_fmt_expiry(exp)} · "
+                f"⏳ {_remaining(exp)}"
+            )
         if len(vips) > 50:
             lines.append(f"\n… e mais {len(vips) - 50}.")
         await message.answer("\n".join(lines))
