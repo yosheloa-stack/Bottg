@@ -171,7 +171,10 @@ async def _do_send_like(
         return
 
     if use_cooldown:
-        await db.release_like_slot(message.from_user.id)
+        if data.get("probably_sent"):
+            await db.complete_like_slot(message.from_user.id)
+        else:
+            await db.release_like_slot(message.from_user.id)
 
     logger.warning(
         "Falha Auto System no /like uid=%s status=%s error=%s data=%s",
@@ -180,6 +183,24 @@ async def _do_send_like(
         error,
         data,
     )
+
+    if data.get("probably_sent"):
+        await status_msg.edit_text(
+            "✅ <b>Pedido recebido!</b>\n"
+            f"🆔 UID: <code>{game_id}</code>\n\n"
+            "O serviço confirmou o envio de forma incompleta, mas os likes "
+            "provavelmente já foram entregues. Confira o perfil em alguns minutos.",
+            reply_markup=await _add_group_markup(message.bot),
+        )
+        return
+
+    if data.get("delivery_unknown"):
+        await status_msg.edit_text(
+            "⚠️ O serviço de likes respondeu de forma incompleta. "
+            "Confira o perfil em alguns minutos antes de tentar de novo.",
+            reply_markup=await _add_group_markup(message.bot),
+        )
+        return
 
     if result.status == 400:
         await status_msg.edit_text(
@@ -237,6 +258,15 @@ async def _do_send_like(
     if result.status == 503:
         await status_msg.edit_text(
             f"⏳ {html.escape(error or 'Serviço temporariamente indisponível. Tente novamente em instantes.')}",
+            reply_markup=await _add_group_markup(message.bot),
+        )
+        return
+
+    if result.status == 0:
+        # Falha de rede/transporte: nunca mostra a exceção crua ao usuário.
+        await status_msg.edit_text(
+            "⚠️ Não consegui falar com o serviço de likes agora. "
+            "Tente novamente em alguns minutos.",
             reply_markup=await _add_group_markup(message.bot),
         )
         return
@@ -503,7 +533,7 @@ async def cmd_like2(
             await status_msg.edit_text(
                 "❌ <b>Erro no LIKE2</b>\n\n"
                 f"🆔 UID: <code>{game_id}</code>\n"
-                f"⚠️ {html.escape(str(exc) or 'Falha inesperada no envio.')}",
+                "⚠️ Não foi possível concluir o envio agora. Tente novamente mais tarde.",
                 reply_markup=await _add_group_markup(message.bot),
             )
             return
@@ -519,6 +549,17 @@ async def cmd_like2(
         )
 
         data = result.data if isinstance(result.data, dict) else {}
+
+        if not result.ok and data.get("delivery_unknown"):
+            await _undo_reservation()
+            await status_msg.edit_text(
+                "⚠️ <b>LIKE2: resposta incompleta</b>\n\n"
+                f"🆔 UID: <code>{game_id}</code>\n"
+                "O serviço cortou a resposta antes do fim. Os likes podem ter sido "
+                "enviados; confira o perfil antes de tentar de novo.",
+                reply_markup=await _add_group_markup(message.bot),
+            )
+            return
 
         if not result.ok:
             await _undo_reservation()

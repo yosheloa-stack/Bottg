@@ -14,6 +14,8 @@ from typing import Any
 
 import aiohttp
 
+from app.services.http_utils import read_json_tolerant
+
 logger = logging.getLogger(__name__)
 
 # A rota /api/like pode levar bem mais de 35s para confirmar o contador.
@@ -65,27 +67,22 @@ class LikesApi:
         try:
             async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
                 async with session.get(url, params=params or {}, headers=headers) as resp:
-                    try:
-                        payload = await resp.json(content_type=None)
-                    except Exception:
-                        raw = await resp.text()
+                    payload, raw, truncated = await read_json_tolerant(resp)
+                    if not isinstance(payload, dict):
                         logger.warning(
-                            "Likes API retornou resposta não-JSON | status=%s | body=%r",
+                            "Likes API resposta inválida | status=%s | truncado=%s | body=%r",
                             resp.status,
+                            truncated,
                             raw[:300],
                         )
                         return LikesApiResult(
                             ok=False,
-                            status=resp.status,
-                            data={"raw": raw},
-                            error="Resposta inválida da API de likes.",
-                        )
-
-                    if not isinstance(payload, dict):
-                        return LikesApiResult(
-                            ok=False,
-                            status=resp.status,
-                            data={},
+                            status=0 if truncated else resp.status,
+                            data={
+                                "raw": raw[:500],
+                                "truncated": truncated,
+                                "delivery_unknown": truncated and path == "/api/like",
+                            },
                             error="Resposta inválida da API de likes.",
                         )
 
@@ -118,7 +115,12 @@ class LikesApi:
             )
         except aiohttp.ClientError as exc:
             logger.warning("Erro de rede na Likes Painel API %s: %s", path, exc)
-            return LikesApiResult(ok=False, status=0, data={}, error=str(exc))
+            return LikesApiResult(
+                ok=False,
+                status=0,
+                data={},
+                error="Falha de comunicação com a API de likes.",
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Erro inesperado na Likes Painel API %s", path)
             return LikesApiResult(ok=False, status=0, data={}, error=str(exc))

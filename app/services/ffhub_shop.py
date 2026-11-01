@@ -6,12 +6,13 @@ Autenticação: X-API-Key
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
+
+from app.services.http_utils import parse_json_lenient, read_body_tolerant
 
 logger = logging.getLogger(__name__)
 
@@ -165,19 +166,28 @@ class FFHubShopApi:
                     headers=self._headers(),
                     json=payload if method != "GET" else None,
                 ) as resp:
-                    raw = await resp.text()
+                    raw_bytes, truncated = await read_body_tolerant(resp)
+                    raw = raw_bytes.decode("utf-8", errors="replace")
 
                     logger.info(
-                        "FFHub resposta | path=%s status=%s bytes=%s",
+                        "FFHub resposta | path=%s status=%s bytes=%s truncado=%s",
                         path,
                         resp.status,
                         len(raw),
+                        truncated,
                     )
 
-                    try:
-                        parsed = json.loads(raw) if raw else {}
-                    except json.JSONDecodeError:
-                        parsed = {"raw": raw}
+                    parsed = parse_json_lenient(raw_bytes) if raw else {}
+                    if truncated and not isinstance(parsed, dict):
+                        # Corpo cortado e ilegível: não dá para saber se entregou.
+                        return FFHubResult(
+                            ok=False,
+                            status=0,
+                            data={"raw": raw[:1500], "truncated": True, "delivery_unknown": True},
+                            error="A FFHub respondeu de forma incompleta.",
+                        )
+                    if parsed is None:
+                        parsed = {"raw": raw[:1500]}
 
                     if isinstance(parsed, dict):
                         data = parsed
@@ -233,7 +243,12 @@ class FFHubShopApi:
             )
         except aiohttp.ClientError as exc:
             logger.warning("Erro de rede FFHub Shop %s: %s", path, exc)
-            return FFHubResult(ok=False, status=0, data={}, error=str(exc))
+            return FFHubResult(
+                ok=False,
+                status=0,
+                data={},
+                error="Falha de comunicação com a FFHub.",
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Erro inesperado FFHub Shop %s", path)
             return FFHubResult(ok=False, status=0, data={}, error=str(exc))

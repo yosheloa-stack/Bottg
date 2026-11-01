@@ -6,11 +6,13 @@ Autenticação: X-Api-Key
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 import aiohttp
 
+from app.services.http_utils import read_json_tolerant
 from app.services.likes import LikesApiResult
 
 logger = logging.getLogger(__name__)
@@ -68,19 +70,14 @@ class AutoSystemLikesApi:
         try:
             async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
                 async with session.get(url, params=params, headers=headers) as resp:
-                    try:
-                        payload = await resp.json(content_type=None)
-                    except Exception:
-                        raw = await resp.text()
+                    payload, raw, truncated = await read_json_tolerant(resp)
+                    if not isinstance(payload, dict):
                         return LikesApiResult(
                             ok=False,
-                            status=resp.status,
-                            data={"raw": raw},
+                            status=0 if truncated else resp.status,
+                            data={"raw": raw[:500], "truncated": truncated},
                             error="Resposta inválida da Auto System.",
                         )
-
-                    if not isinstance(payload, dict):
-                        payload = {}
 
                     normalized = {
                         "uid": str(payload.get("uid") or uid),
@@ -119,7 +116,12 @@ class AutoSystemLikesApi:
                     )
         except aiohttp.ClientError as exc:
             logger.warning("Erro de rede AutoSystem autolike uid=%s: %s", uid, exc)
-            return LikesApiResult(ok=False, status=0, data={}, error=str(exc))
+            return LikesApiResult(
+                ok=False,
+                status=0,
+                data={},
+                error="Falha de comunicação com a Auto System.",
+            )
         except TimeoutError:
             logger.warning("Timeout AutoSystem autolike uid=%s", uid)
             return LikesApiResult(
@@ -133,6 +135,32 @@ class AutoSystemLikesApi:
             return LikesApiResult(ok=False, status=0, data={}, error=str(exc))
 
     async def send_like(
+        self, uid: str, quantity: int | None = None
+    ) -> LikesApiResult:
+        """Envia likes com tolerância a respostas cortadas pelo provedor.
+
+        Se a resposta vier truncada e ilegível, tenta mais uma vez. Como a API
+        tem cooldown por UID, uma segunda chamada não duplica o envio: se ela
+        responder "aguardando", o primeiro envio provavelmente foi entregue.
+        """
+        first = await self._send_like_once(uid, quantity)
+        if not first.data.get("truncated"):
+            return first
+
+        logger.warning("Auto System /v1/like truncado para uid=%s; tentando de novo", uid)
+        await asyncio.sleep(3)
+        second = await self._send_like_once(uid, quantity)
+        if second.status == 409:
+            second.data["delivery_unknown"] = True
+            second.data["probably_sent"] = True
+            second.error = "Resposta incompleta; os likes provavelmente foram enviados."
+            return second
+        if second.data.get("truncated"):
+            second.data["delivery_unknown"] = True
+            second.error = "A Auto System respondeu de forma incompleta."
+        return second
+
+    async def _send_like_once(
         self, uid: str, quantity: int | None = None
     ) -> LikesApiResult:
         if not self.enabled:
@@ -159,27 +187,18 @@ class AutoSystemLikesApi:
         try:
             async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
                 async with session.get(url, params=params, headers=headers) as resp:
-                    try:
-                        payload = await resp.json(content_type=None)
-                    except Exception:
-                        raw = await resp.text()
+                    payload, raw, truncated = await read_json_tolerant(resp)
+                    if not isinstance(payload, dict):
                         logger.warning(
-                            "Auto System retornou resposta não-JSON | status=%s | body=%r",
+                            "Auto System resposta inválida | status=%s | truncado=%s | body=%r",
                             resp.status,
+                            truncated,
                             raw[:300],
                         )
                         return LikesApiResult(
                             ok=False,
-                            status=resp.status,
-                            data={"raw": raw},
-                            error="Resposta inválida da API Auto System.",
-                        )
-
-                    if not isinstance(payload, dict):
-                        return LikesApiResult(
-                            ok=False,
-                            status=resp.status,
-                            data={},
+                            status=0 if truncated else resp.status,
+                            data={"raw": raw[:500], "truncated": truncated},
                             error="Resposta inválida da API Auto System.",
                         )
 
@@ -244,7 +263,12 @@ class AutoSystemLikesApi:
 
         except aiohttp.ClientError as exc:
             logger.warning("Erro de rede na Auto System /v1/like: %s", exc)
-            return LikesApiResult(ok=False, status=0, data={}, error=str(exc))
+            return LikesApiResult(
+                ok=False,
+                status=0,
+                data={},
+                error="Falha de comunicação com a Auto System.",
+            )
         except TimeoutError:
             logger.warning("Timeout na Auto System /v1/like para uid=%s", uid)
             return LikesApiResult(
