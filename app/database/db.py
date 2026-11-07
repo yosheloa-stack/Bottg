@@ -1594,6 +1594,86 @@ class Database:
         await self.db.commit()
         return int(cur.rowcount or 0)
 
+    async def is_autolike_active(self, subscription_id: int) -> bool:
+        async with self.db.execute(
+            "SELECT 1 FROM ffhub_autolike_subscriptions "
+            "WHERE id = ? AND status = 'active'",
+            (int(subscription_id),),
+        ) as cur:
+            return await cur.fetchone() is not None
+
+    async def active_autolikes_all(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Assinaturas ativas do Auto Like 500 (ffhub) e 220 (autosystem)."""
+        async with self.db.execute(
+            """
+            SELECT
+                s.*,
+                (
+                    SELECT h.nickname
+                    FROM ffhub_autolike_history h
+                    WHERE h.subscription_id = s.id
+                      AND h.nickname IS NOT NULL
+                      AND h.nickname != ''
+                    ORDER BY h.sent_at DESC, h.id DESC
+                    LIMIT 1
+                ) AS nickname
+            FROM ffhub_autolike_subscriptions s
+            WHERE s.status = 'active'
+            ORDER BY s.provider, s.created_at DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_autolike_subscription(
+        self, subscription_id: int
+    ) -> Optional[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_subscriptions WHERE id = ?",
+            (int(subscription_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def _cancel_autolikes_where(
+        self, where: str, params: tuple[Any, ...]
+    ) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM ffhub_autolike_subscriptions "
+            f"WHERE status = 'active' AND {where}",
+            params,
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+        if not rows:
+            return []
+        now = int(time.time())
+        for row in rows:
+            await self.db.execute(
+                "UPDATE ffhub_autolike_subscriptions "
+                "SET status = 'cancelled', next_send_at = 0, updated_at = ? "
+                "WHERE id = ? AND status = 'active'",
+                (now, int(row["id"])),
+            )
+            if int(row["order_id"]) > 0:
+                await self.db.execute(
+                    "UPDATE orders SET status = 'cancelled', updated_at = ? "
+                    "WHERE id = ? AND status = 'active'",
+                    (now, int(row["order_id"])),
+                )
+        await self.db.commit()
+        return rows
+
+    async def cancel_autolike_by_uid(self, game_id: str) -> list[dict[str, Any]]:
+        """Remove o UID do Auto Like 500 e do 220. Retorna as assinaturas encerradas."""
+        return await self._cancel_autolikes_where("game_id = ?", (str(game_id),))
+
+    async def cancel_autolike_subscription(
+        self, subscription_id: int
+    ) -> list[dict[str, Any]]:
+        return await self._cancel_autolikes_where("id = ?", (int(subscription_id),))
+
     async def get_ffhub_autolike_status(
         self, game_id: str
     ) -> Optional[dict[str, Any]]:
@@ -1727,11 +1807,16 @@ class Database:
 
         sends_done = int(row["sends_done"]) + 1
         days_total = int(row["days_total"])
-        status = "completed" if sends_done >= days_total else "active"
+        if row["status"] == "cancelled":
+            # Removido pelo dono durante o envio: registra o que já saiu,
+            # mas não reativa a assinatura.
+            status = "cancelled"
+        else:
+            status = "completed" if sends_done >= days_total else "active"
 
         next_send_at = (
             0
-            if status == "completed"
+            if status != "active"
             else next_autolike_send_epoch(now)
         )
 

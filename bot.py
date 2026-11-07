@@ -139,6 +139,9 @@ async def watch_ffhub_autolikes(
             due = await db.due_ffhub_autolikes(limit=50)
             for sub in due:
                 sub_id = int(sub["id"])
+                # O ID pode ter sido removido pelo dono enquanto o lote rodava.
+                if not await db.is_autolike_active(sub_id):
+                    continue
                 # Reserva antes da chamada remota. Se o processo cair durante o envio,
                 # evita repetir imediatamente e gastar saldo duas vezes.
                 await db.reserve_ffhub_autolike_attempt(sub_id)
@@ -321,6 +324,9 @@ async def watch_autosystem_autolikes(
             due = await db.due_autosystem_autolikes(limit=50)
             for sub in due:
                 sub_id = int(sub["id"])
+                # O ID pode ter sido removido pelo dono enquanto o lote rodava.
+                if not await db.is_autolike_active(sub_id):
+                    continue
                 await db.reserve_ffhub_autolike_attempt(sub_id)
 
                 result = await autosystem_likes_api.send_like(

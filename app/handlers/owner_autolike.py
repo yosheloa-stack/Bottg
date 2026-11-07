@@ -5,9 +5,14 @@ import html
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from aiogram import Bot, Router
+from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from app.config import Config
 from app.database import Database
@@ -66,7 +71,8 @@ async def cmd_owner_autolike(
             "Gerenciar:\n"
             "<code>/autolike list</code>\n"
             "<code>/autolike status UID</code>\n"
-            "<code>/autolike cancel UID</code>\n\n"
+            "<code>/autolike cancel UID</code>\n"
+            "<code>/removerid</code> — remover ID do 500 e 220\n\n"
             "✅ 1 envio por dia pela FFHub\n"
             "✅ aproximadamente 500 a 1.000 likes por envio\n"
             "✅ horário fixo: 05:00 da manhã"
@@ -164,17 +170,8 @@ async def cmd_owner_autolike(
             await message.reply("⚠️ UID inválido.")
             return
 
-        cancelled = await db.cancel_ffhub_autolike_by_uid(uid)
-        if cancelled:
-            await message.reply(
-                "✅ <b>Auto Like cancelado</b>\n\n"
-                f"🆔 UID: <code>{uid}</code>\n"
-                f"📦 Assinaturas encerradas: <b>{cancelled}</b>"
-            )
-        else:
-            await message.reply(
-                "ℹ️ Não existe Auto Like ativo para esse UID."
-            )
+        removed = await db.cancel_autolike_by_uid(uid)
+        await message.reply(_removed_text(uid, removed))
         return
 
     uid = clean_game_id(args[0])
@@ -261,3 +258,168 @@ async def cmd_owner_autolike(
             else "\n📩 As entregas serão avisadas no privado."
         )
     )
+
+
+# ---------- Remover ID do Auto Like 500 / 220 ----------
+PLAN_LABEL = {"ffhub": "500", "autosystem": "220"}
+
+
+def _plan_label(sub: dict) -> str:
+    return PLAN_LABEL.get(str(sub.get("provider") or "ffhub"), "500")
+
+
+def _removed_text(uid: str, removed: list[dict]) -> str:
+    if not removed:
+        return "ℹ️ Esse UID não está cadastrado em nenhum Auto Like ativo (500 ou 220)."
+    plans = ", ".join(sorted({f"Auto Like {_plan_label(s)}" for s in removed}))
+    return (
+        "✅ <b>ID removido do Auto Like</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"🆔 UID: <code>{uid}</code>\n"
+        f"📦 Plano: <b>{plans}</b>\n\n"
+        "⛔ Esse ID não recebe mais likes automáticos."
+    )
+
+
+async def _removal_menu(db: Database) -> tuple[str, InlineKeyboardMarkup | None]:
+    subs = await db.active_autolikes_all(limit=90)
+    if not subs:
+        return "🗑 <b>REMOVER ID DO AUTO LIKE</b>\n\nNenhum ID ativo no 500 ou 220.", None
+
+    lines = [
+        "🗑 <b>REMOVER ID DO AUTO LIKE</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "Toque no ID que deseja remover.",
+        "Ou use: <code>/removerid UID</code>",
+        "",
+    ]
+    rows = []
+    for sub in subs:
+        plan = _plan_label(sub)
+        nick = str(sub.get("nickname") or "").strip()
+        done = int(sub.get("sends_done") or 0)
+        total = int(sub.get("days_total") or 0)
+        lines.append(
+            f"• <b>{plan}</b> · <code>{sub['game_id']}</code>"
+            + (f" · {html.escape(nick)}" if nick else "")
+            + f" · {done}/{total}"
+        )
+        label = f"❌ {plan} · {sub['game_id']}"
+        if nick:
+            label += f" · {nick[:16]}"
+        rows.append(
+            [InlineKeyboardButton(text=label, callback_data=f"alrm:ask:{sub['id']}")]
+        )
+    rows.append([InlineKeyboardButton(text="Fechar", callback_data="alrm:close")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.message(Command("removerid", "rmid", "removerautolike"))
+async def cmd_remove_autolike_id(
+    message: Message,
+    command: CommandObject,
+    config: Config,
+    db: Database,
+    bot: Bot,
+) -> None:
+    owner_id = await resolve_owner_id(message, bot, config)
+    if owner_id is None:
+        await message.reply("🔒 <b>Comando exclusivo dos donos.</b>")
+        return
+
+    arg = (command.args or "").strip()
+    if arg:
+        uid = clean_game_id(arg.split()[0])
+        if not _valid_uid(uid):
+            await message.reply("⚠️ UID inválido.")
+            return
+        removed = await db.cancel_autolike_by_uid(uid)
+        await message.reply(_removed_text(uid, removed))
+        return
+
+    text, markup = await _removal_menu(db)
+    await message.reply(text, reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("alrm:"))
+async def cb_remove_autolike_id(
+    call: CallbackQuery,
+    config: Config,
+    db: Database,
+) -> None:
+    if not call.from_user or call.from_user.id not in config.admin_ids:
+        await call.answer("Exclusivo dos donos.", show_alert=True)
+        return
+
+    parts = (call.data or "").split(":")
+    action = parts[1] if len(parts) > 1 else ""
+
+    if action == "close":
+        await call.answer()
+        try:
+            await call.message.delete()
+        except Exception:  # noqa: BLE001
+            pass
+        return
+
+    if action == "list":
+        text, markup = await _removal_menu(db)
+        await call.answer()
+        await call.message.edit_text(text, reply_markup=markup)
+        return
+
+    try:
+        sub_id = int(parts[2])
+    except (IndexError, ValueError):
+        await call.answer()
+        return
+
+    sub = await db.get_autolike_subscription(sub_id)
+    if not sub or sub.get("status") != "active":
+        await call.answer("Esse ID já não está ativo.", show_alert=True)
+        text, markup = await _removal_menu(db)
+        await call.message.edit_text(text, reply_markup=markup)
+        return
+
+    if action == "ask":
+        await call.answer()
+        await call.message.edit_text(
+            "⚠️ <b>Confirmar remoção?</b>\n\n"
+            f"📦 Plano: <b>Auto Like {_plan_label(sub)}</b>\n"
+            f"🆔 UID: <code>{sub['game_id']}</code>\n"
+            f"📆 Envios: <b>{int(sub.get('sends_done') or 0)}/{int(sub.get('days_total') or 0)}</b>\n\n"
+            "Depois de remover, esse ID para de receber likes.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="✅ Sim, remover",
+                            callback_data=f"alrm:do:{sub_id}",
+                        ),
+                        InlineKeyboardButton(
+                            text="Voltar", callback_data="alrm:list"
+                        ),
+                    ]
+                ]
+            ),
+        )
+        return
+
+    if action == "do":
+        removed = await db.cancel_autolike_subscription(sub_id)
+        await call.answer("ID removido." if removed else "Já estava removido.")
+        await call.message.edit_text(
+            _removed_text(str(sub["game_id"]), removed),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="Remover outro ID", callback_data="alrm:list"
+                        )
+                    ]
+                ]
+            ),
+        )
+        return
+
+    await call.answer()
