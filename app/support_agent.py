@@ -68,7 +68,11 @@ Não use HTML nem Markdown; escreva texto simples, sem emojis.
 Nunca mencione para o cliente nomes de fornecedores ou provedores (FFHub, Auto System, AutoSystem, Mercado Pago); fale só "nosso sistema" ou "pagamento PIX".
 
 Produtos vendidos: Auto Like 220 e Auto Like 500 (likes diários por X dias), LIKE2 (envio único),
-Passe Booyah/Elite, acesso de Revenda, Aluguel do bot para grupos e Saldo na carteira.
+Passe Booyah/Elite, acesso de Revenda, Aluguel do bot para grupos, VIP e Saldo na carteira.
+O VIP (30 dias) NÃO é assinatura de Auto Like: ele libera o comando /like nos grupos sem o limite semanal.
+O /like do VIP funciona em grupos (não no privado). Pedido de VIP com status "delivered" já ativou o VIP;
+para conferir, use status_vip (ou o campo "vip" de detalhes_pedido), nunca as assinaturas de Auto Like.
+VIP2 não é vendido na loja; é liberado só pela equipe e dá acesso ao /like2.
 Pagamento é por PIX (Mercado Pago) ou saldo. Depois que o PIX é aprovado, a entrega é automática.
 Nos Auto Likes, depois do pagamento o cliente precisa enviar o UID do Free Fire no privado do bot.
 Os envios dos Auto Likes (220 e 500) acontecem 1 vez por dia em horário fixo: 05:00 da manhã (horário de Brasília).
@@ -128,6 +132,7 @@ CUSTOMER_TOOLS = [
         _ORDER_REF,
     ),
     _fn("saldo_carteira", "Saldo atual da carteira e últimas movimentações."),
+    _fn("status_vip", "Mostra se o cliente tem VIP e VIP2 ativos e até quando valem."),
     _fn("catalogo_produtos", "Produtos da loja com preço atual e disponibilidade."),
     _fn(
         "chamar_atendente",
@@ -167,7 +172,8 @@ ADMIN_TOOLS = [
         {"order_id": {"type": "integer", "description": "Número do pedido (#)."}},
         ["order_id"],
     ),
-    CUSTOMER_TOOLS[4],
+    CUSTOMER_TOOLS[5],
+    _fn("status_vip", "VIP e VIP2 de um cliente e até quando valem.", _USER_REF, ["user_id"]),
 ]
 
 
@@ -401,11 +407,38 @@ class SupportAgent:
         order = await self._find_order(user_id, admin, args)
         if isinstance(order, str):
             return {"erro": order}
+        product = self.config.products.get(order.get("product_code") or "")
+        if product and product.delivery == "vip_access":
+            return {
+                "pedido": self._order_summary(order, full=True),
+                "vip": await self._vip_status(int(order["user_id"])),
+                "obs": "VIP não gera assinatura de Auto Like; libera o /like nos grupos sem limite semanal.",
+            }
         subs = await self.db.autolike_subscriptions_for(order_id=int(order["id"]))
         return {
             "pedido": self._order_summary(order, full=True),
             "assinaturas_auto_like": await self._subscriptions_with_history(subs),
         }
+
+    async def _vip_status(self, target: int) -> dict:
+        vip = await self.db.get_vip(target)
+        vip2 = await self.db.get_vip2(target)
+
+        def _until(row: dict | None) -> str | None:
+            if not row:
+                return None
+            return _fmt_ts(row.get("expires_at")) or "permanente"
+
+        return {
+            "vip_ativo": vip is not None,
+            "vip_valido_ate": _until(vip),
+            "vip2_ativo": vip2 is not None,
+            "vip2_valido_ate": _until(vip2),
+        }
+
+    async def _tool_status_vip(self, user_id: int, admin: bool, args: dict) -> Any:
+        target = int(args["user_id"]) if admin and args.get("user_id") else user_id
+        return await self._vip_status(target)
 
     async def _tool_verificar_pagamento(self, user_id: int, admin: bool, args: dict) -> Any:
         order = await self._find_order(user_id, admin, args)
