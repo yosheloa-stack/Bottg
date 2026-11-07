@@ -216,7 +216,8 @@ async def cmd_admin(message: Message, config: Config, bot: Bot) -> None:
         "<code>/restaurar</code> — responder um arquivo .db de backup\n\n"
         "VIP: <code>/vip</code> · VIP2: <code>/vip2</code>\n"
         "Auto Like manual: <code>/autolike</code>\n"
-        "Remover ID do Auto Like 500/220: <code>/removerid</code>"
+        "Remover ID do Auto Like 500/220: <code>/removerid</code>\n"
+        "Anunciar e fixar em todos os grupos: <code>/anunciar</code>"
     )
 
 
