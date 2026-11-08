@@ -19,6 +19,21 @@ from app.states import PurchaseFlow
 from app.ui import edit_screen, send_menu
 from app.utils import format_price
 
+async def group_help_text(bot: Bot) -> str:
+    """Instruções curtas para grupos, com /comando@bot (outros bots no grupo)."""
+    try:
+        me = await bot.me()
+        mention = f"@{me.username}" if me.username else ""
+    except Exception:  # noqa: BLE001
+        mention = ""
+    return (
+        "👋 <b>Estou ativo neste grupo!</b>\n\n"
+        f"❤️ <code>/like{mention} SEU_ID</code> — envio de likes\n"
+        f"🆔 <code>/id{mention}</code> — seu ID do Telegram\n\n"
+        "Compras e aluguel do bot: abra meu privado e envie /start."
+    )
+
+
 router = Router(name="common")
 
 
@@ -100,6 +115,10 @@ async def cmd_start(
                     "⚠️ Não consegui vincular essa licença a este grupo.\n"
                     "Confirme que você está usando a conta que comprou o aluguel."
                 )
+            return
+
+        # /start no grupo: responde em vez de ficar mudo.
+        await message.reply(await group_help_text(bot))
         return
 
     await db.upsert_user(

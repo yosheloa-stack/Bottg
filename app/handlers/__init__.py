@@ -1,5 +1,8 @@
 """Registro central dos routers de handlers."""
+import logging
+
 from aiogram import Dispatcher
+from aiogram.types import ErrorEvent
 
 from app import backup, groups
 from app.user_tracker import UserTrackerMiddleware
@@ -21,7 +24,31 @@ from app.handlers import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
+async def _on_error(event: ErrorEvent) -> bool:
+    """Nunca deixa o usuário sem resposta quando um comando quebra."""
+    logger.error(
+        "Erro não tratado no update %s",
+        event.update.update_id,
+        exc_info=event.exception,
+    )
+    message = event.update.message
+    if message is not None and (message.text or "").startswith("/"):
+        try:
+            await message.answer(
+                "⚠️ Não consegui processar esse comando agora. "
+                "Tente novamente em instantes."
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Falha ao avisar erro no chat %s", message.chat.id)
+    return True
+
+
 def register_handlers(dp: Dispatcher) -> None:
+    # Qualquer erro em comando vira aviso no chat, em vez de silêncio.
+    dp.errors.register(_on_error)
     # Registra os grupos onde o bot está (para o /grupos do dono).
     dp.message.outer_middleware(groups.GroupTrackerMiddleware())
     # Salva @username/nome de todo cliente que interage com o bot.

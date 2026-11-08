@@ -446,7 +446,11 @@ async def main() -> None:
 
     bot = Bot(
         token=config.bot_token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        default=DefaultBotProperties(
+            parse_mode=ParseMode.HTML,
+            # Responde mesmo se o comando original já tiver sido apagado.
+            allow_sending_without_reply=True,
+        ),
     )
 
     # O deploy da Square Cloud apaga o data/bot.db; recupera o último backup
@@ -653,6 +657,14 @@ async def main() -> None:
         )
         me = await bot.get_me()
         logger.info("Bot iniciado como @%s", me.username)
+        if not me.can_read_all_group_messages:
+            logger.warning(
+                "Privacy mode ATIVO em @%s: em grupos com outros bots o /like "
+                "sem @%s pode não chegar. Desative no @BotFather (/setprivacy "
+                "-> Disable) e readicione o bot nos grupos, ou deixe-o admin.",
+                me.username,
+                me.username,
+            )
 
         # Limpa webhook do Telegram com tentativas e verifica antes do polling.
         for attempt in range(1, 6):

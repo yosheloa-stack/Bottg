@@ -182,6 +182,13 @@ async def on_bot_added(
         added_by,
     )
     await _notify_group_added(bot, db, config, event)
+    # Mensagem no grupo: mostra que o bot está ativo e como chamar o /like.
+    try:
+        from app.handlers.common import group_help_text
+
+        await bot.send_message(event.chat.id, await group_help_text(bot))
+    except Exception:  # noqa: BLE001
+        logger.warning("Não consegui enviar boas-vindas no grupo %s", event.chat.id)
 
 
 @router.my_chat_member(
