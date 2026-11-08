@@ -231,6 +231,26 @@ CREATE TABLE IF NOT EXISTS binance_emails (
     result      TEXT NOT NULL DEFAULT '',
     created_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS payments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind          TEXT NOT NULL,              -- vip | vip2 | rental
+    user_id       INTEGER NOT NULL,
+    username      TEXT,                       -- @ do Telegram no momento do pagamento
+    first_name    TEXT,
+    amount_cents  INTEGER NOT NULL DEFAULT 0,
+    days          INTEGER NOT NULL DEFAULT 0, -- 0 = permanente
+    expires_at    INTEGER NOT NULL DEFAULT 0, -- validade após o pagamento
+    method        TEXT NOT NULL DEFAULT 'manual',  -- manual | pix | balance
+    order_id      INTEGER UNIQUE,
+    ref_id        INTEGER,                    -- ex.: id da licença de aluguel
+    note          TEXT,
+    created_by    INTEGER,
+    created_at    INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_kind ON payments(kind, created_at);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
 """
 
 
@@ -363,8 +383,62 @@ class Database:
             user_columns = {str(row["name"]) for row in await cur.fetchall()}
         if "language" not in user_columns:
             await self._db.execute("ALTER TABLE users ADD COLUMN language TEXT")
+        if "updated_at" not in user_columns:
+            await self._db.execute("ALTER TABLE users ADD COLUMN updated_at INTEGER")
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_username "
+            "ON users(username COLLATE NOCASE)"
+        )
+
+        # Aluguéis pagos antes do controle de pagamentos entram no histórico
+        # (uma única vez; os novos são registrados na entrega).
+        async with self._db.execute(
+            "SELECT 1 FROM owner_settings WHERE key = 'payments_backfill_v1'"
+        ) as cur:
+            already_backfilled = await cur.fetchone() is not None
+        if not already_backfilled:
+            await self._backfill_rental_payments()
 
         await self._db.commit()
+
+    async def _backfill_rental_payments(self) -> None:
+        assert self._db is not None
+        await self._db.execute(
+            """
+            INSERT OR IGNORE INTO payments
+                (kind, user_id, username, first_name, amount_cents, days,
+                 expires_at, method, order_id, ref_id, note, created_at)
+            SELECT 'rental', r.user_id, u.username, u.first_name,
+                   CAST(ROUND(CAST(o.amount AS REAL) * 100) AS INTEGER),
+                   CAST((r.expires_at - r.starts_at) / 86400 AS INTEGER),
+                   r.expires_at, COALESCE(o.paid_with, 'pix'), r.order_id, r.id,
+                   'importado', r.created_at
+            FROM bot_rentals r
+            JOIN orders o ON o.id = r.order_id
+            LEFT JOIN users u ON u.user_id = r.user_id
+            """
+        )
+        # VIPs comprados pela loja antes do controle.
+        await self._db.execute(
+            """
+            INSERT OR IGNORE INTO payments
+                (kind, user_id, username, first_name, amount_cents, days,
+                 expires_at, method, order_id, note, created_at)
+            SELECT 'vip', o.user_id, u.username, u.first_name,
+                   CAST(ROUND(CAST(o.amount AS REAL) * 100) AS INTEGER),
+                   COALESCE(o.plan_days, 30),
+                   o.updated_at + COALESCE(NULLIF(o.plan_days, 0), 30) * 86400,
+                   COALESCE(o.paid_with, 'pix'), o.id, 'importado', o.updated_at
+            FROM orders o
+            LEFT JOIN users u ON u.user_id = o.user_id
+            WHERE o.product_code = 'vip_access' AND o.status = 'delivered'
+            """
+        )
+        await self._db.execute(
+            "INSERT OR REPLACE INTO owner_settings (key, value, updated_at) "
+            "VALUES ('payments_backfill_v1', '1', ?)",
+            (int(time.time()),),
+        )
 
     # ----- Grupos onde o bot está -----
     async def upsert_bot_group(
@@ -504,6 +578,24 @@ class Database:
             ON CONFLICT(user_id) DO UPDATE SET language = excluded.language
             """,
             (int(user_id), int(time.time()), language),
+        )
+        await self.db.commit()
+
+    async def track_user(
+        self, user_id: int, username: str | None, first_name: str | None
+    ) -> None:
+        """Salva/atualiza @username e nome sem mexer no idioma."""
+        now = int(time.time())
+        await self.db.execute(
+            """
+            INSERT INTO users (user_id, username, first_name, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                username = excluded.username,
+                first_name = excluded.first_name,
+                updated_at = excluded.updated_at
+            """,
+            (int(user_id), username, first_name, now, now),
         )
         await self.db.commit()
 
@@ -1454,6 +1546,21 @@ class Database:
         await self.db.commit()
         return bool(cur.rowcount)
 
+    async def extend_bot_rental(self, rental_id: int, days: int) -> Optional[int]:
+        """Renova uma licença somando dias à validade (ou a partir de agora)."""
+        rental = await self.get_bot_rental(rental_id)
+        if not rental:
+            return None
+        now = int(time.time())
+        base = max(now, int(rental["expires_at"]))
+        expires_at = base + max(1, int(days)) * 86400
+        await self.db.execute(
+            "UPDATE bot_rentals SET expires_at = ?, updated_at = ? WHERE id = ?",
+            (expires_at, now, int(rental_id)),
+        )
+        await self.db.commit()
+        return expires_at
+
     async def active_rental_for_chat(self, chat_id: int) -> Optional[dict[str, Any]]:
         now = int(time.time())
         async with self.db.execute(
@@ -1466,6 +1573,192 @@ class Database:
         ) as cur:
             row = await cur.fetchone()
         return dict(row) if row else None
+
+    # ----- Controle de pagamentos (VIP, VIP2 e aluguel) -----
+    async def extend_vip_access(
+        self, kind: str, user_id: int, days: int, added_by: int
+    ) -> int:
+        """Ativa ou renova VIP/VIP2 somando os dias à validade atual.
+
+        days=0 deixa permanente. Retorna o novo expires_at (0 = permanente).
+        """
+        table = {"vip": "vip_users", "vip2": "vip2_users"}[kind]
+        now = int(time.time())
+        days = max(0, int(days))
+        async with self.db.execute(
+            f"SELECT expires_at FROM {table} WHERE user_id = ?",
+            (int(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        current = int(row["expires_at"]) if row else None
+        if days == 0 or current == 0:
+            expires_at = 0
+        else:
+            base = current if current and current > now else now
+            expires_at = base + days * 86400
+        await self.db.execute(
+            f"""
+            INSERT INTO {table} (user_id, expires_at, added_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                expires_at = excluded.expires_at,
+                added_by = excluded.added_by,
+                updated_at = excluded.updated_at
+            """,
+            (int(user_id), expires_at, int(added_by), now, now),
+        )
+        await self.db.commit()
+        return expires_at
+
+    async def record_payment(
+        self,
+        kind: str,
+        user_id: int,
+        amount_cents: int,
+        *,
+        days: int = 0,
+        expires_at: int = 0,
+        method: str = "manual",
+        order_id: int | None = None,
+        ref_id: int | None = None,
+        note: str | None = None,
+        created_by: int | None = None,
+    ) -> int:
+        user = await self.get_user(int(user_id)) or {}
+        cur = await self.db.execute(
+            """
+            INSERT OR IGNORE INTO payments
+                (kind, user_id, username, first_name, amount_cents, days,
+                 expires_at, method, order_id, ref_id, note, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                kind,
+                int(user_id),
+                user.get("username"),
+                user.get("first_name"),
+                int(amount_cents),
+                max(0, int(days)),
+                int(expires_at),
+                method,
+                order_id,
+                ref_id,
+                note,
+                created_by,
+                int(time.time()),
+            ),
+        )
+        await self.db.commit()
+        return int(cur.lastrowid or 0)
+
+    async def delete_payment(self, payment_id: int) -> bool:
+        cur = await self.db.execute(
+            "DELETE FROM payments WHERE id = ?", (int(payment_id),)
+        )
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def list_payments(
+        self,
+        *,
+        kind: str | None = None,
+        user_id: int | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        where, params = [], []
+        if kind:
+            where.append("p.kind = ?")
+            params.append(kind)
+        if user_id is not None:
+            where.append("p.user_id = ?")
+            params.append(int(user_id))
+        sql = (
+            "SELECT p.*, COALESCE(u.username, p.username) AS cur_username, "
+            "COALESCE(u.first_name, p.first_name) AS cur_first_name "
+            "FROM payments p LEFT JOIN users u ON u.user_id = p.user_id"
+        )
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY p.created_at DESC, p.id DESC LIMIT ?"
+        params.append(int(limit))
+        async with self.db.execute(sql, tuple(params)) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def payment_totals(self, since_ts: int = 0) -> dict[str, dict[str, int]]:
+        async with self.db.execute(
+            "SELECT kind, COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS total "
+            "FROM payments WHERE created_at >= ? GROUP BY kind",
+            (int(since_ts),),
+        ) as cur:
+            rows = await cur.fetchall()
+        return {r["kind"]: {"count": int(r["n"]), "cents": int(r["total"])} for r in rows}
+
+    async def payment_clients(self, limit: int = 30) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            """
+            SELECT p.user_id,
+                   COALESCE(u.username, MAX(p.username)) AS username,
+                   COALESCE(u.first_name, MAX(p.first_name)) AS first_name,
+                   COUNT(*) AS payments,
+                   SUM(p.amount_cents) AS total_cents,
+                   MAX(p.created_at) AS last_at,
+                   GROUP_CONCAT(DISTINCT p.kind) AS kinds
+            FROM payments p
+            LEFT JOIN users u ON u.user_id = p.user_id
+            GROUP BY p.user_id
+            ORDER BY last_at DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def expiring_access(self, within_days: int = 7) -> list[dict[str, Any]]:
+        """VIP, VIP2 e aluguéis que vencem nos próximos N dias."""
+        now = int(time.time())
+        limit_ts = now + max(0, int(within_days)) * 86400
+        async with self.db.execute(
+            """
+            SELECT 'vip' AS kind, v.user_id, v.expires_at, NULL AS ref_id,
+                   NULL AS chat_id, u.username, u.first_name
+            FROM vip_users v LEFT JOIN users u ON u.user_id = v.user_id
+            WHERE v.expires_at > ? AND v.expires_at <= ?
+            UNION ALL
+            SELECT 'vip2', v.user_id, v.expires_at, NULL, NULL,
+                   u.username, u.first_name
+            FROM vip2_users v LEFT JOIN users u ON u.user_id = v.user_id
+            WHERE v.expires_at > ? AND v.expires_at <= ?
+            UNION ALL
+            SELECT 'rental', r.user_id, r.expires_at, r.id, r.chat_id,
+                   u.username, u.first_name
+            FROM bot_rentals r LEFT JOIN users u ON u.user_id = r.user_id
+            WHERE r.status IN ('active', 'awaiting_group')
+              AND r.expires_at > ? AND r.expires_at <= ?
+            ORDER BY expires_at ASC
+            """,
+            (now, limit_ts, now, limit_ts, now, limit_ts),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def active_rentals(self, limit: int = 50) -> list[dict[str, Any]]:
+        now = int(time.time())
+        async with self.db.execute(
+            """
+            SELECT r.*, u.username, u.first_name, g.title AS chat_title
+            FROM bot_rentals r
+            LEFT JOIN users u ON u.user_id = r.user_id
+            LEFT JOIN bot_groups g ON g.chat_id = r.chat_id
+            WHERE r.status IN ('active', 'awaiting_group') AND r.expires_at > ?
+            ORDER BY r.expires_at ASC
+            LIMIT ?
+            """,
+            (now, int(limit)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
 
     # ----- Auto-Like Premium FFHub -----
     async def create_ffhub_autolike_subscription(

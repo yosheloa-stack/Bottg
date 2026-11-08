@@ -211,6 +211,18 @@ class DeliveryService:
                 )
                 await self.db.update_order_status(order_id, "delivered")
                 expires_at = int(vip.get("expires_at") or 0)
+                try:
+                    await self.db.record_payment(
+                        "vip",
+                        int(order["user_id"]),
+                        int(round(float(order.get("amount") or 0) * 100)),
+                        days=days,
+                        expires_at=expires_at,
+                        method=str(order.get("paid_with") or "pix"),
+                        order_id=order_id,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("Falha ao registrar pagamento do VIP %s", order_id)
                 until = (
                     datetime.fromtimestamp(
                         expires_at, ZoneInfo("America/Sao_Paulo")
@@ -241,6 +253,20 @@ class DeliveryService:
                     days=days,
                 )
                 await self.db.update_order_status(order_id, "delivered")
+                try:
+                    rental = await self.db.get_bot_rental(rental_id)
+                    await self.db.record_payment(
+                        "rental",
+                        int(order["user_id"]),
+                        int(round(float(order.get("amount") or 0) * 100)),
+                        days=days,
+                        expires_at=int(rental["expires_at"]) if rental else 0,
+                        method=str(order.get("paid_with") or "pix"),
+                        order_id=order_id,
+                        ref_id=rental_id,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("Falha ao registrar pagamento do aluguel %s", order_id)
                 me = await self.bot.get_me()
                 add_url = (
                     f"https://t.me/{me.username}?startgroup=rent_{rental_id}"
