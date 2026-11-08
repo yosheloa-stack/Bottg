@@ -301,8 +301,8 @@ async def cmd_like(
         return
 
     # Grupos administrados pelos donos são liberados. Outros grupos precisam
-    # ter uma licença de aluguel ativa.
-    if message.chat.type in GROUP_TYPES and not is_owner:
+    # ter uma licença de aluguel ativa. Usuário VIP vale em qualquer grupo.
+    if message.chat.type in GROUP_TYPES and not (is_owner or is_vip):
         owner_group = await group_has_owner_admin(message, bot, config)
         if not owner_group:
             rental = await db.active_rental_for_chat(message.chat.id)
