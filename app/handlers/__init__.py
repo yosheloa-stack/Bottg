@@ -4,7 +4,7 @@ import logging
 from aiogram import Dispatcher
 from aiogram.types import ErrorEvent
 
-from app import backup, groups
+from app import autolike_report, backup, groups
 from app.user_tracker import UserTrackerMiddleware
 
 from app.handlers import (
@@ -71,6 +71,8 @@ def register_handlers(dp: Dispatcher) -> None:
     dp.include_router(vip.router)
     dp.include_router(vip2.router)
     dp.include_router(owner_autolike.router)
+    # /relatorio e /emojis (donos).
+    dp.include_router(autolike_report.router)
     # Deve ficar por último: captura apenas UID de pedidos já pagos.
     dp.include_router(paid_autolike.router)
     # Último: encerra loading de qualquer botão antigo/desconhecido.

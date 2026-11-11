@@ -19,6 +19,12 @@ from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
 from app.announcements import announce_autolike_send
+from app.autolike_report import (
+    announce_autolike220,
+    autolike220_text,
+    send_fancy,
+    watch_daily_report,
+)
 from app.backup import restore_if_needed, watch_backups
 from app.config import load_config
 from app.database import Database
@@ -382,18 +388,24 @@ async def watch_autosystem_autolikes(
 
                 done = int(updated["sends_done"])
                 total = int(updated["days_total"])
-                delivery_text = (
-                    "❤️ <b>AUTO LIKE 220 ENVIADO</b>\n"
-                    "━━━━━━━━━━━━━━━━━━━━\n"
-                    f"👤 Nick: <b>{html.escape(nickname)}</b>\n"
-                    f"🆔 UID: <code>{updated['game_id']}</code>\n"
-                    f"❤️ Enviado hoje: <b>+{sent}</b>\n"
-                    f"📆 Entrega: <b>{done}/{total}</b>\n"
-                    "⏰ Horário padrão: <b>05:00</b>"
+                layout_fields = dict(
+                    nickname=nickname,
+                    uid=str(updated["game_id"]),
+                    region=str(data.get("region") or "BR"),
+                    sent=sent,
+                    before=before,
+                    after=after,
+                    done=done,
+                    total=total,
                 )
 
                 try:
-                    await bot.send_message(int(updated["user_id"]), delivery_text)
+                    await send_fancy(
+                        bot,
+                        db,
+                        int(updated["user_id"]),
+                        autolike220_text(**layout_fields),
+                    )
                 except Exception:  # noqa: BLE001
                     logger.exception(
                         "Falha ao avisar cliente do Auto Like 220 sub=%s",
@@ -401,14 +413,11 @@ async def watch_autosystem_autolikes(
                     )
 
                 try:
-                    await announce_autolike_send(
+                    await announce_autolike220(
                         bot,
                         db,
                         user_id=int(updated["user_id"]),
-                        plan_name="Auto Like 220",
-                        uid=str(updated["game_id"]),
-                        nickname=nickname,
-                        likes_sent=sent,
+                        **layout_fields,
                     )
                 except Exception:  # noqa: BLE001
                     logger.exception(
@@ -597,6 +606,10 @@ async def main() -> None:
         watch_binance_payments(bot, db, config, delivery),
         name="binance-email-payment-watcher",
     )
+    report_task = asyncio.create_task(
+        watch_daily_report(bot, db, config),
+        name="autolike-daily-report",
+    )
     if gateway.configured:
         logger.info("Monitor automático de pagamentos Mercado Pago iniciado.")
     else:
@@ -726,6 +739,11 @@ async def main() -> None:
         binance_task.cancel()
         try:
             await binance_task
+        except asyncio.CancelledError:
+            pass
+        report_task.cancel()
+        try:
+            await report_task
         except asyncio.CancelledError:
             pass
         if runner:

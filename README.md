@@ -19,6 +19,19 @@ e pagamento automático via **PIX (Mercado Pago)**.
 | 💾 **Backup automático** | A cada 3 min (se algo mudou) o banco é enviado e fixado no privado do dono. Depois de um deploy que apague `data/bot.db`, o bot restaura sozinho saldo, pedidos, estoque e chaves. `/backup` força um backup; responder um `.db` com `/restaurar` troca o banco. |
 | ⚙️ **Painel Admin** | **Gerenciar produtos (alterar preço e estoque em tempo real)**, estatísticas, consulta de estoque da API e broadcast. |
 
+### 📊 Relatório diário do Auto Like
+Todo dia às **23:55 (Brasília)** o bot manda o **relatório final do dia** no privado
+dos donos e no grupo de anúncios: envios e likes do **Auto Like 220** e do
+**Auto Like 500/1000**, separados, e o total. `/relatorio` mostra o de hoje na hora;
+`/relatorio ontem` mostra o de ontem.
+
+O envio do **Auto Like 220** usa o layout estilizado (texto em negrito, emojis,
+barra de progresso, crescimento %); esse layout não passa pelo filtro que tira emojis.
+Emojis animados (custom emoji): responda com `/emojis` a uma mensagem que tenha os
+emojis premium; eles substituem os emojis comuns dos layouts. O Telegram só mostra
+custom emoji de bot se o bot tiver username colecionável do Fragment; sem isso,
+saem os emojis normais. `/emojis limpar` remove.
+
 ### 🖼️ Banner do menu
 O GIF/imagem fica em `assets/menu.gif` (configurável por `MENU_BANNER`, aceita
 caminho local ou URL `https://`). O `file_id` é cacheado após o 1º envio para

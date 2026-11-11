@@ -106,6 +106,8 @@ class OutgoingTextMiddleware(BaseRequestMiddleware):
         return markup
 
     async def __call__(self, make_request, bot, method):
+        if _keep_raw.get():
+            return await make_request(bot, method)
         try:
             lang = await self._lang_for(method)
             hide = not self._is_admin_target(method)
@@ -122,6 +124,21 @@ class OutgoingTextMiddleware(BaseRequestMiddleware):
         except Exception:  # noqa: BLE001
             logger.exception("Falha ao filtrar texto de saída; enviando original")
         return await make_request(bot, method)
+
+
+# Quando ligado, a mensagem sai exatamente como foi montada (com emojis):
+# usado pelos layouts estilizados do Auto Like.
+_keep_raw: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "outgoing_keep_raw", default=False
+)
+
+
+def keep_raw_output() -> contextvars.Token:
+    return _keep_raw.set(True)
+
+
+def reset_raw_output(token: contextvars.Token) -> None:
+    _keep_raw.reset(token)
 
 
 def set_current_language(user_id: int, lang: str) -> None:

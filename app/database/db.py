@@ -2364,6 +2364,37 @@ class Database:
             await self.db.rollback()
             raise
 
+    async def autolike_daily_summary(
+        self, start_ts: int, end_ts: int
+    ) -> dict[str, dict[str, int]]:
+        """Totais de envios de Auto Like no intervalo, separados por provedor.
+
+        provider 'autosystem' = Auto Like 220; 'ffhub' = Auto Like 500/1000.
+        """
+        async with self.db.execute(
+            """
+            SELECT COALESCE(s.provider, 'ffhub') AS provider,
+                   COUNT(h.id) AS sends,
+                   COUNT(DISTINCT h.game_id) AS uids,
+                   COALESCE(SUM(h.likes_sent), 0) AS likes
+            FROM ffhub_autolike_history h
+            LEFT JOIN ffhub_autolike_subscriptions s
+                   ON s.id = h.subscription_id
+            WHERE h.sent_at >= ? AND h.sent_at < ?
+            GROUP BY COALESCE(s.provider, 'ffhub')
+            """,
+            (int(start_ts), int(end_ts)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return {
+            str(r["provider"]): {
+                "sends": int(r["sends"] or 0),
+                "uids": int(r["uids"] or 0),
+                "likes": int(r["likes"] or 0),
+            }
+            for r in rows
+        }
+
     # ----- Configurações privadas do dono -----
     async def get_owner_setting(self, key: str) -> str | None:
         async with self.db.execute(
