@@ -10,6 +10,11 @@ from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from app.autolike_report import (
+    announce_autolike_layout,
+    autolike_layout_text,
+    edit_fancy,
+)
 from app import texts
 from app.announcements import announce_autolike_send
 from app.config import Config
@@ -142,29 +147,32 @@ async def _do_send_like(
             sent_int,
         )
 
-        await status_msg.edit_text(
-            texts.LIKE_SUCCESS.format(
-                game_id=game_id,
-                nick=html.escape(str(nick)),
-                region=html.escape(str(region)),
-                antes=html.escape(str(before)) if before is not None else "—",
-                depois=html.escape(str(after)) if after is not None else "—",
-                enviadas=sent_int,
-                tempo=f"{elapsed:.2f}",
-            ),
+        layout_fields = dict(
+            plan=f"{sent_int} LIKE" if sent_int else "LIKE",
+            nickname=str(nick),
+            uid=str(game_id),
+            region=str(region),
+            sent=sent_int,
+            before=before_int,
+            after=after_int,
+            done=1,
+            total=1,
+            elapsed=elapsed,
+        )
+        await edit_fancy(
+            status_msg,
+            db,
+            autolike_layout_text(**layout_fields),
             reply_markup=await _add_group_markup(message.bot),
         )
         # Aviso no grupo só para envios feitos no privado do bot.
         if sent_int > 0 and message.chat.type == "private":
             try:
-                await announce_autolike_send(
+                await announce_autolike_layout(
                     message.bot,
                     db,
                     user_id=message.from_user.id,
-                    plan_name="Envio de Likes",
-                    uid=game_id,
-                    nickname=str(nick),
-                    likes_sent=sent_int,
+                    **layout_fields,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception("Falha ao anunciar /like uid=%s", game_id)

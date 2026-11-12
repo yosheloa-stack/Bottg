@@ -114,6 +114,22 @@ def apply_custom_emoji(text: str, mapping: dict[str, str]) -> str:
     return "".join(parts)
 
 
+async def edit_fancy(target: Message, db: Database, text: str, **kwargs) -> None:
+    """Edita uma mensagem com o layout (mantém emojis; custom emoji se houver)."""
+    mapping = await _emoji_map(db)
+    token = keep_raw_output()
+    try:
+        if mapping:
+            try:
+                await target.edit_text(apply_custom_emoji(text, mapping), **kwargs)
+                return
+            except TelegramBadRequest as exc:
+                logger.warning("Custom emoji recusado (%s); usando emojis normais.", exc)
+        await target.edit_text(text, **kwargs)
+    finally:
+        reset_raw_output(token)
+
+
 async def send_fancy(bot: Bot, db: Database, chat_id: int, text: str, **kwargs) -> None:
     """Envia com custom emoji (se configurado); se falhar, usa emojis normais."""
     mapping = await _emoji_map(db)
@@ -187,6 +203,7 @@ def autolike_layout_text(
     total: int,
     client_label: str | None = None,
     accumulated: int | None = None,
+    elapsed: float | None = None,
 ) -> str:
     now = datetime.now(BRAZIL_TZ)
     region = (region or "BR").upper()
@@ -211,9 +228,12 @@ def autolike_layout_text(
         lines.append(f"📈 {bold('CURRENT LIKES')} {_fmt(after)}")
     if accumulated is not None:
         lines.append(f"💎 {bold('TOTAL SENT')} +{_fmt(accumulated)}")
-    lines.append(f"🏆 {bold('PROGRESS')} {progress_bar(done, total)} ({done}/{total})")
+    count = f" ({done}/{total})" if total > 1 else ""
+    lines.append(f"🏆 {bold('PROGRESS')} {progress_bar(done, total)}{count}")
     if before:
         lines.append(f"🚀 {bold('GROWTH')} +{sent * 100 / before:.2f}%")
+    if elapsed is not None:
+        lines.append(f"⚡ {bold('SPEED')} {elapsed:.2f}s")
     lines.append(
         f"⏰ {bold('TIME (BR)')} {now.strftime('%d/%m/%Y')} • {now.strftime('%H:%M')}"
     )
