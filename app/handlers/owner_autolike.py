@@ -16,6 +16,7 @@ from aiogram.types import (
 
 from app.config import Config
 from app.database import Database
+from app.autolike_report import REGIONS
 from app.owner_auth import resolve_owner_id
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.utils import clean_game_id
@@ -65,9 +66,10 @@ async def cmd_owner_autolike(
             "🔥 <b>AUTO LIKE 500/1000 • DONO</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "Ativar:\n"
-            "<code>/autolike UID DIAS</code>\n\n"
+            "<code>/autolike UID DIAS REGIÃO</code>\n\n"
             "Exemplo:\n"
-            "<code>/autolike 813856263 7</code>\n\n"
+            "<code>/autolike 813856263 7 BR</code>\n"
+            "Região (opcional, padrão BR): BR, IND, US, SAC, ME, ID, TH, VN, SG, PK, BD, TW, RU, EU\n\n"
             "Gerenciar:\n"
             "<code>/autolike list</code>\n"
             "<code>/autolike status UID</code>\n"
@@ -199,6 +201,14 @@ async def cmd_owner_autolike(
         await message.reply("⚠️ Use entre <b>1 e 365 dias</b>.")
         return
 
+    region = args[2].upper() if len(args) >= 3 else "BR"
+    if region not in REGIONS:
+        await message.reply(
+            "⚠️ Região inválida. Use uma destas siglas:\n"
+            + ", ".join(REGIONS)
+        )
+        return
+
     if not ffhub_shop.configured:
         await message.reply(
             "⚠️ <b>FFHub não configurada.</b>\n"
@@ -224,6 +234,8 @@ async def cmd_owner_autolike(
         notify_chat_id=notify_chat_id,
         notify_thread_id=notify_thread_id,
     )
+    if sub_id and (created or len(args) >= 3):
+        await db.set_autolike_region(subscription_id=int(sub_id), region=region)
 
     if not created:
         extra = (
@@ -247,6 +259,7 @@ async def cmd_owner_autolike(
         "🔥 <b>AUTO LIKE 500 ATIVADO</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"🆔 UID: <code>{uid}</code>\n"
+        f"🌍 Região: <b>{region}</b>\n"
         f"📆 Duração: <b>{days} dias</b>\n"
         "❤️ Por envio: <b>aprox. 500 a 1.000 likes</b>\n"
         "⏰ Horário fixo: <b>05:00 da manhã</b>\n"

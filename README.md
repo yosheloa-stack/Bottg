@@ -25,7 +25,11 @@ dos donos e no grupo de anúncios: envios e likes do **Auto Like 220** e do
 **Auto Like 500/1000**, separados, e o total. `/relatorio` mostra o de hoje na hora;
 `/relatorio ontem` mostra o de ontem.
 
-O envio do **Auto Like 220** usa o layout estilizado (texto em negrito, emojis,
+Ao cadastrar o ID de um Auto Like (220 ou 500/1000), o cliente escolhe a **região**
+por sigla (BR, IND, US...). A bandeira e a sigla aparecem na linha SERVER do layout.
+No `/autolike UID DIAS REGIÃO` do dono, a região é opcional (padrão BR).
+
+Os envios do **Auto Like 220** e do **500/1000** usam o layout estilizado (texto em negrito, emojis,
 barra de progresso, crescimento %); esse layout não passa pelo filtro que tira emojis.
 Emojis animados (custom emoji): responda com `/emojis` a uma mensagem que tenha os
 emojis premium; eles substituem os emojis comuns dos layouts. O Telegram só mostra

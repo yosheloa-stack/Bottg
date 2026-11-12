@@ -326,6 +326,11 @@ class Database:
                 "ALTER TABLE ffhub_autolike_subscriptions "
                 "ADD COLUMN provider TEXT NOT NULL DEFAULT 'ffhub'"
             )
+        if "region" not in columns:
+            await self._db.execute(
+                "ALTER TABLE ffhub_autolike_subscriptions "
+                "ADD COLUMN region TEXT"
+            )
 
         # Planos ativos passam a seguir a janela fixa das 05:00.
         now_ts = int(time.time())
@@ -2363,6 +2368,26 @@ class Database:
         except Exception:
             await self.db.rollback()
             raise
+
+    async def set_autolike_region(
+        self,
+        *,
+        region: str,
+        order_id: int | None = None,
+        subscription_id: int | None = None,
+    ) -> None:
+        """Salva a região (sigla do servidor) escolhida para o Auto Like."""
+        if order_id is not None:
+            where, value = "order_id = ?", int(order_id)
+        elif subscription_id is not None:
+            where, value = "id = ?", int(subscription_id)
+        else:
+            return
+        await self.db.execute(
+            f"UPDATE ffhub_autolike_subscriptions SET region = ? WHERE {where}",
+            (str(region).upper()[:8], value),
+        )
+        await self.db.commit()
 
     async def autolike_daily_summary(
         self, start_ts: int, end_ts: int

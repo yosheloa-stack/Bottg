@@ -18,10 +18,11 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
-from app.announcements import announce_autolike_send
 from app.autolike_report import (
     announce_autolike220,
+    announce_autolike_layout,
     autolike220_text,
+    autolike_layout_text,
     send_fancy,
     watch_daily_report,
 )
@@ -214,17 +215,24 @@ async def watch_ffhub_autolikes(
                 done = int(updated["sends_done"])
                 total = int(updated["days_total"])
 
-                delivery_text = (
-                    "💚 <b>Auto-Like Premium enviado!</b>\n\n"
-                    f"👤 Nick: <b>{safe_nickname}</b>\n"
-                    f"🆔 UID: <code>{updated['game_id']}</code>\n"
-                    f"❤️ Enviado hoje: <b>+{sent}</b>\n"
-                    f"❤️ Total acumulado: <b>+{total_accumulated}</b>\n"
-                    f"📆 Entrega: <b>{done}/{total}</b>"
+                layout_fields = dict(
+                    plan="500/1000+ LIKE",
+                    nickname=nickname,
+                    uid=str(updated["game_id"]),
+                    region=str(updated.get("region") or "BR"),
+                    sent=sent,
+                    before=before,
+                    after=after,
+                    done=done,
+                    total=total,
+                    accumulated=total_accumulated,
                 )
+                delivery_text = autolike_layout_text(**layout_fields)
 
                 try:
-                    await bot.send_message(
+                    await send_fancy(
+                        bot,
+                        db,
                         int(updated["user_id"]),
                         delivery_text,
                     )
@@ -234,13 +242,15 @@ async def watch_ffhub_autolikes(
                     )
 
                 notify_chat_id = updated.get("notify_chat_id")
+                notify_thread_id = updated.get("notify_thread_id")
                 if notify_chat_id is not None:
                     group_kwargs = {}
-                    notify_thread_id = updated.get("notify_thread_id")
                     if notify_thread_id is not None:
                         group_kwargs["message_thread_id"] = int(notify_thread_id)
                     try:
-                        await bot.send_message(
+                        await send_fancy(
+                            bot,
+                            db,
                             int(notify_chat_id),
                             delivery_text,
                             **group_kwargs,
@@ -255,14 +265,11 @@ async def watch_ffhub_autolikes(
                 # Auto Like ativado dentro de um grupo não vai para o grupo de anúncios.
                 if notify_chat_id is None:
                     try:
-                        await announce_autolike_send(
+                        await announce_autolike_layout(
                             bot,
                             db,
                             user_id=int(updated["user_id"]),
-                            plan_name="Auto Like 500",
-                            uid=str(updated["game_id"]),
-                            nickname=nickname,
-                            likes_sent=sent,
+                            **layout_fields,
                         )
                     except Exception:  # noqa: BLE001
                         logger.exception(
@@ -391,7 +398,7 @@ async def watch_autosystem_autolikes(
                 layout_fields = dict(
                     nickname=nickname,
                     uid=str(updated["game_id"]),
-                    region=str(data.get("region") or "BR"),
+                    region=str(updated.get("region") or "BR"),
                     sent=sent,
                     before=before,
                     after=after,

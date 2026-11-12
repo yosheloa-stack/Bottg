@@ -36,12 +36,18 @@ REPORT_SETTING = "AUTOLIKE_REPORT_LAST_DATE"
 REPORT_HOUR, REPORT_MINUTE = 23, 55
 LINE = "➿" * 16
 
-_FLAGS = {
-    "BR": "🇧🇷", "IND": "🇮🇳", "IN": "🇮🇳", "BD": "🇧🇩", "US": "🇺🇸",
-    "SG": "🇸🇬", "ID": "🇮🇩", "TH": "🇹🇭", "VN": "🇻🇳", "PK": "🇵🇰",
-    "ME": "🇸🇦", "SA": "🇸🇦", "RU": "🇷🇺", "TW": "🇹🇼", "EU": "🇪🇺",
-    "NA": "🇺🇸", "SAC": "🇧🇷", "LATAM": "🇲🇽",
+# Regiões (servidores do Free Fire) oferecidas no cadastro do ID, em ordem.
+REGIONS: dict[str, str] = {
+    "BR": "🇧🇷", "IND": "🇮🇳", "US": "🇺🇸", "SAC": "🌎",
+    "ME": "🇸🇦", "ID": "🇮🇩", "TH": "🇹🇭", "VN": "🇻🇳",
+    "SG": "🇸🇬", "PK": "🇵🇰", "BD": "🇧🇩", "TW": "🇹🇼",
+    "RU": "🇷🇺", "EU": "🇪🇺",
 }
+_FLAGS = {**REGIONS, "IN": "🇮🇳", "NA": "🇺🇸", "SA": "🇸🇦", "LATAM": "🌎"}
+
+
+def region_flag(region: str | None) -> str:
+    return _FLAGS.get((region or "BR").upper(), "🌐")
 
 
 # --------------------------------------------------------------- texto bold
@@ -167,9 +173,10 @@ async def cmd_emojis(message: Message, bot: Bot, config: Config, db: Database) -
     )
 
 
-# ------------------------------------------------------- layout Auto Like 220
-def autolike220_text(
+# ------------------------------------------------- layout Auto Like 220/500
+def autolike_layout_text(
     *,
+    plan: str = "220 LIKE",
     nickname: str,
     uid: str,
     region: str,
@@ -179,15 +186,16 @@ def autolike220_text(
     done: int,
     total: int,
     client_label: str | None = None,
+    accumulated: int | None = None,
 ) -> str:
     now = datetime.now(BRAZIL_TZ)
     region = (region or "BR").upper()
-    flag = _FLAGS.get(region, "🌐")
+    flag = region_flag(region)
     lines = [
         LINE,
         f"✨ 🎉 <b>{bold('AUTOLIKE SEND SUCCESS')}</b> 🎉 ✨",
         f"🏆 <b>{bold('FULL POWER DELIVERY')}</b> 🏆",
-        f"🎁 {bold('PLAN')} ➜ <b>{bold('220 LIKE')}</b>",
+        f"🎁 {bold('PLAN')} ➜ <b>{bold(plan)}</b>",
     ]
     if client_label:
         lines.append(f"🛒 {bold('CLIENTE')} {client_label}")
@@ -201,6 +209,8 @@ def autolike220_text(
         lines.append(f"📉 {bold('BEFORE LIKES')} {_fmt(before)}")
     if after is not None:
         lines.append(f"📈 {bold('CURRENT LIKES')} {_fmt(after)}")
+    if accumulated is not None:
+        lines.append(f"💎 {bold('TOTAL SENT')} +{_fmt(accumulated)}")
     lines.append(f"🏆 {bold('PROGRESS')} {progress_bar(done, total)} ({done}/{total})")
     if before:
         lines.append(f"🚀 {bold('GROWTH')} +{sent * 100 / before:.2f}%")
@@ -211,18 +221,25 @@ def autolike220_text(
     return "\n".join(lines)
 
 
-async def announce_autolike220(
+# Compatibilidade com o nome antigo.
+autolike220_text = autolike_layout_text
+
+
+async def announce_autolike_layout(
     bot: Bot, db: Database, *, user_id: int, **fields
 ) -> None:
     target = await _target(db)
     if not target:
         return
     chat_id, thread_id = target
-    text = autolike220_text(client_label=await _user_label(db, user_id), **fields)
+    text = autolike_layout_text(client_label=await _user_label(db, user_id), **fields)
     kwargs = {"reply_markup": await _acquire_markup(bot)}
     if thread_id is not None:
         kwargs["message_thread_id"] = thread_id
     await send_fancy(bot, db, chat_id, text, **kwargs)
+
+
+announce_autolike220 = announce_autolike_layout
 
 
 # ------------------------------------------------------------ relatório diário
