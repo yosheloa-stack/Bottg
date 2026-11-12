@@ -149,6 +149,7 @@ async def _do_send_like(
 
         layout_fields = dict(
             plan=f"{sent_int} LIKE" if sent_int else "LIKE",
+            title="LIKE SEND SUCCESS",
             nickname=str(nick),
             uid=str(game_id),
             region=str(region),

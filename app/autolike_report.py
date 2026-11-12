@@ -193,6 +193,7 @@ async def cmd_emojis(message: Message, bot: Bot, config: Config, db: Database) -
 def autolike_layout_text(
     *,
     plan: str = "220 LIKE",
+    title: str = "AUTOLIKE SEND SUCCESS",
     nickname: str,
     uid: str,
     region: str,
@@ -210,7 +211,7 @@ def autolike_layout_text(
     flag = region_flag(region)
     lines = [
         LINE,
-        f"✨ 🎉 <b>{bold('AUTOLIKE SEND SUCCESS')}</b> 🎉 ✨",
+        f"✨ 🎉 <b>{bold(title)}</b> 🎉 ✨",
         f"🏆 <b>{bold('FULL POWER DELIVERY')}</b> 🏆",
         f"🎁 {bold('PLAN')} ➜ <b>{bold(plan)}</b>",
     ]
