@@ -69,7 +69,7 @@ async def cmd_owner_autolike(
             "<code>/autolike UID DIAS REGIÃO</code>\n\n"
             "Exemplo:\n"
             "<code>/autolike 813856263 7 BR</code>\n"
-            "Região (opcional, padrão BR): BR, IND, US, SAC, ME, ID, TH, VN, SG, PK, BD, TW, RU, EU\n\n"
+            "Região (opcional, padrão BR): BR, IND, US, NA, SAC, ME, ID, TH, VN, SG, PK, BD, TW, RU, EU\n\n"
             "Gerenciar:\n"
             "<code>/autolike list</code>\n"
             "<code>/autolike status UID</code>\n"

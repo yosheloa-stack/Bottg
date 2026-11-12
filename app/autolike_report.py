@@ -38,12 +38,12 @@ LINE = "➿" * 16
 
 # Regiões (servidores do Free Fire) oferecidas no cadastro do ID, em ordem.
 REGIONS: dict[str, str] = {
-    "BR": "🇧🇷", "IND": "🇮🇳", "US": "🇺🇸", "SAC": "🌎",
+    "BR": "🇧🇷", "IND": "🇮🇳", "US": "🇺🇸", "NA": "🇺🇸", "SAC": "🌎",
     "ME": "🇸🇦", "ID": "🇮🇩", "TH": "🇹🇭", "VN": "🇻🇳",
     "SG": "🇸🇬", "PK": "🇵🇰", "BD": "🇧🇩", "TW": "🇹🇼",
     "RU": "🇷🇺", "EU": "🇪🇺",
 }
-_FLAGS = {**REGIONS, "IN": "🇮🇳", "NA": "🇺🇸", "SA": "🇸🇦", "LATAM": "🌎"}
+_FLAGS = {**REGIONS, "IN": "🇮🇳", "SA": "🇸🇦", "LATAM": "🌎"}
 
 
 def region_flag(region: str | None) -> str:
