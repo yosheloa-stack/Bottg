@@ -10,7 +10,7 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.database import Database
-from app.utils import format_price, payment_method_label
+from app.utils import format_price
 
 logger = logging.getLogger(__name__)
 
@@ -130,20 +130,26 @@ def _order_meta(order: dict) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _payment_lines(order: dict) -> tuple[str, str]:
-    """(nome da forma de pagamento, linhas extras com os detalhes dela)."""
+async def _purchase_text(
+    db: Database, order: dict, product_title: str, delivery: str, *, for_owner: bool
+) -> str:
+    from app.autolike_report import purchase_layout_text
+
     method = str(order.get("paid_with") or "pix").lower()
-    label = payment_method_label(method)
-    extra = ""
-    if method == "binance":
-        meta = _order_meta(order)
-        usdt = str(meta.get("usdt") or "").strip()
-        payer = str(meta.get("binance_user") or "").strip()
-        if usdt:
-            extra += f"🪙 Recebido: <b>{html.escape(usdt)} USDT</b>\n"
-        if payer:
-            extra += f"🔑 Conta Binance: <code>{html.escape(payer)}</code>\n"
-    return label, extra
+    meta = _order_meta(order) if method == "binance" else {}
+    return purchase_layout_text(
+        method=method,
+        client_label=await _user_label(db, int(order["user_id"])),
+        product=str(product_title),
+        quantity=_purchase_quantity(order, delivery),
+        amount_brl=format_price(Decimal(str(order.get("amount") or "0"))),
+        usdt=str(meta.get("usdt") or "").strip(),
+        # Conta Binance, pedido, UID e ID do cliente: só para os donos.
+        binance_user=str(meta.get("binance_user") or "").strip() if for_owner else "",
+        order_id=int(order["id"]) if for_owner else None,
+        client_id=int(order["user_id"]) if for_owner else None,
+        uid=str(order.get("game_id") or "").strip() if for_owner else "",
+    )
 
 
 async def notify_owners_payment(
@@ -154,29 +160,13 @@ async def notify_owners_payment(
     product_title: str,
     delivery: str = "",
 ) -> None:
-    """Avisa cada dono no privado, deixando claro se foi PIX ou Binance."""
-    label, extra = _payment_lines(order)
-    user = await _user_label(db, int(order["user_id"]))
-    amount = Decimal(str(order.get("amount") or "0"))
-    quantity = _purchase_quantity(order, delivery)
-    quantity_line = f"🔢 Quantidade: <b>{quantity}</b>\n" if quantity else ""
-    uid = str(order.get("game_id") or "").strip()
-    uid_line = f"🎮 UID: <code>{html.escape(uid)}</code>\n" if uid else ""
-    text = (
-        f"💳 <b>PAGAMENTO CONFIRMADO • {label.upper()}</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"🏦 Forma de pagamento: <b>{label}</b>\n"
-        f"👤 Cliente: <b>{user}</b> (<code>{int(order['user_id'])}</code>)\n"
-        f"📦 Produto: <b>{html.escape(str(product_title))}</b>\n"
-        f"{quantity_line}"
-        f"{uid_line}"
-        f"💰 Valor: <b>R$ {format_price(amount)}</b>\n"
-        f"{extra}"
-        f"🧾 Pedido: <code>#{int(order['id'])}</code>"
-    )
+    """Avisa cada dono no privado, deixando claro se foi PIX, Binance ou Saldo."""
+    from app.autolike_report import send_fancy
+
+    text = await _purchase_text(db, order, product_title, delivery, for_owner=True)
     for owner_id in getattr(config, "admin_ids", []) or []:
         try:
-            await bot.send_message(int(owner_id), text)
+            await send_fancy(bot, db, int(owner_id), text)
         except Exception:  # noqa: BLE001
             logger.warning("Não consegui avisar o dono %s do pedido %s", owner_id, order.get("id"))
 
@@ -203,26 +193,20 @@ async def announce_purchase(
     if payment_chat_id is not None and int(payment_chat_id) < 0:
         return
 
-    user = await _user_label(db, int(order["user_id"]))
-    amount = Decimal(str(order.get("amount") or "0"))
-    quantity = _purchase_quantity(order, delivery)
-    quantity_line = f"🔢 Quantidade: <b>{quantity}</b>\n" if quantity else ""
-    label, extra = _payment_lines(order)
-    # No grupo não mostra a conta Binance do cliente, só o valor em USDT.
-    extra = "".join(line + "\n" for line in extra.splitlines() if "USDT" in line)
-    await send_announcement(
-        bot,
-        db,
-        f"🛒 <b>NOVA COMPRA • {label.upper()}</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"👤 Cliente: <b>{user}</b>\n"
-        f"📦 Produto: <b>{product_title}</b>\n"
-        f"{quantity_line}"
-        f"💰 Valor: <b>R$ {format_price(amount)}</b>\n"
-        f"🏦 Pagamento: <b>{label}</b>\n"
-        f"{extra}\n"
-        "✅ Pagamento confirmado.",
-    )
+    target = await _target(db)
+    if not target:
+        return
+    from app.autolike_report import send_fancy
+
+    chat_id, thread_id = target
+    kwargs = {"reply_markup": await _acquire_markup(bot)}
+    if thread_id is not None:
+        kwargs["message_thread_id"] = thread_id
+    text = await _purchase_text(db, order, product_title, delivery, for_owner=False)
+    try:
+        await send_fancy(bot, db, chat_id, text, **kwargs)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha ao anunciar compra do pedido %s", order.get("id"))
 
 
 async def announce_autolike_send(

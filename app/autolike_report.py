@@ -380,3 +380,58 @@ async def cmd_relatorio(message: Message, bot: Bot, config: Config, db: Database
     if "ontem" in (message.text or "").lower():
         day -= timedelta(days=1)
     await send_fancy(bot, db, message.chat.id, await build_daily_report(db, day))
+
+
+# ------------------------------------------------ comprovante de compra (vendas)
+_METHOD_STYLE = {
+    "pix": ("💠", "PIX", "🇧🇷"),
+    "binance": ("🟡", "BINANCE USDT", "🪙"),
+    "balance": ("👛", "SALDO", "💰"),
+    "manual": ("📝", "MANUAL", "✍️"),
+}
+
+
+def purchase_layout_text(
+    *,
+    method: str,
+    client_label: str,
+    product: str,
+    quantity: str = "",
+    amount_brl: str,
+    usdt: str = "",
+    binance_user: str = "",
+    order_id: int | None = None,
+    client_id: int | None = None,
+    uid: str = "",
+) -> str:
+    """Layout do aviso de compra. Campos de dono (conta Binance, pedido) só se passados."""
+    now = datetime.now(BRAZIL_TZ)
+    icon, name, badge = _METHOD_STYLE.get(
+        (method or "pix").lower(), ("💳", (method or "PIX").upper(), "💳")
+    )
+    client = client_label + (f" (<code>{int(client_id)}</code>)" if client_id else "")
+    lines = [
+        LINE,
+        f"✨ 🛒 <b>{bold('NEW PURCHASE')}</b> 🛒 ✨",
+        f"{icon} <b>{bold('PAID WITH ' + name)}</b> {badge}",
+        f"👤 {bold('CLIENTE')} {client}",
+        f"🎁 {bold('PRODUTO')} ➜ <b>{html.escape(product)}</b>",
+    ]
+    if quantity:
+        lines.append(f"🔢 {bold('PLANO')} {html.escape(quantity)}")
+    if uid:
+        lines.append(f"🆔 {bold('UID')} <code>{html.escape(uid)}</code>")
+    lines.append(f"💰 {bold('VALOR')} <b>R$ {html.escape(amount_brl)}</b>")
+    lines.append(f"{icon} {bold('PAGAMENTO')} <b>{name}</b> {badge}")
+    if usdt:
+        lines.append(f"🪙 {bold('RECEBIDO')} <b>{html.escape(usdt)} USDT</b>")
+    if binance_user:
+        lines.append(f"🔑 {bold('CONTA BINANCE')} <code>{html.escape(binance_user)}</code>")
+    if order_id is not None:
+        lines.append(f"🧾 {bold('PEDIDO')} <code>#{int(order_id)}</code>")
+    lines.append(f"✅ {bold('STATUS')} <b>{bold('PAYMENT CONFIRMED')}</b>")
+    lines.append(
+        f"⏰ {bold('TIME (BR)')} {now.strftime('%d/%m/%Y')} • {now.strftime('%H:%M')}"
+    )
+    lines.append(LINE)
+    return "\n".join(lines)
