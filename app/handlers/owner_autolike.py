@@ -16,7 +16,7 @@ from aiogram.types import (
 
 from app.config import Config
 from app.database import Database
-from app.autolike_report import REGIONS
+from app.autolike_report import REGIONS, activation_text, send_fancy
 from app.owner_auth import resolve_owner_id
 from app.services.ffhub_shop import FFHubShopApi, parse_like_delivery
 from app.utils import clean_game_id
@@ -253,23 +253,31 @@ async def cmd_owner_autolike(
         return
 
     sub = await db.get_ffhub_autolike_status(uid)
-    next_text = _fmt_time(sub.get("next_send_at")) if sub else "05:00"
 
-    await message.reply(
-        "🔥 <b>AUTO LIKE 500 ATIVADO</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"🆔 UID: <code>{uid}</code>\n"
-        f"🌍 Região: <b>{region}</b>\n"
-        f"📆 Duração: <b>{days} dias</b>\n"
-        "❤️ Por envio: <b>aprox. 500 a 1.000 likes</b>\n"
-        "⏰ Horário fixo: <b>05:00 da manhã</b>\n"
-        f"📅 Próximo envio: <b>{next_text}</b>\n\n"
-        "✅ O sistema fará os envios diariamente às 05:00."
-        + (
-            "\n📣 As entregas também serão avisadas neste grupo."
-            if notify_chat_id is not None
-            else "\n📩 As entregas serão avisadas no privado."
-        )
+    footer = (
+        "📣 As entregas também serão avisadas neste grupo."
+        if notify_chat_id is not None
+        else "📩 As entregas serão avisadas no privado."
+    )
+    await send_fancy(
+        bot,
+        db,
+        message.chat.id,
+        activation_text(
+            plan="500/1000+ LIKE",
+            uid=uid,
+            region=region,
+            days=days,
+            per_send="500 a 1.000 likes",
+            next_send_ts=sub.get("next_send_at") if sub else None,
+            footer=footer,
+        ),
+        reply_to_message_id=message.message_id,
+        **(
+            {"message_thread_id": message.message_thread_id}
+            if message.is_topic_message and message.message_thread_id
+            else {}
+        ),
     )
 
 

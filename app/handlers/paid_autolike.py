@@ -10,7 +10,7 @@ from aiogram.types import (
 )
 
 from app import texts
-from app.autolike_report import REGIONS, region_flag
+from app.autolike_report import REGIONS, activation_text, send_fancy
 from app.outgoing import keep_raw_output, reset_raw_output
 from app.config import Config
 from app.database import Database
@@ -137,7 +137,6 @@ async def _activate_autolike(
 ) -> None:
     """Cria a assinatura (220 ou 500/1000) depois que a região foi escolhida."""
     user_id = int(order["user_id"])
-    flag = region_flag(region)
     product = config.products.get(order["product_code"])
     if not product:
         await db.update_order_status(order["id"], "failed")
@@ -175,15 +174,17 @@ async def _activate_autolike(
         await db.update_order_status(order["id"], "active")
         await db.decrement_stock(order["product_code"])
 
-        await message.reply(
-            "❤️ <b>AUTO LIKE 220 ATIVADO</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 UID: <code>{uid}</code>\n"
-            f"🌍 Região: <b>{flag} {region}</b>\n"
-            f"📆 Período: <b>{days} dias</b>\n"
-            "❤️ Por envio: <b>220 likes</b>\n"
-            "⏰ Horário fixo: <b>05:00 da manhã</b>\n\n"
-            "✅ O primeiro envio acontecerá na próxima janela das 05:00.",
+        await send_fancy(
+            message.bot,
+            db,
+            message.chat.id,
+            activation_text(
+                plan="220 LIKE",
+                uid=uid,
+                region=region,
+                days=days,
+                per_send="220 likes",
+            ),
             reply_markup=back_home(),
         )
         return
@@ -204,16 +205,17 @@ async def _activate_autolike(
     await db.set_autolike_region(order_id=order["id"], region=region)
     await db.update_order_status(order["id"], "active")
 
-    await message.reply(
-        "💎 <b>AUTO LIKE 500 ATIVADO</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"🆔 UID: <code>{uid}</code>\n"
-        f"🌍 Região: <b>{flag} {region}</b>\n"
-        f"📆 Período: <b>{days} dias</b>\n"
-        "❤️ Por envio: <b>aprox. 500 a 1.000 likes</b>\n"
-        "🔁 Frequência: <b>1 envio por dia</b>\n"
-        "⏰ Horário fixo: <b>05:00 da manhã</b>\n\n"
-        "✅ O primeiro envio acontecerá na próxima janela das 05:00.",
+    await send_fancy(
+        message.bot,
+        db,
+        message.chat.id,
+        activation_text(
+            plan="500/1000+ LIKE",
+            uid=uid,
+            region=region,
+            days=days,
+            per_send="500 a 1.000 likes",
+        ),
         reply_markup=back_home(),
     )
 

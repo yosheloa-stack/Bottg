@@ -263,6 +263,44 @@ async def announce_autolike_layout(
 announce_autolike220 = announce_autolike_layout
 
 
+# ------------------------------------------- comprovante de cadastro (ativação)
+def activation_text(
+    *,
+    plan: str,
+    uid: str,
+    region: str,
+    days: int,
+    per_send: str,
+    next_send_ts: int | None = None,
+    footer: str | None = None,
+) -> str:
+    from app.database.db import next_autolike_send_epoch
+
+    now = datetime.now(BRAZIL_TZ)
+    region = (region or "BR").upper()
+    nxt = datetime.fromtimestamp(
+        int(next_send_ts or next_autolike_send_epoch()), BRAZIL_TZ
+    )
+    lines = [
+        LINE,
+        f"✨ ✅ <b>{bold('AUTOLIKE REGISTERED')}</b> ✅ ✨",
+        f"🏆 <b>{bold('PLAN ACTIVATED')}</b> 🏆",
+        f"🎁 {bold('PLAN')} ➜ <b>{bold(plan)}</b>",
+        f"🆔 {bold('UID')} <code>{html.escape(str(uid))}</code>",
+        f"⚙️ {bold('SERVER')} {region_flag(region)} {html.escape(region)}",
+        f"📆 {bold('DAYS')} {int(days)}",
+        f"♥️ {bold('PER SEND')} {html.escape(per_send)}",
+        f"🔁 {bold('FREQUENCY')} 1x/dia",
+        f"🏆 {bold('PROGRESS')} {progress_bar(0, max(1, int(days)))} (0/{int(days)})",
+        f"🚀 {bold('FIRST SEND')} {nxt.strftime('%d/%m/%Y')} • {nxt.strftime('%H:%M')}",
+        f"⏰ {bold('TIME (BR)')} {now.strftime('%d/%m/%Y')} • {now.strftime('%H:%M')}",
+    ]
+    if footer:
+        lines += ["", footer]
+    lines.append(LINE)
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------ relatório diário
 def _day_bounds(day: datetime) -> tuple[int, int]:
     start = day.replace(hour=0, minute=0, second=0, microsecond=0)
