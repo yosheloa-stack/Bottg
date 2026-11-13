@@ -25,7 +25,7 @@ from app.database import Database
 from app.delivery import DeliveryService
 from app.services.payments import PaymentGateway, PaymentStatus
 from app.services.support_ai import SquareCloudAI
-from app.utils import format_price
+from app.utils import format_price, payment_method_label
 
 logger = logging.getLogger(__name__)
 
@@ -335,7 +335,7 @@ class SupportAgent:
             "valor": f"R$ {format_price(float(order.get('amount') or 0))}",
             "status": order.get("status"),
             "significado_status": STATUS_INFO.get(order.get("status") or "", ""),
-            "pago_com": "saldo" if order.get("paid_with") == "balance" else "PIX",
+            "pago_com": payment_method_label(order.get("paid_with")),
             "pagamento_id": order.get("payment_id"),
             "dias": int(order.get("plan_days") or 0) or None,
             "criado_em": _fmt_ts(order.get("created_at")),
@@ -446,6 +446,12 @@ class SupportAgent:
             return {"erro": order}
         if order.get("paid_with") == "balance":
             return {"pedido": order["id"], "obs": "Pedido pago com saldo, não há PIX.", "status": order["status"]}
+        if order.get("paid_with") == "binance":
+            return {
+                "pedido": order["id"],
+                "obs": "Pedido pago via Binance (USDT), não PIX. A confirmação é automática pelo e-mail da Binance.",
+                "status": order["status"],
+            }
         if not order.get("payment_id"):
             return {"pedido": order["id"], "erro": "Pedido sem PIX gerado."}
 
@@ -570,7 +576,15 @@ class SupportAgent:
             return {"erro": order}
         if order["status"] == "delivered":
             return {"pedido": order["id"], "obs": "Pedido já entregue; nada a fazer."}
-        if order.get("paid_with") != "balance":
+        if order.get("paid_with") == "binance":
+            # Binance não passa pelo Mercado Pago: só reentrega se o e-mail já confirmou.
+            if order["status"] in {"pending", "expired", "cancelled"}:
+                return {
+                    "pedido": order["id"],
+                    "obs": "Pedido via Binance (USDT) ainda sem pagamento confirmado pelo e-mail da Binance; entrega não feita.",
+                    "status": order["status"],
+                }
+        elif order.get("paid_with") != "balance":
             if not order.get("payment_id"):
                 return {"pedido": order["id"], "erro": "Pedido sem PIX gerado."}
             status = await self.gateway.get_status(str(order["payment_id"]))

@@ -106,6 +106,7 @@ class DeliveryService:
                     order,
                     product.title,
                     product.delivery,
+                    config=self.config,
                 )
         except Exception:  # noqa: BLE001
             logger.exception("Falha ao anunciar compra do pedido %s", order_id)
@@ -235,6 +236,8 @@ class DeliveryService:
                     "<b>VIP ATIVADO!</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
                     "Agora você pode usar <code>/like</code> sem o limite semanal.\n"
+                    "Envie para quantos IDs quiser, até 10 por comando:\n"
+                    "<code>/like ID1 ID2 ID3</code>\n"
                     f"Validade: <b>{until}</b>",
                     reply_markup=back_home(),
                 )

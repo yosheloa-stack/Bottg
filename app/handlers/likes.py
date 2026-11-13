@@ -30,6 +30,8 @@ router = Router(name="likes")
 logger = logging.getLogger(__name__)
 
 GROUP_TYPES = {"group", "supergroup"}
+# Máximo de IDs num único /like (VIP/dono). Dá para repetir o comando sem limite.
+MAX_IDS_PER_COMMAND = 10
 
 
 async def _buy_vip_markup(message: Message) -> InlineKeyboardMarkup | None:
@@ -329,15 +331,40 @@ async def cmd_like(
         await message.reply("Use assim: <code>/like SEU_ID</code>", reply_markup=await _add_group_markup(message.bot))
         return
 
-    game_id = clean_game_id(arg.split()[0])
-    if not _valid_like_uid(game_id):
+    use_cooldown = not (is_owner or is_vip)
+
+    # VIP e dono podem mandar vários IDs de uma vez: /like ID1 ID2 ID3.
+    # Quem usa o envio grátis continua com 1 ID por comando.
+    raw_ids = arg.replace(",", " ").replace(";", " ").split()
+    if use_cooldown:
+        raw_ids = raw_ids[:1]
+    game_ids: list[str] = []
+    for raw in raw_ids:
+        gid = clean_game_id(raw)
+        if gid not in game_ids:
+            game_ids.append(gid)
+    invalid = [g for g in game_ids if not _valid_like_uid(g)]
+    game_ids = [g for g in game_ids if _valid_like_uid(g)]
+    if not game_ids:
         await message.reply(
             "⚠️ ID inválido. Envie somente números, de 8 a 11 dígitos.",
             reply_markup=await _add_group_markup(message.bot),
         )
         return
-
-    use_cooldown = not (is_owner or is_vip)
+    if len(game_ids) > MAX_IDS_PER_COMMAND:
+        await message.reply(
+            f"⚠️ Envie no máximo <b>{MAX_IDS_PER_COMMAND} IDs</b> por comando. "
+            "Vou enviar para os primeiros agora; mande o resto em outro <code>/like</code>.",
+            reply_markup=await _add_group_markup(message.bot),
+        )
+        game_ids = game_ids[:MAX_IDS_PER_COMMAND]
+    if invalid:
+        await message.reply(
+            "⚠️ Ignorei ID(s) inválido(s): "
+            + ", ".join(f"<code>{html.escape(g)}</code>" for g in invalid[:10]),
+            reply_markup=await _add_group_markup(message.bot),
+        )
+    game_id = game_ids[0]
 
     if use_cooldown:
         allowed, remaining = await db.acquire_like_slot(message.from_user.id)
@@ -368,6 +395,28 @@ async def cmd_like(
                 reply_markup=await _add_group_markup(bot, await _buy_vip_markup(message)),
             )
             return
+
+    if not use_cooldown:
+        # VIP/dono: sem limite. Envia um ID por vez, na ordem informada.
+        for gid in game_ids:
+            try:
+                await _do_send_like(
+                    message,
+                    gid,
+                    autosystem_likes_api,
+                    db,
+                    use_cooldown=False,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha no /like VIP uid=%s", gid)
+                try:
+                    await message.reply(
+                        f"⚠️ Não consegui enviar para <code>{gid}</code> agora. Tente de novo em instantes.",
+                        reply_markup=await _add_group_markup(bot),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+        return
 
     try:
         await _do_send_like(

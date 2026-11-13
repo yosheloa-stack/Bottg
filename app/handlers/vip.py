@@ -63,6 +63,7 @@ def _vip_text(vip: dict | None, user_id: int, *, owner: bool = False) -> str:
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"🆔 Telegram ID: <code>{user_id}</code>\n"
         "♾️ <code>/like</code> sem limite semanal\n"
+        "🆔 IDs ilimitados, até 10 por comando: <code>/like ID1 ID2 ID3</code>\n"
         f"📅 Validade: <b>{_fmt_expiry(expires_at)}</b>\n"
         f"⏳ Restante: <b>{_remaining(expires_at)}</b>"
     )

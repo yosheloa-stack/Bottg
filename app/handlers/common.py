@@ -17,7 +17,7 @@ from app.outgoing import set_current_language
 from app.keyboards.inline import back_home, cancel_only, language_menu, main_menu, products_menu
 from app.states import PurchaseFlow
 from app.ui import edit_screen, send_menu
-from app.utils import format_price
+from app.utils import format_price, payment_method_label
 
 async def group_help_text(bot: Bot) -> str:
     """Instruções curtas para grupos, com /comando@bot (outros bots no grupo)."""
@@ -530,7 +530,7 @@ async def cb_orders(query: CallbackQuery, db: Database, config: Config) -> None:
             uid_text = f"<code>{uid}</code>" if uid else "aguardando"
             days = int(o.get("plan_days") or 0)
             days_text = f" · {days} dias" if days > 0 else ""
-            payment_text = "saldo" if o.get("paid_with") == "balance" else "PIX"
+            payment_text = payment_method_label(o.get("paid_with"))
             lines.append(
                 f"{emoji} #{o['id']} — {title}\n"
                 f"    UID: {uid_text}{days_text}\n"

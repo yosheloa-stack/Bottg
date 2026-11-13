@@ -32,3 +32,17 @@ def extract_nick(data: dict) -> str | None:
             if player.get(key):
                 return str(player[key])
     return None
+
+
+_PAYMENT_LABELS = {
+    "binance": "Binance (USDT)",
+    "balance": "Saldo",
+    "manual": "Manual",
+    "pix": "PIX",
+}
+
+
+def payment_method_label(paid_with) -> str:
+    """Nome da forma de pagamento: PIX, Binance (USDT), Saldo ou Manual."""
+    key = str(paid_with or "pix").strip().lower()
+    return _PAYMENT_LABELS.get(key, key.upper() or "PIX")
