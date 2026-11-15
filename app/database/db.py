@@ -1129,6 +1129,43 @@ class Database:
         )
         await self.db.commit()
 
+    async def set_order_metadata(self, order_id: int, metadata: str) -> None:
+        await self.db.execute(
+            "UPDATE orders SET metadata = ?, updated_at = ? WHERE id = ?",
+            (metadata or "{}", int(time.time()), int(order_id)),
+        )
+        await self.db.commit()
+
+    async def orders_with_status(
+        self, status: str, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            "SELECT * FROM orders WHERE status = ? ORDER BY id ASC LIMIT ?",
+            (status, int(limit)),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def transition_order_status(
+        self, order_id: int, from_status: str, to_status: str,
+        delivery_info: str | None = None,
+    ) -> bool:
+        """Troca o status somente se ainda estiver em from_status (evita entrega dupla)."""
+        if delivery_info is None:
+            cur = await self.db.execute(
+                "UPDATE orders SET status = ?, updated_at = ? "
+                "WHERE id = ? AND status = ?",
+                (to_status, int(time.time()), int(order_id), from_status),
+            )
+        else:
+            cur = await self.db.execute(
+                "UPDATE orders SET status = ?, delivery_info = ?, updated_at = ? "
+                "WHERE id = ? AND status = ?",
+                (to_status, delivery_info, int(time.time()), int(order_id), from_status),
+            )
+        await self.db.commit()
+        return bool(cur.rowcount)
+
     async def get_awaiting_id_order(self, user_id: int) -> Optional[dict[str, Any]]:
         async with self.db.execute(
             "SELECT * FROM orders "

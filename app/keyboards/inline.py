@@ -46,6 +46,7 @@ def products_menu(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=t(lang, "btn_vip"), callback_data="shop:vip"),
         InlineKeyboardButton(text=t(lang, "btn_rent"), callback_data="shop:rent"),
     )
+    kb.row(InlineKeyboardButton(text=t(lang, "btn_more"), callback_data="shop:more"))
     kb.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="nav:v2:home"))
     return kb.as_markup()
 

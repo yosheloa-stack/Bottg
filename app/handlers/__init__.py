@@ -11,6 +11,7 @@ from app.handlers import (
     admin,
     binance,
     common,
+    extra_shop,
     fallback,
     info,
     likes,
@@ -65,6 +66,8 @@ def register_handlers(dp: Dispatcher) -> None:
     # Comandos administrativos por texto têm prioridade sobre estados de compra.
     dp.include_router(admin.router)
     dp.include_router(binance.router)
+    # Presentes, diamantes, likes (envio único) e Snickers.
+    dp.include_router(extra_shop.router)
     dp.include_router(likes.router)
     dp.include_router(info.router)
     dp.include_router(store.router)

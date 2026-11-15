@@ -1,6 +1,7 @@
 """Handlers comuns: /start, menu, navegação, cancelar, suporte, pedidos."""
 from __future__ import annotations
 
+import html
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -521,10 +522,22 @@ async def cb_orders(query: CallbackQuery, db: Database, config: Config) -> None:
             "delivered": "✅",
             "failed": "⚠️",
             "expired": "❌",
+            "sending": "⏳",
+            "processing": "💎",
+            "review": "🔎",
+            "refunded": "↩️",
         }
         for o in mine:
             product = config.products.get(o["product_code"])
             title = product.title if product else o["product_code"]
+            if o["product_code"] == "gift":
+                import json as _json
+                try:
+                    _meta = _json.loads(o.get("metadata") or "{}")
+                    if _meta.get("gift_name"):
+                        title = f"🎁 {html.escape(str(_meta['gift_name']))}"
+                except (TypeError, ValueError):
+                    pass
             emoji = status_emoji.get(o["status"], "•")
             uid = str(o.get("game_id") or "").strip()
             uid_text = f"<code>{uid}</code>" if uid else "aguardando"

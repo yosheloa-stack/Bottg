@@ -2,10 +2,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_UP, Decimal, InvalidOperation
 
 from app.config import Config, Product
 from app.database import Database
+
+
+# Entregas que dependem da chave FFHUB_API_KEY.
+API_PRODUCT_DELIVERIES = {
+    "ffhub_autolike",
+    "ffhub_like_once",
+    "api_gift",
+    "api_diamonds",
+    "api_snickers",
+}
 
 
 @dataclass
@@ -63,9 +73,9 @@ async def resolve_products(config: Config, db: Database) -> dict[str, ResolvedPr
         stock = int(s.get("stock", -1)) if s.get("stock") is not None else -1
         service_ready = True
         service_issue = ""
-        if product.delivery in {"ffhub_autolike", "ffhub_like_once"} and not ffhub_configured:
+        if product.delivery in API_PRODUCT_DELIVERIES and not ffhub_configured:
             service_ready = False
-            service_issue = "FFHub API não configurada"
+            service_issue = "API de produtos não configurada (/setkey ffhub)"
         elif product.delivery == "autosystem_autolike" and not autosystem_configured:
             service_ready = False
             service_issue = "AutoSystem API não configurada"
@@ -117,4 +127,54 @@ async def price_for_user(
         multiplier = (Decimal("100") - discount) / Decimal("100")
         price = (price * multiplier).quantize(Decimal("0.01"))
 
+    return price, is_reseller, discount
+
+
+# ---------------------------------------------------------------------------
+# Presentes: preço dinâmico a partir do catálogo da API de produtos.
+# ---------------------------------------------------------------------------
+DEFAULT_GIFT_MARKUP = Decimal("30")
+
+
+async def gift_markup_percent(db: Database) -> Decimal:
+    raw = await db.get_owner_setting("GIFT_MARKUP_PERCENT")
+    try:
+        value = Decimal(str(raw)) if raw not in (None, "") else DEFAULT_GIFT_MARKUP
+    except (InvalidOperation, ValueError):
+        value = DEFAULT_GIFT_MARKUP
+    return max(Decimal("0"), min(value, Decimal("500")))
+
+
+async def gift_base_price(db: Database, gift_id: str, cost: Decimal) -> Decimal:
+    """Preço de venda: preço fixo do dono (/precopresente) ou custo + margem."""
+    override = await db.get_owner_setting(f"GIFT_PRICE_{gift_id}")
+    if override:
+        try:
+            value = Decimal(str(override)).quantize(Decimal("0.01"))
+            if value > 0:
+                return value
+        except (InvalidOperation, ValueError):
+            pass
+    if cost <= 0:
+        return Decimal("0")
+    markup = await gift_markup_percent(db)
+    price = cost * (Decimal("100") + markup) / Decimal("100")
+    return price.quantize(Decimal("0.01"), rounding=ROUND_UP)
+
+
+async def gift_price_for_user(
+    db: Database,
+    gift_id: str,
+    cost: Decimal,
+    user_id: int,
+) -> tuple[Decimal, bool, Decimal]:
+    price = await gift_base_price(db, gift_id, cost)
+    is_reseller = await db.is_reseller(int(user_id))
+    discount = Decimal("0")
+    if is_reseller and price > 0:
+        discount = await reseller_discount_percent(db)
+        multiplier = (Decimal("100") - discount) / Decimal("100")
+        discounted = (price * multiplier).quantize(Decimal("0.01"))
+        # Nunca vende abaixo do custo.
+        price = max(discounted, cost.quantize(Decimal("0.01"), rounding=ROUND_UP))
     return price, is_reseller, discount

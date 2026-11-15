@@ -178,6 +178,7 @@ async def create_binance_order(
     amount_brl: Decimal | None = None,
     game_id: str = "",
     plan_days: int = 0,
+    extra_metadata: dict | None = None,
 ) -> tuple[int, Decimal, Decimal]:
     """Cria o pedido e devolve (id, USDT exato a enviar, R$ do pedido).
 
@@ -198,9 +199,11 @@ async def create_binance_order(
             brl = (usdt * rate).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
         else:
             brl = amount_brl.quantize(Decimal("0.01"))
-        metadata = json.dumps(
+        meta = dict(extra_metadata or {})
+        meta.update(
             {"usdt": str(usdt), "binance_user": binance_user, "rate": str(rate)}
         )
+        metadata = json.dumps(meta, ensure_ascii=False)
         order_id = await db.create_order(
             user_id=user_id,
             product_code=product_code,

@@ -39,6 +39,16 @@ class Product:
     days: int = 0
 
 
+# Pacotes de diamantes aceitos pela API de produtos.
+DIAMOND_PACKS: tuple[int, ...] = (
+    200, 620, 930, 1040, 2120, 2290, 4360, 5300, 9800, 11200, 22400,
+)
+
+
+def diamond_code(quantity: int) -> str:
+    return f"dima_{int(quantity)}"
+
+
 @dataclass(frozen=True)
 class Config:
     bot_token: str
@@ -221,7 +231,42 @@ def load_config() -> Config:
             delivery="ffhub_autolike",
             days=30,
         ),
+        # ---- Produtos da API de produtos (presentes, diamantes, Snickers) ----
+        "gift": Product(
+            code="gift",
+            title="🎁 Presente Free Fire",
+            description=(
+                "Envio de presentes do catálogo direto para a conta "
+                "informada pelo UID."
+            ),
+            # Preço dinâmico: custo do catálogo + margem (/margem).
+            price=Decimal("0.00"),
+            delivery="api_gift",
+        ),
+        "snickers": Product(
+            code="snickers",
+            title="🍫 Código Snickers",
+            description=(
+                "Resgate do código Snickers na sua conta usando o "
+                "<b>token Rewards</b>."
+            ),
+            price=Decimal(_get("PRICE_SNICKERS", "0.00")),
+            delivery="api_snickers",
+        ),
     }
+    for qty in DIAMOND_PACKS:
+        code = diamond_code(qty)
+        products[code] = Product(
+            code=code,
+            title=f"💎 {qty:,} Diamantes".replace(",", "."),
+            description=(
+                f"Recarga de <b>{qty:,} diamantes</b> usando o "
+                "<b>token Rewards</b> da sua conta."
+            ).replace(",", "."),
+            price=Decimal(_get(f"PRICE_DIAMONDS_{qty}", "0.00")),
+            delivery="api_diamonds",
+            days=0,
+        )
 
     return Config(
         bot_token=_get("BOT_TOKEN", required=True),

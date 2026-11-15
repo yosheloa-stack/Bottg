@@ -544,7 +544,7 @@ async def main() -> None:
         ),
     )
 
-    delivery = DeliveryService(bot, db, config, autolike, passe)
+    delivery = DeliveryService(bot, db, config, autolike, passe, ffhub_shop)
     support_ai = SquareCloudAI(
         private_setting(
             "SQUARECLOUD_AI_KEY",
@@ -568,6 +568,7 @@ async def main() -> None:
     dp["passe"] = passe
     dp["gateway"] = gateway
     dp["delivery"] = delivery
+    dp["api_orders"] = delivery.api_orders
     dp["support_ai"] = support_ai
     dp["support_agent"] = support_agent
 
@@ -585,6 +586,12 @@ async def main() -> None:
         logger.warning(
             "FFHub ainda não configurada — o agendador está aguardando a chave."
         )
+
+    # Acompanha pedidos de diamantes até a entrega/estorno.
+    diamonds_task = asyncio.create_task(
+        delivery.api_orders.watch_diamonds(),
+        name="api-diamonds-watcher",
+    )
 
     autosystem_task = asyncio.create_task(
         watch_autosystem_autolikes(bot, db, autosystem_likes_api),
@@ -643,6 +650,9 @@ async def main() -> None:
                 BotCommand(command="start", description="Abrir menu principal"),
                 BotCommand(command="menu", description="Abrir menu principal"),
                 BotCommand(command="like", description="Enviar likes pelo grupo"),
+                BotCommand(command="presentes", description="Enviar presentes Free Fire"),
+                BotCommand(command="diamantes", description="Comprar diamantes"),
+                BotCommand(command="snickers", description="Comprar código Snickers"),
                 BotCommand(command="id", description="Mostrar meu ID do Telegram"),
                 BotCommand(command="suporte", description="Falar com o suporte"),
                 BotCommand(command="idioma", description="Mudar idioma do menu"),
@@ -655,6 +665,9 @@ async def main() -> None:
                 BotCommand(command="menu", description="Abrir menú principal"),
                 BotCommand(command="like", description="Enviar likes en el grupo"),
                 BotCommand(command="loja", description="Ver productos y comprar"),
+                BotCommand(command="presentes", description="Enviar regalos Free Fire"),
+                BotCommand(command="diamantes", description="Comprar diamantes"),
+                BotCommand(command="snickers", description="Comprar código Snickers"),
                 BotCommand(command="divulgar", description="Agregar el bot a tu grupo"),
                 BotCommand(command="id", description="Mostrar mi ID de Telegram"),
                 BotCommand(command="suporte", description="Hablar con soporte"),
@@ -668,6 +681,9 @@ async def main() -> None:
                 BotCommand(command="menu", description="Open main menu"),
                 BotCommand(command="like", description="Send likes in the group"),
                 BotCommand(command="loja", description="View products and buy"),
+                BotCommand(command="presentes", description="Send Free Fire gifts"),
+                BotCommand(command="diamantes", description="Buy diamonds"),
+                BotCommand(command="snickers", description="Buy Snickers code"),
                 BotCommand(command="divulgar", description="Add the bot to your group"),
                 BotCommand(command="id", description="Show my Telegram ID"),
                 BotCommand(command="suporte", description="Talk to support"),
@@ -751,6 +767,11 @@ async def main() -> None:
         report_task.cancel()
         try:
             await report_task
+        except asyncio.CancelledError:
+            pass
+        diamonds_task.cancel()
+        try:
+            await diamonds_task
         except asyncio.CancelledError:
             pass
         if runner:

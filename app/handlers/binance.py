@@ -1,6 +1,8 @@
 """Recarga de saldo em USDT: painel do dono (/binance) e fluxo do cliente."""
 from __future__ import annotations
 
+import json as _json
+
 import html
 import logging
 import time
@@ -117,6 +119,7 @@ async def ask_binance_user_for_plan(
     usdt: Decimal,
     game_id: str,
     plan_days: int,
+    metadata: str = "{}",
 ) -> None:
     """Plano com preço fixo: guarda o pedido e só pede o usuário da Binance."""
     await state.set_state(BinanceTopup.waiting_user)
@@ -127,6 +130,7 @@ async def ask_binance_user_for_plan(
         usdt=str(usdt),
         plan_game_id=game_id,
         plan_days=plan_days,
+        plan_metadata=metadata or "{}",
     )
     await message.answer(
         "<b>PAGAMENTO EM USDT</b>\n"
@@ -164,6 +168,7 @@ async def topup_user(message: Message, state: FSMContext, db: Database) -> None:
             amount_brl=Decimal(data.get("plan_brl") or "0"),
             game_id=data.get("plan_game_id") or "",
             plan_days=int(data.get("plan_days") or 0),
+            extra_metadata=_json.loads(data.get("plan_metadata") or "{}"),
         )
         detail_line = f"Produto: <b>{data.get('plan_description') or ''}</b>\n"
     else:

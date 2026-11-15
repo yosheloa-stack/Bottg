@@ -83,18 +83,26 @@ def translate(text: str, lang: str) -> str:
 
 
 # Nomes de fornecedores que o cliente não deve ver (ex.: erro vindo da API).
+_NAMES = r"(?:FFHub(?:[ -]?Shop)?|Shard ?web|Auto ?Like ?System|Auto ?System|Likes ?Painel|Mercado Pago)"
 _PROVIDER_PHRASE = re.compile(
-    r"\s+(?:pela|pelo|da|do|na|no|via|by|por)\s+(?:a\s+|o\s+)?(?:FFHub|Auto ?System|Mercado Pago)\b",
+    rf"\s+(?:pela|pelo|da|do|na|no|via|by|por)\s+(?:a\s+|o\s+)?{_NAMES}\b",
     re.I,
 )
-_PROVIDER = re.compile(r"\b(?:FFHub|Auto ?System|Mercado Pago)\b", re.I)
+_PROVIDER = re.compile(rf"\b{_NAMES}\b", re.I)
+# Endereços das integrações (nunca para clientes).
+_PROVIDER_URL = re.compile(
+    r"(?:https?://)?(?=[\w.-]*(?:ffhub|shardweb|autolikesystem|likespainel|fluxggx))"
+    r"[\w-]+(?:\.[\w-]+)+(?:/\S*)?",
+    re.I,
+)
 
 
 def hide_providers(text: str) -> str:
     if not text:
         return text
+    text = _PROVIDER_URL.sub("", text)
     text = _PROVIDER_PHRASE.sub("", text)
-    text = re.sub(r"\b([Aa]|[Oo])\s+(?=(?:FFHub|Auto ?System|Mercado Pago)\b)",
+    text = re.sub(rf"\b([Aa]|[Oo])\s+(?={_NAMES}\b)",
                   lambda m: "O " if m.group(1).isupper() else "o ", text)
     return _PROVIDER.sub("sistema", text)
 

@@ -51,6 +51,24 @@ Cada entrega bem-sucedida dá baixa automática no estoque.
 > apenas em grupos via `/like <id>`. No privado, o bot foca na **Loja** e nos
 > serviços de venda.
 
+### 🛍️ Presentes, Diamantes, Likes e Snickers
+
+Botão **🛍️ Presentes • Diamantes • Snickers** no menu (ou `/presentes`, `/diamantes`, `/snickers`):
+
+- **Presentes**: catálogo e estoque carregados automaticamente; o cliente escolhe o item,
+  informa o UID e paga por PIX ou saldo. Preço = custo + margem (`/margem 30`) ou preço fixo
+  por item (`/precopresente ID 9,90`). `/catalogo` lista IDs, custo e preço de venda.
+- **Diamantes** (200 a 22.400): depois do pagamento o bot pede o token Rewards, registra o
+  pedido e acompanha sozinho até a entrega (ou estorno). Preço: `/preco dima620 25,00`.
+- **Likes (envio único)**: `/preco likes 3,00`.
+- **Snickers**: token Rewards após o pagamento. Preço: `/preco snickers 5,00`.
+
+Chave: variável `FFHUB_API_KEY` na Square Cloud ou `/setkey ffhub CHAVE` no privado.
+Falhas sem cobrança são estornadas ao saldo do cliente; falhas sem confirmação ficam
+"em análise" e os donos recebem aviso (`/reembolsar PEDIDO` ou `/concluir PEDIDO`).
+Nenhuma mensagem ao cliente cita o fornecedor ou detalhes da integração.
+`/saldoapi` mostra o saldo da conta de produtos (somente donos).
+
 ## 🏗️ Arquitetura
 
 ```

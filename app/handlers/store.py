@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -21,6 +22,7 @@ from aiogram.types import (
 
 from app import binance_pay, texts
 from app.catalog import (
+    gift_price_for_user,
     price_for_user,
     reseller_discount_percent,
     resolve_product,
@@ -45,6 +47,7 @@ from app.handlers.binance import (
     binance_unavailable_text,
     topup_method_menu,
 )
+from app.services.ffhub_shop import FFHubShopApi
 from app.services.passe import PasseApi
 from app.services.payments.base import PaymentGateway, PaymentStatus
 from app.states import CustomerPlanFlow, PurchaseFlow
@@ -246,6 +249,7 @@ async def _create_pix_order(
     description: str,
     game_id: str = "",
     plan_days: int = 0,
+    metadata: str = "{}",
 ) -> None:
     if not getattr(gateway, "configured", True):
         await edit_screen(
@@ -267,6 +271,7 @@ async def _create_pix_order(
         game_id=game_id,
         amount=str(_money(amount)),
         plan_days=plan_days,
+        metadata=metadata,
         paid_with="pix",
     )
 
@@ -941,10 +946,33 @@ async def _checkout_details(
     user_id: int,
     code: str,
     ref_value: str,
-) -> tuple[Decimal, str, str, int] | None:
+    ffhub_shop: FFHubShopApi | None = None,
+) -> tuple[Decimal, str, str, int, str] | None:
+    """Retorna (valor, descrição, uid, dias, metadata_json)."""
     rp = await resolve_product(config, db, code)
     if not rp:
         return None
+
+    if code == "gift":
+        if not ffhub_shop or not rp.service_ready or rp.stock == 0:
+            return None
+        gift_id, _, uid = ref_value.rpartition(":")
+        uid = clean_game_id(uid)
+        if not gift_id or not is_valid_game_id(uid):
+            return None
+        item = await ffhub_shop.gift(gift_id)
+        if not item or not item.available:
+            return None
+        price, _, _ = await gift_price_for_user(
+            db, item.gift_id, item.cost, user_id
+        )
+        if price <= 0:
+            return None
+        meta = json.dumps(
+            {"gift_id": item.gift_id, "gift_name": item.name},
+            ensure_ascii=False,
+        )
+        return _money(price), f"Presente • {item.name}", uid, 0, meta
 
     if code == "balance_topup":
         try:
@@ -954,7 +982,7 @@ async def _checkout_details(
         if cents < 100 or cents > 500000:
             return None
         amount = _from_cents(cents)
-        return amount, f"Adicionar saldo • R$ {format_price(amount)}", "", 0
+        return amount, f"Adicionar saldo • R$ {format_price(amount)}", "", 0, "{}"
 
     price, _, _ = await _effective_price(db, rp, user_id)
     if price <= 0:
@@ -968,23 +996,29 @@ async def _checkout_details(
         if not 1 <= days <= 90 or not rp.service_ready or rp.stock == 0:
             return None
         amount = _money(price * Decimal(days))
-        return amount, f"{rp.title} • {days} dias", "", days
+        return amount, f"{rp.title} • {days} dias", "", days, "{}"
 
     if code == "passe":
         uid = clean_game_id(ref_value)
         if not is_valid_game_id(uid) or rp.stock == 0:
             return None
-        return price, rp.title, uid, 0
+        return price, rp.title, uid, 0, "{}"
 
     if code == "vip_access":
         if not rp.available:
             return None
-        return price, rp.title, "", rp.product.days
+        return price, rp.title, "", rp.product.days, "{}"
 
     if code in {"reseller_access", "bot_rental"}:
         if rp.stock == 0:
             return None
-        return price, rp.title, "", rp.product.days
+        return price, rp.title, "", rp.product.days, "{}"
+
+    # Diamantes, Snickers e Likes (envio único): token/UID após o pagamento.
+    if rp.product.delivery in {"api_diamonds", "api_snickers", "ffhub_like_once"}:
+        if not rp.available:
+            return None
+        return price, rp.title, "", 0, "{}"
 
     return None
 
@@ -995,17 +1029,18 @@ async def checkout_pix(
     db: Database,
     config: Config,
     gateway: PaymentGateway,
+    ffhub_shop: FFHubShopApi,
 ) -> None:
     await _ack(query, "Gerando PIX...")
     code, ref_value = _parse_checkout(query.data, "paypix:")
     details = await _checkout_details(
-        db, config, query.from_user.id, code, ref_value
+        db, config, query.from_user.id, code, ref_value, ffhub_shop
     )
     if not details:
         await query.message.answer("⚠️ Pedido inválido ou indisponível.")
         return
 
-    amount, description, game_id, days = details
+    amount, description, game_id, days, metadata = details
     await _create_pix_order(
         query,
         db,
@@ -1015,6 +1050,7 @@ async def checkout_pix(
         description=description,
         game_id=game_id,
         plan_days=days,
+        metadata=metadata,
     )
 
 
@@ -1024,6 +1060,7 @@ async def checkout_binance(
     state: FSMContext,
     db: Database,
     config: Config,
+    ffhub_shop: FFHubShopApi,
 ) -> None:
     code, ref_value = _parse_checkout(query.data, "paybnc:")
     if code == "balance_topup":
@@ -1034,14 +1071,14 @@ async def checkout_binance(
         await query.answer(binance_unavailable_text(), show_alert=True)
         return
     details = await _checkout_details(
-        db, config, query.from_user.id, code, ref_value
+        db, config, query.from_user.id, code, ref_value, ffhub_shop
     )
     if not details:
         await _ack(query)
         await query.message.answer("⚠️ Pedido inválido ou indisponível.")
         return
     await _ack(query)
-    amount, description, game_id, days = details
+    amount, description, game_id, days, metadata = details
     await ask_binance_user_for_plan(
         query.message,
         state,
@@ -1051,6 +1088,7 @@ async def checkout_binance(
         usdt=binance_pay.usdt_for_brl(amount, rate),
         game_id=game_id,
         plan_days=days,
+        metadata=metadata,
     )
 
 
@@ -1060,6 +1098,7 @@ async def checkout_balance(
     db: Database,
     config: Config,
     delivery: DeliveryService,
+    ffhub_shop: FFHubShopApi,
 ) -> None:
     await _ack(query)
     code, ref_value = _parse_checkout(query.data, "paybal:")
@@ -1068,13 +1107,13 @@ async def checkout_balance(
         return
 
     details = await _checkout_details(
-        db, config, query.from_user.id, code, ref_value
+        db, config, query.from_user.id, code, ref_value, ffhub_shop
     )
     if not details:
         await query.message.answer("⚠️ Pedido inválido ou indisponível.")
         return
 
-    amount, description, game_id, days = details
+    amount, description, game_id, days, metadata = details
     cents = _to_cents(amount)
 
     order_id = await db.create_order(
@@ -1083,6 +1122,7 @@ async def checkout_balance(
         game_id=game_id,
         amount=str(amount),
         plan_days=days,
+        metadata=metadata,
         paid_with="balance",
     )
     ok, remaining = await db.spend_wallet(
@@ -1140,10 +1180,10 @@ async def purchase_receive_id(
     info = await passe.confirmar(game_id, region=config.default_region)
 
     if not info.ok:
-        data = info.data if isinstance(info.data, dict) else {}
-        api_message = data.get("mensagem") or data.get("message")
+        # Nunca repassa a mensagem da integração ao cliente.
         await checking.edit_text(
-            f"❌ {api_message or 'Não foi possível validar esse ID. Confira os números e tente novamente.'}",
+            "❌ Não foi possível validar esse ID. "
+            "Confira os números e tente novamente.",
             reply_markup=cancel_only(),
         )
         return

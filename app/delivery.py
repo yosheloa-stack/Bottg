@@ -19,7 +19,9 @@ from app.announcements import announce_purchase
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import add_group_button, back_home
+from app.api_orders import TOKEN_DELIVERIES, ApiOrders
 from app.services.autolike import AutoLikeApi
+from app.services.ffhub_shop import FFHubShopApi
 from app.services.passe import PasseApi
 from app.utils import format_price
 
@@ -34,6 +36,7 @@ class DeliveryService:
         config: Config,
         autolike: AutoLikeApi,
         passe: PasseApi,
+        ffhub_shop: FFHubShopApi | None = None,
     ) -> None:
         self.bot = bot
         self.db = db
@@ -42,6 +45,9 @@ class DeliveryService:
         self.passe = passe
         # Webhook, monitor e botão "Já paguei" podem chamar ao mesmo tempo.
         self._locks: dict[int, asyncio.Lock] = {}
+        self.api_orders = (
+            ApiOrders(bot, db, config, ffhub_shop) if ffhub_shop else None
+        )
 
     async def _remove_payment_message(self, order: dict) -> None:
         chat_id = order.get("payment_chat_id")
@@ -110,6 +116,16 @@ class DeliveryService:
                 )
         except Exception:  # noqa: BLE001
             logger.exception("Falha ao anunciar compra do pedido %s", order_id)
+
+        # Produtos da API de produtos (presentes / diamantes / Snickers).
+        if product.delivery == "api_gift" or product.delivery in TOKEN_DELIVERIES:
+            if not self.api_orders:
+                logger.error("API de produtos não inicializada pedido=%s", order_id)
+                await self._notify_failure(order)
+                return False
+            if product.delivery == "api_gift":
+                return await self.api_orders.deliver_gift(order)
+            return await self.api_orders.ask_token(order)
 
         # Auto Likes pagos: o pagamento libera a etapa de informar o UID.
         if product.delivery in {
@@ -330,10 +346,8 @@ class DeliveryService:
         return True
 
     async def _notify_success(self, order: dict, product, data: dict) -> None:
+        # Não repassa mensagens da integração ao cliente.
         detail = ""
-        msg = data.get("mensagem") or data.get("message") if isinstance(data, dict) else ""
-        if msg:
-            detail = f"ℹ️ {msg}"
         try:
             if product.delivery == "passe":
                 text = texts.DELIVERY_SUCCESS_PASSE.format(

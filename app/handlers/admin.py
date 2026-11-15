@@ -17,7 +17,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, ForceReply, Message
 
 from app.catalog import resolve_product, resolve_products
-from app.config import Config
+from app.config import DIAMOND_PACKS, Config
 from app.database import Database
 from app.owner_auth import resolve_owner_id
 from app.keyboards.inline import back_home
@@ -79,6 +79,8 @@ PRODUCT_ALIASES = {
     "único": "like2_single",
     "single": "like2_single",
     "like2": "like2_single",
+    "likes": "like2_single",
+    "snickers": "snickers",
 }
 
 
@@ -112,6 +114,10 @@ def _parse_stock(raw: str) -> int | None:
 
 def _resolve_product_code(raw: str) -> str:
     key = (raw or "").strip().lower()
+    # Diamantes: dima620, dima_620, diamantes620, 620d
+    match = re.fullmatch(r"(?:dima|diamantes?|dm)_?(\d+)|(\d+)d(?:ima)?", key)
+    if match:
+        return f"dima_{match.group(1) or match.group(2)}"
     return PRODUCT_ALIASES.get(key, key)
 
 
@@ -198,6 +204,15 @@ async def cmd_admin(message: Message, config: Config, bot: Bot) -> None:
         "<code>/preco passe 4,00</code>\n"
         "<code>/preco revenda 20,00</code>\n"
         "<code>/preco aluguel 15,00</code>\n"
+        "<code>/preco dima620 25,00</code> — pacote de diamantes\n"
+        "<code>/preco snickers 5,00</code>\n"
+        "<code>/preco likes 3,00</code> — likes envio único\n"
+        "<code>/margem 30</code> — margem % dos presentes sobre o custo\n"
+        "<code>/precopresente ID 9,90</code> — preço fixo de um presente\n"
+        "<code>/catalogo</code> — presentes, custo e preço de venda\n"
+        "<code>/saldoapi</code> — saldo da conta de produtos\n"
+        "<code>/reembolsar PEDIDO</code> — estorna ao saldo do cliente\n"
+        "<code>/concluir PEDIDO</code> — marca pedido como entregue\n"
         "<code>/estoque 220 -1</code> — -1 = ilimitado\n"
         "<code>/descontorevenda 20</code> — desconto em %\n"
         "<code>/setkey ffhub CHAVE</code>\n"
@@ -241,7 +256,8 @@ async def cmd_set_price_direct(
         await message.reply(
             "Use: <code>/preco 220 0,60</code>\n"
             "Produtos: <code>220</code>, <code>500</code>, <code>passe</code>, "
-            "<code>revenda</code>, <code>aluguel</code> ou <code>vip</code>."
+            "<code>revenda</code>, <code>aluguel</code>, <code>vip</code>, "
+            "<code>likes</code>, <code>snickers</code> ou <code>dima620</code> (diamantes)."
         )
         return
     code = _resolve_product_code(parts[1])
@@ -305,6 +321,11 @@ async def cmd_products_status(
     ]
     discount = await db.get_owner_setting("RESELLER_DISCOUNT_PERCENT") or "20"
     lines.append(f"🤝 Desconto revenda: <b>{discount}%</b>")
+    gift_markup = await db.get_owner_setting("GIFT_MARKUP_PERCENT") or "30"
+    lines.append(
+        f"🎁 Presentes: margem <b>{gift_markup}%</b> sobre o custo "
+        "(detalhes em <code>/catalogo</code>)"
+    )
     lines.append("")
     for code in (
         "autolike220",
@@ -314,6 +335,8 @@ async def cmd_products_status(
         "bot_rental",
         "vip_access",
         "like2_single",
+        "snickers",
+        *(f"dima_{q}" for q in DIAMOND_PACKS),
     ):
         rp = products.get(code)
         if not rp:
@@ -329,7 +352,13 @@ async def cmd_products_status(
                 "",
             ]
         )
-    await message.reply("\n".join(lines))
+    text = "\n".join(lines)
+    while text:
+        cut = text.rfind("\n\n", 0, 3800) if len(text) > 3800 else len(text)
+        if cut <= 0:
+            cut = min(len(text), 3800)
+        await message.reply(text[:cut])
+        text = text[cut:].lstrip("\n")
 
 
 @router.message(Command("descontorevenda"))

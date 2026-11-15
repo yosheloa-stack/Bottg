@@ -12,6 +12,7 @@ from aiogram.types import (
 from app import texts
 from app.autolike_report import REGIONS, activation_text, send_fancy
 from app.outgoing import keep_raw_output, reset_raw_output
+from app.api_orders import TOKEN_DELIVERIES, ApiOrders, diamond_status_button
 from app.config import Config
 from app.database import Database
 from app.keyboards.inline import back_home
@@ -33,12 +34,49 @@ async def receive_paid_autolike_uid(
     config: Config,
     ffhub_shop: FFHubShopApi,
     autosystem_likes_api: AutoSystemLikesApi,
+    api_orders: ApiOrders,
 ) -> None:
     if not message.from_user or message.chat.type != "private":
         return
 
     order = await db.get_awaiting_id_order(message.from_user.id)
     if not order:
+        return
+
+    token_product = config.products.get(order["product_code"])
+    if token_product and token_product.delivery in TOKEN_DELIVERIES:
+        status = await message.reply("⏳ Processando seu pedido...")
+        try:
+            reply = await api_orders.submit_token(order, message.text or "")
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "Erro ao processar token do pedido %s", order["id"]
+            )
+            reply = (
+                "⚠️ Não foi possível processar o pedido agora. "
+                "Nossa equipe foi avisada."
+            )
+        # Remove o token da conversa por segurança.
+        try:
+            await message.delete()
+        except Exception:  # noqa: BLE001
+            pass
+        fresh = await db.get_order(int(order["id"])) or order
+        markup = (
+            diamond_status_button(int(order["id"]))
+            if fresh.get("status") == "processing"
+            else back_home()
+        )
+        try:
+            if reply:
+                await status.edit_text(reply, reply_markup=markup)
+            else:
+                await status.delete()
+        except Exception:  # noqa: BLE001
+            if reply:
+                await message.answer(reply, reply_markup=markup)
         return
 
     uid = clean_game_id(message.text or "")
@@ -86,23 +124,13 @@ async def receive_paid_autolike_uid(
         result = await ffhub_shop.send_paid_likes(uid)
 
         if not result.ok:
-            await db.update_order_status(
-                order["id"],
-                "failed",
-                str(result.data or result.error or ""),
-            )
-            error = (
-                result.error
-                or (result.data.get("erro") if isinstance(result.data, dict) else None)
-                or (result.data.get("error") if isinstance(result.data, dict) else None)
-                or "Não foi possível concluir o envio."
-            )
-            await sending.edit_text(
-                "⚠️ <b>Pagamento confirmado, mas o envio falhou.</b>\n\n"
-                f"🆔 UID: <code>{uid}</code>\n"
-                f"Erro: {error}\n\n"
-                "O pedido ficou registrado para suporte."
-            )
+            try:
+                await sending.delete()
+            except Exception:  # noqa: BLE001
+                pass
+            fresh = await db.get_order(int(order["id"])) or order
+            # Estorna ao saldo quando é seguro; senão vai para análise.
+            await api_orders.handle_failure(fresh, result, field="UID")
             return
 
         data = result.data if isinstance(result.data, dict) else {}

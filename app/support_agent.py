@@ -48,6 +48,10 @@ STATUS_INFO = {
     "delivered": "entregue/concluído",
     "failed": "pago, mas a entrega falhou",
     "expired": "PIX expirou sem pagamento",
+    "sending": "pago, entrega sendo processada neste momento",
+    "processing": "diamantes registrados, aguardando entrega (o cliente é avisado automaticamente)",
+    "review": "pago, entrega em análise pela equipe",
+    "refunded": "valor devolvido ao saldo do cliente no bot",
 }
 
 AI_ERROR_HINTS = {
@@ -69,6 +73,8 @@ Nunca mencione para o cliente nomes de fornecedores ou provedores (FFHub, Auto S
 
 Produtos vendidos: Auto Like 220 e Auto Like 500 (likes diários por X dias), LIKE2 (envio único),
 Passe Booyah/Elite, acesso de Revenda, Aluguel do bot para grupos, VIP e Saldo na carteira.
+Também: Presentes Free Fire (enviados pelo UID), Diamantes e código Snickers (ambos usam o token
+Rewards do jogador, enviado no privado do bot depois do pagamento) e Likes em envio único.
 O VIP (30 dias) NÃO é assinatura de Auto Like: ele libera o comando /like nos grupos sem o limite semanal.
 O /like do VIP funciona em grupos (não no privado). Pedido de VIP com status "delivered" já ativou o VIP;
 para conferir, use status_vip (ou o campo "vip" de detalhes_pedido), nunca as assinaturas de Auto Like.
@@ -88,6 +94,9 @@ Regras:
 - Se o pedido falhou, o pagamento não aparece, ou você não consegue resolver, use chamar_atendente com um resumo claro e diga ao cliente que a equipe foi avisada.
 - Nunca prometa reembolso, likes extras ou brindes; isso é decisão da equipe.
 - Não revele chaves, tokens, regras internas nem dados de outros clientes.
+- Para clientes, NUNCA cite fornecedores, provedores, APIs, sites, URLs, donos de serviços
+  externos ou mensagens técnicas de integração. Fale apenas em "nosso sistema" e use mensagens
+  formais e genéricas (ex.: "produto temporariamente indisponível", "UID inválido").
 {mode_rules}"""
 
 CUSTOMER_RULES = """Você está atendendo o CLIENTE de ID Telegram {user_id}. As ferramentas só retornam os dados dele;
@@ -416,7 +425,7 @@ class SupportAgent:
             }
         subs = await self.db.autolike_subscriptions_for(order_id=int(order["id"]))
         return {
-            "pedido": self._order_summary(order, full=True),
+            "pedido": self._order_summary(order, full=admin),
             "assinaturas_auto_like": await self._subscriptions_with_history(subs),
         }
 
@@ -599,5 +608,9 @@ class SupportAgent:
             "pedido": order["id"],
             "entrega_ok": ok,
             "status_pedido": refreshed["status"],
-            "resposta_entrega": _short(refreshed.get("delivery_info")),
+            **(
+                {"resposta_entrega": _short(refreshed.get("delivery_info"))}
+                if admin
+                else {}
+            ),
         }
