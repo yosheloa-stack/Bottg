@@ -11,6 +11,7 @@ import html
 import logging
 import os
 import time
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, Dispatcher
@@ -29,6 +30,7 @@ from app.autolike_report import (
 from app.backup import restore_if_needed, watch_backups
 from app.config import load_config
 from app.database import Database
+from app.database.db import BRAZIL_TZ
 from app.delivery import DeliveryService
 from app.handlers import register_handlers
 from app.outgoing import OutgoingTextMiddleware, UserLanguageMiddleware
@@ -131,6 +133,79 @@ async def watch_pending_payments(
         await asyncio.sleep(8)
 
 
+async def notify_autolike_no_delivery(
+    bot: Bot,
+    sub: dict,
+    *,
+    nickname: str,
+    next_at: int,
+) -> None:
+    """Avisa (de forma formal) que o envio de hoje não entregou likes."""
+    when = datetime.fromtimestamp(int(next_at), BRAZIL_TZ)
+    done = int(sub.get("sends_done") or 0)
+    total = int(sub.get("days_total") or 0)
+    text = (
+        "⚠️ <b>Auto Like: envio de hoje não realizado</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 Nick: <b>{html.escape(nickname or 'Jogador')}</b>\n"
+        f"🆔 UID: <code>{html.escape(str(sub['game_id']))}</code>\n\n"
+        "Este ID já atingiu o limite de likes que pode receber hoje, por isso "
+        "nenhum like foi entregue nesta tentativa.\n\n"
+        f"✅ Esta entrega <b>não foi descontada</b> do seu plano "
+        f"(<b>{done}/{total}</b> entregas realizadas).\n"
+        f"⏰ Nova tentativa automática: <b>{when.strftime('%d/%m/%Y')} às "
+        f"{when.strftime('%H:%M')}</b>."
+    )
+    try:
+        await bot.send_message(int(sub["user_id"]), text)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha ao avisar envio sem likes sub=%s", sub.get("id"))
+
+    notify_chat_id = sub.get("notify_chat_id")
+    if notify_chat_id is not None:
+        kwargs = {}
+        if sub.get("notify_thread_id") is not None:
+            kwargs["message_thread_id"] = int(sub["notify_thread_id"])
+        try:
+            await bot.send_message(int(notify_chat_id), text, **kwargs)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Falha ao avisar grupo sobre envio sem likes sub=%s", sub.get("id")
+            )
+
+
+async def handle_autolike_no_delivery(
+    bot: Bot,
+    db: Database,
+    sub: dict,
+    *,
+    nickname: str,
+    result_text: str,
+    label: str,
+) -> None:
+    """0 likes entregues: não conta no plano e agenda nova tentativa.
+
+    Tentativas no mesmo dia são silenciosas; o cliente só recebe o aviso
+    quando a próxima tentativa fica para o dia seguinte.
+    """
+    sub_id = int(sub["id"])
+    next_at = await db.defer_autolike_no_delivery(sub_id, result_text=result_text)
+    logger.warning(
+        "%s sem likes entregues | sub=%s uid=%s proxima=%s",
+        label,
+        sub_id,
+        sub["game_id"],
+        next_at,
+    )
+    if next_at is None:
+        return
+    today = datetime.now(BRAZIL_TZ).date()
+    if datetime.fromtimestamp(int(next_at), BRAZIL_TZ).date() != today:
+        await notify_autolike_no_delivery(
+            bot, sub, nickname=nickname, next_at=next_at
+        )
+
+
 async def watch_ffhub_autolikes(
     bot: Bot,
     db: Database,
@@ -196,6 +271,19 @@ async def watch_ffhub_autolikes(
                 after = _to_int(parsed_like["after"])
                 nickname = str(parsed_like["nickname"] or "Jogador")
                 safe_nickname = html.escape(nickname)
+
+                if sent <= 0:
+                    # ID já no limite diário (ou nada entregue): não é sucesso,
+                    # não conta como entrega do plano e tenta de novo depois.
+                    await handle_autolike_no_delivery(
+                        bot,
+                        db,
+                        sub,
+                        nickname=nickname,
+                        result_text=str(data),
+                        label="Auto Like 500",
+                    )
+                    continue
 
                 updated = await db.complete_ffhub_autolike_send(
                     sub_id,
@@ -382,6 +470,17 @@ async def watch_autosystem_autolikes(
                     sent = max(sent, confirmed)
 
                 nickname = str(data.get("nickname") or "Jogador")
+                if sent <= 0:
+                    await handle_autolike_no_delivery(
+                        bot,
+                        db,
+                        sub,
+                        nickname=nickname,
+                        result_text=str(data),
+                        label="Auto Like 220",
+                    )
+                    continue
+
                 updated = await db.complete_ffhub_autolike_send(
                     sub_id,
                     result_text=str(data),

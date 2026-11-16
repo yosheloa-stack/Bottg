@@ -257,6 +257,10 @@ CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
 BRAZIL_TZ = ZoneInfo("America/Sao_Paulo")
 # Horário fixo (Brasília) de entrega dos Auto Like 220 e 500.
 AUTOLIKE_SEND_HOUR = 5
+# Envio com 0 likes (ID já no limite do dia): nova tentativa 3 h depois,
+# até as 11:00; depois disso fica para a janela do dia seguinte.
+AUTOLIKE_ZERO_RETRY_DELAY = 3 * 60 * 60
+AUTOLIKE_ZERO_LAST_RETRY_HOUR = 11
 
 
 def next_autolike_send_epoch(now_ts: int | None = None) -> int:
@@ -2219,6 +2223,35 @@ class Database:
             ),
         )
         await self.db.commit()
+
+    async def defer_autolike_no_delivery(
+        self,
+        subscription_id: int,
+        result_text: str = "",
+        *,
+        retry_delay: int = AUTOLIKE_ZERO_RETRY_DELAY,
+        last_retry_hour: int = AUTOLIKE_ZERO_LAST_RETRY_HOUR,
+    ) -> int | None:
+        """Envio que voltou com 0 likes: não conta como entrega do plano.
+
+        Tenta de novo algumas horas depois no mesmo dia; passado o horário
+        limite, deixa para a janela fixa do dia seguinte. Devolve o horário
+        da próxima tentativa (epoch) ou None se a assinatura não está ativa.
+        """
+        now = int(time.time())
+        now_br = datetime.fromtimestamp(now, BRAZIL_TZ)
+        if now_br.hour < last_retry_hour:
+            next_at = now + int(retry_delay)
+        else:
+            next_at = next_autolike_send_epoch(now)
+        cur = await self.db.execute(
+            "UPDATE ffhub_autolike_subscriptions "
+            "SET next_send_at = ?, last_result = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'active'",
+            (next_at, result_text, now, subscription_id),
+        )
+        await self.db.commit()
+        return next_at if cur.rowcount else None
 
     async def create_autosystem_autolike_subscription(
         self,

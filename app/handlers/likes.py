@@ -149,6 +149,18 @@ async def _do_send_like(
             sent_int,
         )
 
+        if sent_int <= 0:
+            # Nenhum like entrou: não é sucesso. O limite do comando já foi
+            # liberado acima, então o usuário pode tentar outro ID.
+            await status_msg.edit_text(
+                "⚠️ <b>Nenhum like foi entregue</b>\n"
+                f"🆔 UID: <code>{html.escape(str(game_id))}</code>\n\n"
+                "Este ID já atingiu o limite de likes que pode receber hoje. "
+                "Tente novamente amanhã.",
+                reply_markup=await _add_group_markup(message.bot),
+            )
+            return
+
         layout_fields = dict(
             plan=f"{sent_int} LIKE" if sent_int else "LIKE",
             title="LIKE SEND SUCCESS",
