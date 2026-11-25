@@ -23,6 +23,7 @@ from aiogram.types import BotCommand
 
 from app.announcements import announce_autolike_send
 from app.backup import restore_if_needed, watch_backups
+from app.button_style import BotoesVerdes
 from app.config import load_config
 from app.database import Database
 from app.delivery import DeliveryService
@@ -444,6 +445,8 @@ async def main() -> None:
         token=config.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+    # Todos os botões saem verdes e sem emoji.
+    bot.session.middleware(BotoesVerdes())
 
     # O deploy da Square Cloud apaga o data/bot.db; recupera o último backup
     # fixado no privado do dono antes de abrir o banco.

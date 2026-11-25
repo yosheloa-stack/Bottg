@@ -13,38 +13,41 @@ def _price(value) -> str:
 
 
 def main_menu(is_admin: bool = False, lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
-    """Menu inicial exclusivo para clientes, no idioma do usuário.
+    """Menu inicial do cliente, organizado como as lojas mais usadas:
 
+    produtos primeiro, depois carteira, negócios e por fim a conta.
     is_admin é mantido por compatibilidade, mas não exibe controles de dono.
     """
     kb = InlineKeyboardBuilder()
+    # Produtos
     kb.row(
         InlineKeyboardButton(text=t(lang, "btn_auto220"), callback_data="shop:auto220"),
         InlineKeyboardButton(text=t(lang, "btn_auto500"), callback_data="shop:auto500"),
     )
-    kb.row(
-        InlineKeyboardButton(text=t(lang, "btn_passe"), callback_data="nav:v2:passe"),
-        InlineKeyboardButton(text=t(lang, "btn_reseller"), callback_data="shop:reseller"),
-    )
+    kb.row(InlineKeyboardButton(text=t(lang, "btn_passe"), callback_data="nav:v2:passe"))
+    # Carteira
     kb.row(
         InlineKeyboardButton(text=t(lang, "btn_balance"), callback_data="shop:balance"),
+        InlineKeyboardButton(text=t(lang, "btn_giftcard"), callback_data="shop:giftcard"),
+    )
+    # Negócios
+    kb.row(
+        InlineKeyboardButton(text=t(lang, "btn_reseller"), callback_data="shop:reseller"),
         InlineKeyboardButton(text=t(lang, "btn_rent"), callback_data="shop:rent"),
     )
+    # Conta
     kb.row(
-        InlineKeyboardButton(text=t(lang, "btn_giftcard"), callback_data="shop:giftcard"),
         InlineKeyboardButton(text=t(lang, "btn_orders"), callback_data="menu:orders"),
-    )
-    kb.row(
         InlineKeyboardButton(text=t(lang, "btn_support"), callback_data="menu:support"),
-        InlineKeyboardButton(text=t(lang, "btn_language"), callback_data="menu:lang"),
     )
+    kb.row(InlineKeyboardButton(text=t(lang, "btn_language"), callback_data="menu:lang"))
     return kb.as_markup()
 
 
 def language_menu(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for code, label in LANGUAGES.items():
-        mark = " ✅" if code == lang else ""
+        mark = "  •  atual" if code == lang else ""
         kb.row(InlineKeyboardButton(text=f"{label}{mark}", callback_data=f"lang:{code}"))
     kb.row(InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="nav:v2:home"))
     return kb.as_markup()
