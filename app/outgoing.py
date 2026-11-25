@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
+from aiogram.enums import ButtonStyle
 from aiogram.types import (
     ForceReply,
     InlineKeyboardMarkup,
@@ -18,6 +19,20 @@ from app.i18n import DEFAULT_LANG, LANGUAGES, user_lang
 from app.textfilter import render
 
 logger = logging.getLogger(__name__)
+
+# Cor padrão de todos os botões inline (verde). Bot API 9.4+; apps antigos ignoram.
+COR_BOTOES = ButtonStyle.SUCCESS
+
+
+def _verde(markup):
+    """Pinta de verde todo botão inline que ainda não tenha cor definida."""
+    if not isinstance(markup, InlineKeyboardMarkup):
+        return markup
+    rows = [
+        [b if b.style else b.model_copy(update={"style": COR_BOTOES}) for b in row]
+        for row in markup.inline_keyboard
+    ]
+    return markup.model_copy(update={"inline_keyboard": rows})
 
 # (user_id, idioma) de quem disparou o update atual.
 _current: contextvars.ContextVar[tuple[int, str] | None] = contextvars.ContextVar(
@@ -55,6 +70,8 @@ class UserLanguageMiddleware(BaseMiddleware):
 class OutgoingTextMiddleware(BaseRequestMiddleware):
     """Remove emojis e traduz textos, legendas e botões antes de enviar.
 
+    Todos os botões inline saem verdes (style="success").
+
     Para quem não é dono, também esconde nomes de fornecedores.
     """
 
@@ -89,7 +106,15 @@ class OutgoingTextMiddleware(BaseRequestMiddleware):
     def _markup(markup, lang: str, hide: bool):
         if isinstance(markup, InlineKeyboardMarkup):
             rows = [
-                [b.model_copy(update={"text": render(b.text, lang, hide=hide)}) for b in row]
+                [
+                    b.model_copy(
+                        update={
+                            "text": render(b.text, lang, hide=hide),
+                            "style": b.style or COR_BOTOES,
+                        }
+                    )
+                    for b in row
+                ]
                 for row in markup.inline_keyboard
             ]
             return markup.model_copy(update={"inline_keyboard": rows})
@@ -107,6 +132,13 @@ class OutgoingTextMiddleware(BaseRequestMiddleware):
 
     async def __call__(self, make_request, bot, method):
         if _keep_raw.get():
+            # Layout estilizado: texto sai como foi montado, mas o botão fica verde.
+            try:
+                markup = getattr(method, "reply_markup", None)
+                if markup is not None:
+                    method.reply_markup = _verde(markup)
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha ao colorir botões; enviando original")
             return await make_request(bot, method)
         try:
             lang = await self._lang_for(method)
