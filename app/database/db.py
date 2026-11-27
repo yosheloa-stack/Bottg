@@ -213,12 +213,12 @@ CREATE TABLE IF NOT EXISTS promo_groups (
 BRAZIL_TZ = ZoneInfo("America/Sao_Paulo")
 
 
-def next_nine_am_epoch(now_ts: int | None = None) -> int:
+def next_autolike_epoch(now_ts: int | None = None) -> int:
     now = datetime.fromtimestamp(
         int(now_ts or time.time()),
         BRAZIL_TZ,
     )
-    target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    target = now.replace(hour=4, minute=10, second=0, microsecond=0)
     if now >= target:
         target += timedelta(days=1)
     return int(target.timestamp())
@@ -256,9 +256,9 @@ class Database:
                 "ADD COLUMN provider TEXT NOT NULL DEFAULT 'ffhub'"
             )
 
-        # Planos ativos passam a seguir a janela fixa das 09:00.
+        # Planos ativos passam a seguir a janela fixa das 04:10.
         now_ts = int(time.time())
-        next_9 = next_nine_am_epoch(now_ts)
+        next_9 = next_autolike_epoch(now_ts)
         await self._db.execute(
             """
             UPDATE ffhub_autolike_subscriptions
@@ -1163,7 +1163,7 @@ class Database:
                 user_id,
                 game_id,
                 days_total,
-                next_nine_am_epoch(now),
+                next_autolike_epoch(now),
                 now,
                 now,
             ),
@@ -1239,7 +1239,7 @@ class Database:
                 int(user_id),
                 str(game_id),
                 days_total,
-                next_nine_am_epoch(now),
+                next_autolike_epoch(now),
                 int(notify_chat_id) if notify_chat_id is not None else None,
                 int(notify_thread_id) if notify_thread_id is not None else None,
                 now,
@@ -1377,7 +1377,7 @@ class Database:
             "UPDATE ffhub_autolike_subscriptions "
             "SET next_send_at = ?, updated_at = ? "
             "WHERE id = ? AND status = 'active'",
-            (next_nine_am_epoch(now), now, subscription_id),
+            (next_autolike_epoch(now), now, subscription_id),
         )
         await self.db.commit()
 
@@ -1407,7 +1407,7 @@ class Database:
         next_send_at = (
             0
             if status == "completed"
-            else next_nine_am_epoch(now)
+            else next_autolike_epoch(now)
         )
 
         sent_value = max(0, int(likes_sent or 0))
@@ -1459,7 +1459,7 @@ class Database:
     async def retry_ffhub_autolike_later(
         self, subscription_id: int, result_text: str = "", delay_seconds: int = 900
     ) -> None:
-        # Mesmo em falha, não foge da janela fixa: tenta novamente às 09:00
+        # Mesmo em falha, não foge da janela fixa: tenta novamente às 04:10
         # do próximo dia e mantém a entrega pendente no total do plano.
         now = int(time.time())
         await self.db.execute(
@@ -1467,7 +1467,7 @@ class Database:
             "SET next_send_at = ?, last_result = ?, updated_at = ? "
             "WHERE id = ? AND status = 'active'",
             (
-                next_nine_am_epoch(now),
+                next_autolike_epoch(now),
                 result_text,
                 now,
                 subscription_id,
@@ -1495,7 +1495,7 @@ class Database:
                 int(user_id),
                 str(game_id),
                 max(1, int(days_total)),
-                next_nine_am_epoch(now),
+                next_autolike_epoch(now),
                 now,
                 now,
             ),

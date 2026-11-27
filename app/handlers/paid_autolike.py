@@ -91,8 +91,8 @@ async def receive_paid_autolike_uid(
             f"🆔 UID: <code>{uid}</code>\n"
             f"📆 Período: <b>{days} dias</b>\n"
             "❤️ Por envio: <b>220 likes</b>\n"
-            "⏰ Horário fixo: <b>09:00 da manhã</b>\n\n"
-            "✅ O primeiro envio acontecerá na próxima janela das 09:00.",
+            "⏰ Horário fixo: <b>04:10 da manhã</b>\n\n"
+            "✅ O primeiro envio acontecerá na próxima janela das 04:10.",
             reply_markup=back_home(),
         )
         return
@@ -157,7 +157,7 @@ async def receive_paid_autolike_uid(
         f"📆 Período: <b>{days} dias</b>\n"
         "❤️ Por envio: <b>aprox. 500 a 1.000 likes</b>\n"
         "🔁 Frequência: <b>1 envio por dia</b>\n"
-        "⏰ Horário fixo: <b>09:00 da manhã</b>\n\n"
-        "✅ O primeiro envio acontecerá na próxima janela das 09:00.",
+        "⏰ Horário fixo: <b>04:10 da manhã</b>\n\n"
+        "✅ O primeiro envio acontecerá na próxima janela das 04:10.",
         reply_markup=back_home(),
     )
