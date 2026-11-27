@@ -415,7 +415,7 @@ async def watch_autosystem_autolikes(
     db: Database,
     autosystem_likes_api: AutoSystemLikesApi,
 ) -> None:
-    """Executa o Auto Like 220 diário sempre na janela das 05:00."""
+    """Executa o Auto Like 220 diário sempre na janela das 04:10."""
     while True:
         if not autosystem_likes_api.enabled:
             await asyncio.sleep(10)
@@ -697,7 +697,7 @@ async def main() -> None:
         name="autosystem-autolike-220-watcher",
     )
     if autosystem_likes_api.enabled:
-        logger.info("Agendador Auto Like 220 iniciado para 05:00.")
+        logger.info("Agendador Auto Like 220 iniciado para 04:10.")
     else:
         logger.warning(
             "AutoSystem ainda não configurada — o Auto Like 220 aguarda a chave."

@@ -256,7 +256,8 @@ CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
 
 BRAZIL_TZ = ZoneInfo("America/Sao_Paulo")
 # Horário fixo (Brasília) de entrega dos Auto Like 220 e 500.
-AUTOLIKE_SEND_HOUR = 5
+AUTOLIKE_SEND_HOUR = 4
+AUTOLIKE_SEND_MINUTE = 10
 # Envio com 0 likes (ID já no limite do dia): nova tentativa 3 h depois,
 # até as 11:00; depois disso fica para a janela do dia seguinte.
 AUTOLIKE_ZERO_RETRY_DELAY = 3 * 60 * 60
@@ -268,7 +269,7 @@ def next_autolike_send_epoch(now_ts: int | None = None) -> int:
         int(now_ts or time.time()),
         BRAZIL_TZ,
     )
-    target = now.replace(hour=AUTOLIKE_SEND_HOUR, minute=0, second=0, microsecond=0)
+    target = now.replace(hour=AUTOLIKE_SEND_HOUR, minute=AUTOLIKE_SEND_MINUTE, second=0, microsecond=0)
     if now >= target:
         target += timedelta(days=1)
     return int(target.timestamp())
@@ -336,7 +337,7 @@ class Database:
                 "ADD COLUMN region TEXT"
             )
 
-        # Planos ativos passam a seguir a janela fixa das 05:00.
+        # Planos ativos passam a seguir a janela fixa das 04:10.
         now_ts = int(time.time())
         next_send = next_autolike_send_epoch(now_ts)
         await self._db.execute(
@@ -2208,7 +2209,7 @@ class Database:
     async def retry_ffhub_autolike_later(
         self, subscription_id: int, result_text: str = "", delay_seconds: int = 900
     ) -> None:
-        # Mesmo em falha, não foge da janela fixa: tenta novamente às 05:00
+        # Mesmo em falha, não foge da janela fixa: tenta novamente às 04:10
         # do próximo dia e mantém a entrega pendente no total do plano.
         now = int(time.time())
         await self.db.execute(

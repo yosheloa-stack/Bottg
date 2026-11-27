@@ -77,7 +77,7 @@ async def cmd_owner_autolike(
             "<code>/removerid</code> — remover ID do 500 e 220\n\n"
             "✅ 1 envio por dia pela FFHub\n"
             "✅ aproximadamente 500 a 1.000 likes por envio\n"
-            "✅ horário fixo: 05:00 da manhã"
+            "✅ horário fixo: 04:10 da manhã"
         )
         return
 

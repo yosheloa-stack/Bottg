@@ -81,8 +81,8 @@ para conferir, use status_vip (ou o campo "vip" de detalhes_pedido), nunca as as
 VIP2 não é vendido na loja; é liberado só pela equipe e dá acesso ao /like2.
 Pagamento é por PIX (Mercado Pago) ou saldo. Depois que o PIX é aprovado, a entrega é automática.
 Nos Auto Likes, depois do pagamento o cliente precisa enviar o UID do Free Fire no privado do bot.
-Os envios dos Auto Likes (220 e 500) acontecem 1 vez por dia em horário fixo: 05:00 da manhã (horário de Brasília).
-O primeiro envio é na próxima janela das 05:00 depois da ativação; se um envio falhar, o bot tenta de novo na janela seguinte das 05:00.
+Os envios dos Auto Likes (220 e 500) acontecem 1 vez por dia em horário fixo: 04:10 da manhã (horário de Brasília).
+O primeiro envio é na próxima janela das 04:10 depois da ativação; se um envio falhar, o bot tenta de novo na janela seguinte das 04:10.
 Para o horário do próximo envio de uma assinatura específica, consulte o campo proximo_envio das ferramentas.
 
 Significado dos status de pedido:
